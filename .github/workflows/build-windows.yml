@@ -1,0 +1,56 @@
+# GitHub 서버에서 DEEP PARTY.exe 를 자동으로 만들어 줍니다.
+# main 브랜치에 올릴 때마다 실행되고, 결과는 저장소의 "Releases"에 올라갑니다.
+name: Build Windows exe
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: "4.3"
+
+jobs:
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Godot and export templates
+        run: |
+          set -e
+          BASE=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          cd /tmp
+          wget -q "$BASE/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          wget -q "$BASE/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q "Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          TPL=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          mkdir -p "$TPL"
+          unzip -q "Godot_v${GODOT_VERSION}-stable_export_templates.tpz" 'templates/windows_*' 'templates/version.txt'
+          mv templates/* "$TPL/"
+
+      - name: Export DEEP PARTY.exe
+        run: |
+          mkdir -p build
+          godot --headless --import || true
+          godot --headless --export-release "Windows Desktop" "build/DEEP PARTY.exe"
+          test -f "build/DEEP PARTY.exe"
+          ls -la build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DEEP-PARTY-windows
+          path: "build/DEEP PARTY.exe"
+
+      - name: Publish to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "DEEP PARTY build ${{ github.run_number }}"
+          body: "DEEP PARTY.exe 를 받아서 더블클릭하면 바로 실행됩니다. (설치 필요 없음)"
+          make_latest: true
+          files: "build/DEEP PARTY.exe"

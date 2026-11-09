@@ -1,0 +1,5 @@
+Poppins (Poppins-Bold.ttf)
+Copyright 2020 The Poppins Project Authors (https://github.com/itfoundry/Poppins)
+Licensed under the SIL Open Font License, Version 1.1 — free for commercial games.
+Full license text: https://openfontlicense.org/open-font-license-official-text/
+(Steam 출시 빌드에는 위 링크의 전체 라이선스 문구를 이 파일에 붙여 넣어 함께 배포하세요.)

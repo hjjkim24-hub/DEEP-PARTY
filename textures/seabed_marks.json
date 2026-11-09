@@ -1,0 +1,38 @@
+{
+ "board_low_corner": [
+  1184.6,
+  744.3
+ ],
+ "board_high_corner": [
+  1213.9,
+  340.5
+ ],
+ "under_board_right": [
+  1571.6,
+  507.7
+ ],
+ "under_board_back": [
+  1036.4,
+  370.4
+ ],
+ "rock_back": [
+  1439.7,
+  315.7
+ ],
+ "coral_branch": [
+  1289.8,
+  393.1
+ ],
+ "sand_left_far": [
+  71.4,
+  336.9
+ ],
+ "sand_left_mid": [
+  157.6,
+  494.3
+ ],
+ "sand_right_front": [
+  2361.3,
+  657.4
+ ]
+}
