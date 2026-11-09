@@ -21,6 +21,13 @@ Godot 에디터로 직접 만들 때: 프로젝트 → 내보내기 → "Windows
 - 시간 조절: `FADE_IN`, `HOLD`, `FADE_OUT`, `GAP` 상수.
 - Godot 로고: Andrea Calabró, CC BY 4.0 (`textures/splash/GODOT_LOGO_LICENSE.txt`). 검은 배경에 맞게 글자색만 흰색으로 바꿨습니다.
 
+## 소리
+`scripts/autoload/audio.gd` (자동 로드 `Audio`)
+- 배경음악 `audio/music/menu_theme.ogg` — 116 BPM 마림바 곡, 약 66초 끊김 없이 반복. 메인화면에서 서서히 시작.
+- 효과음 `audio/sfx/*.wav` — `Audio.play("click")`. 모든 버튼은 자동으로 마우스 올림/누름 소리가 나고, 버튼마다 `set_meta("sfx", "back")`로 바꿀 수 있어요.
+- 음악은 Music 버스, 효과음은 SFX 버스라 설정의 음량 슬라이더가 그대로 적용돼요.
+- 다시 만들기: `cd tools && python make_audio.py` (numpy, scipy, ffmpeg 필요)
+
 ## 화면 구성 (뒤에서 앞 순서)
 1. 물 (셰이더) — 에메랄드빛 물 색, 수면 쪽 빛무늬
 2. 바다 밑 장면 — `textures/seabed_scene.png` (미리 렌더링한 실사풍 그림) + 표면을 따라 움직이는 빛무늬 셰이더

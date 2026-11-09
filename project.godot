@@ -19,6 +19,7 @@ boot_splash/show_image=false
 GameState="*res://scripts/autoload/game_state.gd"
 Localization="*res://scripts/autoload/localization.gd"
 Settings="*res://scripts/autoload/settings.gd"
+Audio="*res://scripts/autoload/audio.gd"
 
 [display]
 

@@ -94,6 +94,7 @@ var _fade: ColorRect
 
 func _ready() -> void:
 	_build_theme()
+	Audio.play_music()
 
 	_bg = BackgroundScene.instantiate()
 	add_child(_bg)
@@ -237,6 +238,7 @@ func _build_mode_page(parent: Control) -> Control:
 	var back := _make_glass_button("BACK", Vector2(240, 64), 24)
 	back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	back.pressed.connect(_go_back)
+	back.set_meta("sfx", "back")
 	col.add_child(back)
 	return col.get_parent().get_parent() as Control
 
@@ -280,6 +282,7 @@ func _build_lobby_page(parent: Control) -> Control:
 	col.add_child(bottom)
 	var back := _make_glass_button("BACK", Vector2(170, 66), 20)
 	back.pressed.connect(_go_back)
+	back.set_meta("sfx", "back")
 	bottom.add_child(back)
 	var invite := _make_glass_button("INVITE FRIEND", Vector2(250, 66), 20)
 	invite.pressed.connect(_lobby_invite)
@@ -297,6 +300,7 @@ func _build_lobby_page(parent: Control) -> Control:
 	bottom.add_child(gap)
 	_lobby_start = _make_primary_button("START", Vector2(240, 66))
 	_lobby_start.pressed.connect(_on_lobby_start)
+	_lobby_start.set_meta("sfx", "")   # 시작 가능할 때만 "start" (아래에서)
 	bottom.add_child(_lobby_start)
 	return page
 
@@ -439,6 +443,7 @@ func _make_slot(i: int, p: Dictionary, cpu_no: int, team: bool) -> PanelContaine
 			v.add_child(lv)
 			var rm := _make_slot_button("REMOVE")
 			rm.pressed.connect(_lobby_remove.bind(i))
+			rm.set_meta("sfx", "remove")
 			v.add_child(rm)
 		"friend":
 			name_l.text = str(p.get("name", "Friend"))
@@ -450,6 +455,7 @@ func _make_slot(i: int, p: Dictionary, cpu_no: int, team: bool) -> PanelContaine
 			sub_l.text = "Add a CPU or invite a friend"
 			var add := _make_slot_button("+ ADD CPU")
 			add.pressed.connect(_lobby_add_cpu.bind(i))
+			add.set_meta("sfx", "add")
 			v.add_child(add)
 	return card
 
@@ -494,8 +500,12 @@ func _lobby_invite() -> void:
 
 
 func _on_lobby_start() -> void:
-	if _busy or not GameState.can_start():
+	if _busy:
 		return
+	if not GameState.can_start():
+		Audio.play("back")
+		return
+	Audio.play("start")
 	if ResourceLoader.exists(GAME_SCENE):
 		_busy = true
 		var t := create_tween()
@@ -584,6 +594,7 @@ func _build_customize_page(parent: Control) -> Control:
 			box.content_margin_right = 8
 			tb.add_theme_stylebox_override(st, box)
 		tb.pressed.connect(_select_cz_tab.bind(i))
+		tb.set_meta("sfx", "tab")
 		tabs.add_child(tb)
 		_cz_tab_buttons.append(tb)
 
@@ -612,6 +623,7 @@ func _build_customize_page(parent: Control) -> Control:
 				sw.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 				sw.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 				sw.pressed.connect(_on_swatch_pressed.bind(ci))
+				sw.set_meta("sfx", "color")
 				grid.add_child(sw)
 				_cz_swatches.append(sw)
 			continue
@@ -629,6 +641,7 @@ func _build_customize_page(parent: Control) -> Control:
 			box.content_margin_right = 8
 			rm.add_theme_stylebox_override(st, box)
 		rm.pressed.connect(_on_item_remove.bind(cat))
+		rm.set_meta("sfx", "")   # 착용 중일 때만 소리 (아래에서)
 		head_row.add_child(rm)
 		_cz_remove[cat] = rm
 		var items_row := HBoxContainer.new()
@@ -646,6 +659,7 @@ func _build_customize_page(parent: Control) -> Control:
 	col.add_child(bottom)
 	var back := _make_glass_button("BACK", Vector2(170, 66), 20)
 	back.pressed.connect(_go_back)
+	back.set_meta("sfx", "back")
 	bottom.add_child(back)
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -681,6 +695,7 @@ func _make_item_tile(cat: String, item_id: String) -> Button:
 	tile.set_meta("cat", cat)
 	tile.set_meta("item", item_id)
 	tile.pressed.connect(_on_item_pressed.bind(cat, item_id))
+	tile.set_meta("sfx", "")   # 착용 소리는 _on_item_pressed 에서
 	var v := VBoxContainer.new()
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tile.add_child(v)
@@ -770,12 +785,15 @@ func _on_swatch_pressed(ci: int) -> void:
 
 
 func _on_item_pressed(cat: String, item_id: String) -> void:
+	Audio.play("equip")
 	GameState.equip(0, cat, item_id)
 	_refresh_customize()
 	_bg.burst_bubbles(get_global_mouse_position(), 8)
 
 
 func _on_item_remove(cat: String) -> void:
+	if String(GameState.equipped(0, cat)) != "":
+		Audio.play("unequip")
 	GameState.unequip(0, cat)
 	_refresh_customize()
 
@@ -806,6 +824,7 @@ func _build_settings_page(parent: Control) -> Control:
 		tb.set_meta("hover_scale", 1.03)
 		tb.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		tb.pressed.connect(_select_settings_tab.bind(i))
+		tb.set_meta("sfx", "tab")
 		tabs.add_child(tb)
 		_tab_buttons.append(tb)
 	_settings_first = _tab_buttons[0]
@@ -855,6 +874,7 @@ func _build_settings_page(parent: Control) -> Control:
 	_vsync_switch.custom_minimum_size = Vector2(84, 48)
 	_vsync_switch.button_pressed = Settings.vsync
 	_vsync_switch.toggled.connect(_set_vsync)
+	_vsync_switch.set_meta("sfx", "")
 	video.add_child(_inline_row("V-SYNC", _vsync_switch))
 
 	# ---- 언어
@@ -880,6 +900,7 @@ func _build_settings_page(parent: Control) -> Control:
 	bottom.add_child(spacer)
 	var close := _make_glass_button("BACK", Vector2(190, 64), 20)
 	close.pressed.connect(_go_back)
+	close.set_meta("sfx", "back")
 	bottom.add_child(close)
 
 	_select_settings_tab(0)
@@ -961,6 +982,7 @@ func _make_segmented(opts: Array, idx: int, callback: Callable, translate: bool 
 		b.add_theme_stylebox_override("hover_pressed", on)
 		b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		b.pressed.connect(callback.bind(i))
+		b.set_meta("sfx", "tick")
 		row.add_child(b)
 		buttons.append(b)
 	row.set_meta("buttons", buttons)
@@ -1019,6 +1041,7 @@ func _make_dropdown(opts: Array, idx: int, callback: Callable) -> OptionButton:
 	pop.add_theme_constant_override("v_separation", 16)
 	pop.add_theme_constant_override("item_start_padding", 12)
 	ob.item_selected.connect(callback)
+	ob.item_selected.connect(func(_i: int) -> void: Audio.play("tick"))
 	return ob
 
 
@@ -1038,6 +1061,7 @@ func _volume_row(label_text: String, key: String, value: float) -> VBoxContainer
 	slider.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_style_slider(slider)
 	slider.value_changed.connect(_on_volume_changed.bind(key))
+	slider.value_changed.connect(func(_v: float) -> void: Audio.play("tick", 70))
 	box.add_child(slider)
 	var val := Label.new()
 	val.custom_minimum_size = Vector2(72, 0)
@@ -1426,6 +1450,7 @@ func _input(event: InputEvent) -> void:
 	# 화면 아무 데나 클릭하면 물방울이 보글보글
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		_bg.burst_bubbles(get_global_mouse_position(), 7)
+		Audio.play("bubbles", 120)
 
 
 # =============================================================== 버튼 동작
@@ -1453,6 +1478,7 @@ func _on_mode_chosen(mode: int, _title: String, b: Button) -> void:
 	_open_lobby(mode)
 
 func _set_vsync(on: bool) -> void:
+	Audio.play("toggle_on" if on else "toggle_off")
 	Settings.vsync = on
 	Settings.apply_video()
 	Settings.save_settings()
@@ -1505,6 +1531,7 @@ func _on_defaults_pressed() -> void:
 
 func _quit() -> void:
 	_busy = true
+	Audio.stop_music(0.35)
 	var t := create_tween()
 	t.tween_property(_fade, "color:a", 1.0, 0.35)
 	await t.finished
@@ -1512,6 +1539,7 @@ func _quit() -> void:
 
 
 func _toast(msg: String) -> void:
+	Audio.play("toast")
 	_toast_label.text = msg
 	if _toast_tween:
 		_toast_tween.kill()

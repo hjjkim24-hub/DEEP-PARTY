@@ -29,6 +29,12 @@ func _run() -> void:
 	var m: Node = get_tree().current_scene
 	await _sec(2.0)
 
+	_step("audio: sfx %d/%d, music playing %s" % [Audio._streams.size(), Audio.SFX_NAMES.size(), Audio._music.playing])
+	if Audio._streams.size() != Audio.SFX_NAMES.size() or not Audio._music.playing:
+		push_error("Audio files missing")
+	for n in Audio.SFX_NAMES:
+		Audio.play(n)
+
 	_step("settings")
 	m._show_page("settings")
 	await _sec(0.8)
