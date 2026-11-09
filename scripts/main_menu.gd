@@ -134,7 +134,9 @@ func _build_theme() -> void:
 	var fb := SystemFont.new()
 	fb.font_names = PackedStringArray(FALLBACK_FONTS)
 	fb.font_weight = 700
-	UIFont.fallbacks = [fb]
+	var ui_font: Font = UIFont
+	var fbs: Array[Font] = [fb]
+	ui_font.fallbacks = fbs
 	_spaced_font = FontVariation.new()
 	_spaced_font.base_font = UIFont
 	_spaced_font.spacing_glyph = 3

@@ -55,6 +55,11 @@ func _ready() -> void:
 
 	ResourceLoader.load_threaded_request(NEXT_SCENE)
 
+	# 개발용 자동 점검 (GitHub 빌드에서만 사용)
+	if "--smoke-test" in OS.get_cmdline_user_args():
+		var tester: Node = load("res://scripts/dev/smoke_test.gd").new()
+		get_tree().root.add_child.call_deferred(tester)
+
 
 func _process(delta: float) -> void:
 	delta = minf(delta, MAX_DELTA)

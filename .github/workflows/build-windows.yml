@@ -1,5 +1,8 @@
-# GitHub 서버에서 DEEP PARTY.exe 를 자동으로 만들어 줍니다.
+# GitHub 서버(Windows)에서 DEEP PARTY.exe 를 자동으로 만들어 줍니다.
 # main 브랜치에 올릴 때마다 실행되고, 결과는 저장소의 "Releases"에 올라갑니다.
+#  1) Godot + 내보내기 템플릿 + rcedit(exe 아이콘용) 받기
+#  2) 자동 점검: 메뉴 화면들을 한 바퀴 돌려서 스크립트 오류가 있으면 빌드 중단
+#  3) exe 내보내기 → Releases 에 올리기
 name: Build Windows exe
 
 on:
@@ -13,33 +16,59 @@ permissions:
 env:
   GODOT_VERSION: "4.3"
 
+defaults:
+  run:
+    shell: pwsh
+
 jobs:
   windows:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Godot and export templates
+      - name: Download Godot, export templates, rcedit
         run: |
-          set -e
-          BASE=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
-          cd /tmp
-          wget -q "$BASE/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
-          wget -q "$BASE/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
-          unzip -q "Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
-          sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
-          TPL=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
-          mkdir -p "$TPL"
-          unzip -q "Godot_v${GODOT_VERSION}-stable_export_templates.tpz" 'templates/windows_*' 'templates/version.txt'
-          mv templates/* "$TPL/"
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+          $v = $env:GODOT_VERSION
+          $base = "https://github.com/godotengine/godot/releases/download/$v-stable"
+          Invoke-WebRequest "$base/Godot_v$v-stable_win64.exe.zip" -OutFile "$env:RUNNER_TEMP\godot.zip"
+          Expand-Archive "$env:RUNNER_TEMP\godot.zip" -DestinationPath C:\godot
+          Invoke-WebRequest "$base/Godot_v$v-stable_export_templates.tpz" -OutFile "$env:RUNNER_TEMP\tpl.zip"
+          7z x "$env:RUNNER_TEMP\tpl.zip" "templates/windows_*" "templates/version.txt" "-o$env:RUNNER_TEMP\tpl" | Out-Null
+          $tplDir = "$env:APPDATA\Godot\export_templates\$v.stable"
+          New-Item -ItemType Directory -Force $tplDir | Out-Null
+          Copy-Item "$env:RUNNER_TEMP\tpl\templates\*" $tplDir
+          Invoke-WebRequest "https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe" -OutFile C:\godot\rcedit.exe
+          $settings = "[gd_resource type=`"EditorSettings`" format=3]`n`n[resource]`nexport/windows/rcedit = `"C:/godot/rcedit.exe`"`n"
+          foreach ($name in @("editor_settings-$v.tres", "editor_settings-4.tres")) {
+            Set-Content -Path "$env:APPDATA\Godot\$name" -Value $settings -Encoding utf8NoBOM
+          }
+          "GODOT=C:\godot\Godot_v$v-stable_win64_console.exe" >> $env:GITHUB_ENV
+          Get-ChildItem C:\godot, $tplDir | Format-Table Name, Length
+
+      - name: Import assets
+        run: |
+          & $env:GODOT --headless --path . --import 2>&1 | Out-Host
+          exit 0
+
+      - name: Smoke test (menus, lobby, customize)
+        run: |
+          & $env:GODOT --headless --fixed-fps 60 --path . -- --smoke-test 2>&1 | Tee-Object -FilePath smoke.log | Out-Host
+          $errors = Select-String -Path smoke.log -Pattern "SCRIPT ERROR"
+          if ($errors) { Write-Host "::error::Script errors found"; $errors | ForEach-Object { Write-Host $_.Line }; exit 1 }
+          if (-not (Select-String -Path smoke.log -Pattern "SMOKE TEST DONE" -Quiet)) { Write-Host "::error::Smoke test did not finish"; exit 1 }
+          exit 0
 
       - name: Export DEEP PARTY.exe
         run: |
-          mkdir -p build
-          godot --headless --import || true
-          godot --headless --export-release "Windows Desktop" "build/DEEP PARTY.exe"
-          test -f "build/DEEP PARTY.exe"
-          ls -la build
+          New-Item -ItemType Directory -Force build | Out-Null
+          & $env:GODOT --headless --path . --export-release "Windows Desktop" "build/DEEP PARTY.exe" 2>&1 | Tee-Object -FilePath export.log | Out-Host
+          if (-not (Test-Path "build/DEEP PARTY.exe")) { Write-Host "::error::Export failed"; exit 1 }
+          $bad = Select-String -Path export.log -Pattern "SCRIPT ERROR|rcedit"
+          if ($bad) { Write-Host "::error::Export problems"; $bad | ForEach-Object { Write-Host $_.Line }; exit 1 }
+          Get-Item "build/DEEP PARTY.exe" | Format-Table Name, Length
+          exit 0
 
       - uses: actions/upload-artifact@v4
         with:
@@ -51,6 +80,6 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: "DEEP PARTY build ${{ github.run_number }}"
-          body: "DEEP PARTY.exe 를 받아서 더블클릭하면 바로 실행됩니다. (설치 필요 없음)"
+          body: "DEEP.PARTY.exe 를 받아서 더블클릭하면 바로 실행됩니다. (설치 필요 없음)"
           make_latest: true
           files: "build/DEEP PARTY.exe"
