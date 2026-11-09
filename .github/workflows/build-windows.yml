@@ -56,14 +56,14 @@ jobs:
           Get-ChildItem .godot\imported | Measure-Object | Format-Table Count
           exit 0
 
-      - name: Export DEEP PARTY.exe
+      - name: Export DeepParty.exe
         run: |
           New-Item -ItemType Directory -Force build | Out-Null
-          & $env:GODOT --headless --path . --export-release "Windows Desktop" "build/DEEP PARTY.exe" 2>&1 | Tee-Object -FilePath export.log | Out-Host
-          if (-not (Test-Path "build/DEEP PARTY.exe")) { Write-Host "::error::Export failed"; exit 1 }
+          & $env:GODOT --headless --path . --export-release "Windows Desktop" "build/DeepParty.exe" 2>&1 | Tee-Object -FilePath export.log | Out-Host
+          if (-not (Test-Path "build/DeepParty.exe")) { Write-Host "::error::Export failed"; exit 1 }
           $bad = Select-String -Path export.log -Pattern "SCRIPT ERROR|Could not start rcedit|rcedit failed"
           if ($bad) { Write-Host "::error::Export problems"; $bad | ForEach-Object { Write-Host $_.Line }; exit 1 }
-          Get-Item "build/DEEP PARTY.exe" | Format-Table Name, Length
+          Get-Item "build/DeepParty.exe" | Format-Table Name, Length
           exit 0
 
       - name: Smoke test (menus, lobby, customize)
@@ -77,13 +77,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: DEEP-PARTY-windows
-          path: "build/DEEP PARTY.exe"
+          path: "build/DeepParty.exe"
 
       - name: Publish to Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: "DEEP PARTY build ${{ github.run_number }}"
-          body: "DEEP.PARTY.exe 를 받아서 더블클릭하면 바로 실행됩니다. (설치 필요 없음)"
+          body: "DeepParty.exe 를 받아서 더블클릭하면 바로 실행됩니다. (설치 필요 없음)"
           make_latest: true
-          files: "build/DEEP PARTY.exe"
+          files: "build/DeepParty.exe"

@@ -2,7 +2,7 @@
 setlocal
 rem ============================================================
 rem  DEEP PARTY - one-click Windows build
-rem  Makes build\DEEP PARTY.exe (runs without Godot installed).
+rem  Makes build\DeepParty.exe (runs without Godot installed).
 rem  First run downloads Godot 4.3 + export templates (~1 GB).
 rem ============================================================
 cd /d "%~dp0"
@@ -35,12 +35,12 @@ echo [2/4] Export templates ready.
 echo [3/4] Importing assets ...
 "%GODOT%" --headless --path "%PROJ%" --import
 
-echo [4/4] Exporting build\DEEP PARTY.exe ...
-"%GODOT%" --headless --path "%PROJ%" --export-release "Windows Desktop" "build/DEEP PARTY.exe"
-if not exist "%PROJ%\build\DEEP PARTY.exe" goto fail_export
+echo [4/4] Exporting build\DeepParty.exe ...
+"%GODOT%" --headless --path "%PROJ%" --export-release "Windows Desktop" "build/DeepParty.exe"
+if not exist "%PROJ%\build\DeepParty.exe" goto fail_export
 
 echo.
-echo Done!  build\DEEP PARTY.exe
+echo Done!  build\DeepParty.exe
 explorer "%PROJ%\build"
 pause
 exit /b 0
