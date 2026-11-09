@@ -1,6 +1,6 @@
 extends Node
 ## 개발용 자동 점검. 게임에는 영향 없음.
-## `godot --headless --fixed-fps 60 -- --smoke-test` 로 실행하면
+## `godot --headless -- --smoke-test` 로 실행하면
 ## 시작 로고 → 메인화면 → 설정/모드/로비/꾸미기 화면을 자동으로 한 바퀴 돌고 종료합니다.
 ## GitHub 자동 빌드에서 스크립트 오류를 미리 잡는 데 씁니다.
 
@@ -8,8 +8,8 @@ const TIMEOUT_SEC := 120.0
 
 
 func _ready() -> void:
-	get_tree().create_timer(TIMEOUT_SEC).timeout.connect(func() -> void:
-		print("SMOKE TEST TIMEOUT")
+	get_tree().create_timer(TIMEOUT_SEC, true, false, true).timeout.connect(func() -> void:
+		print("SMOKE TEST TIMEOUT (scene: %s)" % [get_tree().current_scene.name if get_tree().current_scene else "none"])
 		get_tree().quit(2))
 	_run()
 
