@@ -87,4 +87,6 @@ func _run() -> void:
 		await _sec(0.8)
 
 	print("SMOKE TEST DONE")
+	await Audio.stop_music(0.1)
+	await _sec(0.3)
 	get_tree().quit(0)

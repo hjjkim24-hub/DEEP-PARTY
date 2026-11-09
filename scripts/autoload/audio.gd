@@ -120,3 +120,16 @@ func _on_button_pressed(b: BaseButton) -> void:
 		s = String(b.get_meta("sfx"))
 	if s != "":
 		play(s)
+
+
+# 게임을 끌 때 재생 중인 소리를 정리 (종료 시 리소스 누수 경고 방지)
+func _exit_tree() -> void:
+	if _music_tween:
+		_music_tween.kill()
+	if _music:
+		_music.stop()
+		_music.stream = null
+	for p in _players:
+		p.stop()
+		p.stream = null
+	_streams.clear()
