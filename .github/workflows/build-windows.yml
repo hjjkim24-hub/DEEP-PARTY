@@ -1,8 +1,9 @@
 # GitHub 서버(Windows)에서 DEEP PARTY.exe 를 자동으로 만들어 줍니다.
 # main 브랜치에 올릴 때마다 실행되고, 결과는 저장소의 "Releases"에 올라갑니다.
 #  1) Godot + 내보내기 템플릿 + rcedit(exe 아이콘용) 받기
-#  2) 자동 점검: 메뉴 화면들을 한 바퀴 돌려서 스크립트 오류가 있으면 빌드 중단
-#  3) exe 내보내기 → Releases 에 올리기
+#  2) exe 내보내기
+#  3) 자동 점검: 메뉴 화면들을 한 바퀴 돌려서 스크립트 오류가 있으면 중단
+#  4) Releases 에 올리기
 name: Build Windows exe
 
 on:
@@ -49,15 +50,10 @@ jobs:
 
       - name: Import assets
         run: |
-          & $env:GODOT --headless --path . --import 2>&1 | Out-Host
-          exit 0
-
-      - name: Smoke test (menus, lobby, customize)
-        run: |
-          & $env:GODOT --headless --fixed-fps 60 --path . -- --smoke-test 2>&1 | Tee-Object -FilePath smoke.log | Out-Host
-          $errors = Select-String -Path smoke.log -Pattern "SCRIPT ERROR"
-          if ($errors) { Write-Host "::error::Script errors found"; $errors | ForEach-Object { Write-Host $_.Line }; exit 1 }
-          if (-not (Select-String -Path smoke.log -Pattern "SMOKE TEST DONE" -Quiet)) { Write-Host "::error::Smoke test did not finish"; exit 1 }
+          # 에디터를 한 번 열었다 닫으면서 그림·폰트를 가져오기(import)
+          & $env:GODOT --headless --editor --path . --quit 2>&1 | Out-Host
+          & $env:GODOT --headless --editor --path . --quit 2>&1 | Out-Host
+          Get-ChildItem .godot\imported | Measure-Object | Format-Table Count
           exit 0
 
       - name: Export DEEP PARTY.exe
@@ -68,6 +64,14 @@ jobs:
           $bad = Select-String -Path export.log -Pattern "SCRIPT ERROR|rcedit"
           if ($bad) { Write-Host "::error::Export problems"; $bad | ForEach-Object { Write-Host $_.Line }; exit 1 }
           Get-Item "build/DEEP PARTY.exe" | Format-Table Name, Length
+          exit 0
+
+      - name: Smoke test (menus, lobby, customize)
+        run: |
+          & $env:GODOT --headless --fixed-fps 60 --path . -- --smoke-test 2>&1 | Tee-Object -FilePath smoke.log | Out-Host
+          $errors = Select-String -Path smoke.log -Pattern "SCRIPT ERROR"
+          if ($errors) { Write-Host "::error::Script errors found"; $errors | ForEach-Object { Write-Host $_.Line }; exit 1 }
+          if (-not (Select-String -Path smoke.log -Pattern "SMOKE TEST DONE" -Quiet)) { Write-Host "::error::Smoke test did not finish"; exit 1 }
           exit 0
 
       - uses: actions/upload-artifact@v4
