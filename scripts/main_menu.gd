@@ -1339,7 +1339,7 @@ func _on_btn_up(b: Button) -> void:
 
 
 func _tween_scale(b: Control, target: float, time: float) -> void:
-	var old = b.get_meta("scale_tween", null)
+	var old = (b.get_meta("scale_tween") if b.has_meta("scale_tween") else null)
 	if old is Tween:
 		old.kill()
 	var t := create_tween()

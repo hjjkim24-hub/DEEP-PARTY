@@ -69,7 +69,7 @@ jobs:
       - name: Smoke test (menus, lobby, customize)
         run: |
           & $env:GODOT --headless --path . -- --smoke-test 2>&1 | Tee-Object -FilePath smoke.log | Out-Host
-          $errors = Select-String -Path smoke.log -Pattern "SCRIPT ERROR"
+          $errors = Select-String -Path smoke.log -Pattern "SCRIPT ERROR|ERROR:"
           if ($errors) { Write-Host "::error::Script errors found"; $errors | ForEach-Object { Write-Host $_.Line }; exit 1 }
           if (-not (Select-String -Path smoke.log -Pattern "SMOKE TEST DONE" -Quiet)) { Write-Host "::error::Smoke test did not finish"; exit 1 }
           exit 0
