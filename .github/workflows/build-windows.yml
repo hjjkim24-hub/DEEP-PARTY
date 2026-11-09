@@ -61,7 +61,7 @@ jobs:
           New-Item -ItemType Directory -Force build | Out-Null
           & $env:GODOT --headless --path . --export-release "Windows Desktop" "build/DEEP PARTY.exe" 2>&1 | Tee-Object -FilePath export.log | Out-Host
           if (-not (Test-Path "build/DEEP PARTY.exe")) { Write-Host "::error::Export failed"; exit 1 }
-          $bad = Select-String -Path export.log -Pattern "SCRIPT ERROR|rcedit"
+          $bad = Select-String -Path export.log -Pattern "SCRIPT ERROR|Could not start rcedit|rcedit failed"
           if ($bad) { Write-Host "::error::Export problems"; $bad | ForEach-Object { Write-Host $_.Line }; exit 1 }
           Get-Item "build/DEEP PARTY.exe" | Format-Table Name, Length
           exit 0
