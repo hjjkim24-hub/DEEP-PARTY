@@ -434,7 +434,7 @@ func _connectors() -> void:
 				var f := (float(s) + 0.5) / int(glen / 0.55)
 				var pp := p0.lerp(p1, f)
 				for side in [-0.32, 0.32]:
-					var off := bas.x * side
+					var off: Vector3 = bas.x * side
 					_mi(_box(Vector3(0.5, 0.06, 0.45)), _mat(Color(0.7, 0.71, 0.66).darkened(_rng.randf() * 0.15), 0.9),
 						Vector3(pp.x + off.x, y + 0.1, pp.z + off.z), Basis(Vector3.UP, yaw + _rng.randf_range(-0.2, 0.2)))
 
@@ -447,10 +447,10 @@ func _bridge(p0: Vector3, p1: Vector3, bas: Basis, glen: float, wood: Material, 
 		var sag := sin(f * PI) * -0.25
 		_mi(_box(Vector3(1.7, 0.1, 0.34)), wood, Vector3(pos.x, pos.y + TILE_H - 0.1 + sag, pos.z), bas.rotated(Vector3.UP, 0.0))
 	for side in [-0.9, 0.9]:
-		var off := bas.x * side
+		var off: Vector3 = bas.x * side
 		for end in [p0, p1]:
 			_mi(_cyl(0.07, 0.08, 1.4, 8), wood, end + off + Vector3(0, TILE_H + 0.3, 0))
-		var mid := (p0 + p1) * 0.5 + off + Vector3(0, TILE_H + 0.7, 0)
+		var mid: Vector3 = (p0 + p1) * 0.5 + off + Vector3(0, TILE_H + 0.7, 0)
 		_mi(_box(Vector3(0.05, 0.05, glen)), rope, mid, bas)
 
 
