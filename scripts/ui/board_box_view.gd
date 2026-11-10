@@ -15,6 +15,7 @@ var hovered := false      ## 마우스 올림 (작은 상자 고르기 칸에서
 var selected := false     ## 고른 상자 (작은 상자 고르기 칸에서 씀)
 var bob_amount := 0.025   ## 둥실거리는 정도 (상자 높이 대비)
 var react_to_mouse := true
+var backdrop := false     ## 뒤에 은은한 어두운 빛 웅덩이 (뒷배경 보드판과 구분되게)
 
 var _t := 0.0
 var _lift := 0.0
@@ -47,6 +48,15 @@ func _draw() -> void:
 	var rise := ease_lift * draw_size.y * 0.04 + bob
 	var pop_s := 1.0 + sin(_pop * PI) * 0.05
 	var scale_k := (1.0 + ease_lift * 0.03) * pop_s
+
+	if backdrop:
+		var c := origin + draw_size * Vector2(0.5, 0.55)
+		var r := maxf(draw_size.x, draw_size.y) * 0.62
+		draw_set_transform(c, 0.0, Vector2(1.0, 0.72))
+		for i in 12:
+			var f := 1.0 - float(i) / 12.0 * 0.62
+			draw_circle(Vector2.ZERO, r * f, Color(0.0, 0.07, 0.06, 0.07))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 	# 그림자: 상자가 뜰수록 연하고 넓게
 	var sh_a := (0.75 if not dim else 0.5) * (1.0 - ease_lift * 0.25 - clampf(rise / draw_size.y, -0.05, 0.1))

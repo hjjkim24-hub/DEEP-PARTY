@@ -632,6 +632,7 @@ func _build_board_page(parent: Control) -> Control:
 	big.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	big.mouse_filter = Control.MOUSE_FILTER_PASS
 	big.bob_amount = 0.02
+	big.backdrop = true
 	body.add_child(big)
 	_board_big = big
 
