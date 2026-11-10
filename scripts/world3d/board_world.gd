@@ -1268,7 +1268,7 @@ func _colossus(at: Vector2) -> void:
 	var moss := _mat(Color(0.3, 0.52, 0.36), 0.95)
 	var root := Node3D.new()
 	root.position = p + Vector3(0, -0.4, 0)
-	root.rotation = Vector3(-0.12, atan2(-p.x, -p.z), 0.18)   # 섬 가운데를 바라봄
+	root.rotation = Vector3(-0.12, 0.45, 0.14)   # 얼굴이 카메라(남쪽) 쪽을 보게
 	add_child(root)
 	_mi(_rbox(Vector3(4.6, 6.4, 4.0), 1.1), stone, Vector3(0, 3.0, 0), Basis(), root)              # 머리
 	_mi(_rbox(Vector3(5.0, 1.0, 4.4), 0.3), stone, Vector3(0, 5.4, 0.1), Basis(), root)            # 머리띠
