@@ -11,7 +11,7 @@ func _ready() -> void:
 		if a.begins_with("--shots-dir="):
 			_dir = a.substr("--shots-dir=".length())
 	DirAccess.make_dir_recursive_absolute(_dir)
-	get_tree().create_timer(240.0, true, false, true).timeout.connect(func() -> void:
+	get_tree().create_timer(400.0, true, false, true).timeout.connect(func() -> void:
 		print("TOUR TIMEOUT")
 		get_tree().quit(2))
 	_run()
@@ -19,6 +19,20 @@ func _ready() -> void:
 
 func _sec(t: float) -> void:
 	await get_tree().create_timer(t, true, false, true).timeout
+
+
+## 화면 전환이 끝날 때까지 기다림 (가상 화면은 느려서 넉넉히)
+func _settle(m: Node, page: String) -> void:
+	var waited := 0.0
+	while (m._current != page or m._busy) and waited < 20.0:
+		await get_tree().process_frame
+		waited += get_process_delta_time()
+	await _sec(2.5)
+
+
+func _idle(m: Node) -> void:
+	while m._busy:
+		await get_tree().process_frame
 
 
 func _shot(shot_name: String) -> void:
@@ -43,46 +57,51 @@ func _run() -> void:
 	while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
 		await get_tree().process_frame
 	var m: Node = get_tree().current_scene
-	await _sec(3.0)
+	await _sec(7.0)
 	await _shot("01_main")
 
+	await _idle(m)
 	m._show_page("mode")
-	await _sec(1.5)
+	await _settle(m, "mode")
 	await _shot("02_mode")
 
+	await _idle(m)
 	m._open_lobby(0)
-	await _sec(1.0)
+	await _settle(m, "lobby")
 	m._lobby_add_cpu(1)
 	m._lobby_add_cpu(2)
-	await _sec(1.5)
+	await _sec(1.0)
 	await _shot("03_lobby")
 
+	await _idle(m)
 	m._lobby_customize()
-	await _sec(1.0)
+	await _settle(m, "customize")
 	m._select_cz_tab(1)
 	m._on_item_pressed("hat", "crown")
 	await _sec(1.5)
 	await _shot("04_customize")
+	await _idle(m)
 	m._go_back()
-	await _sec(1.0)
+	await _settle(m, "lobby")
 
 	m._on_lobby_start()
-	await _sec(2.0)
+	await _settle(m, "board")
 	await _shot("05_board_select")
 	m._select_board(1)
-	await _sec(1.5)
+	await _sec(2.0)
 	await _shot("06_board_select_locked")
 	m._select_board(0)
 	await _sec(0.5)
+	await _idle(m)
 	m._go_back()
-	await _sec(1.0)
+	await _settle(m, "lobby")
 	m._go_back()
-	await _sec(1.0)
+	await _settle(m, "mode")
 	m._go_back()
-	await _sec(1.0)
+	await _settle(m, "main")
 
 	m._show_page("settings")
-	await _sec(1.5)
+	await _settle(m, "settings")
 	await _shot("07_settings")
 
 	print("TOUR DONE")
