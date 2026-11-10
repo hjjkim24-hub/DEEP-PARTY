@@ -53,9 +53,9 @@ func _draw() -> void:
 		var c := origin + draw_size * Vector2(0.5, 0.55)
 		var r := maxf(draw_size.x, draw_size.y) * 0.62
 		draw_set_transform(c, 0.0, Vector2(1.0, 0.72))
-		for i in 12:
-			var f := 1.0 - float(i) / 12.0 * 0.62
-			draw_circle(Vector2.ZERO, r * f, Color(0.0, 0.07, 0.06, 0.07))
+		for i in 48:
+			var f := 1.0 - float(i) / 48.0 * 0.7
+			draw_circle(Vector2.ZERO, r * f, Color(0.0, 0.07, 0.06, 0.02))
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 	# 그림자: 상자가 뜰수록 연하고 넓게
