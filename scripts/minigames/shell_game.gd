@@ -68,7 +68,7 @@ func _next_round() -> void:
 	var n: int = cfg["shells"]
 	_shells = []
 	for k in n:
-		_shells.append({"x": _slot_x(k, n), "lift": 1.0, "pos": k})
+		_shells.append({"x": _slot_x(k, n), "lift": 0.0, "pos": k})
 	_pearl = rng.randi() % n
 	_swaps_left = cfg["swaps"]
 	_picks = {}
@@ -82,10 +82,11 @@ func _tick(delta: float) -> void:
 	var cfg: Dictionary = ROUNDS[mini(_round, ROUNDS.size() - 1)]
 	match _phase:
 		"show":
-			if _t > 1.3:
-				for s in _shells:
-					s["lift"] = maxf(0.0, 1.0 - (_t - 1.3) / 0.3)
-				if _t > 1.65:
+			# 들어 올려 진주 보여주기 → 잠깐 → 닫기
+			var lift := clampf(_t / 0.3, 0.0, 1.0) if _t < 1.9 else maxf(0.0, 1.0 - (_t - 1.9) / 0.3)
+			for s in _shells:
+				s["lift"] = lift
+			if _t > 2.25:
 					Audio.play("tick")
 					_phase = "shuffle"
 					_t = 0.0
