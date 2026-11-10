@@ -1114,17 +1114,6 @@ func _card_popup(c: Dictionary) -> void:
 	head.add_theme_color_override("font_color", Color("c9821c"))
 	fv.add_child(head)
 	var id := String(c["id"])
-	var ic := TextureRect.new()
-	var tex := _card_icon(id)
-	if id == "roll_again":
-		var at := AtlasTexture.new()
-		at.atlas = tex
-		at.region = Rect2(256 * 2, 0, 256, 256)
-		tex = at
-	ic.texture = tex
-	ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	ic.custom_minimum_size = Vector2(110, 110)
 	if id in ["warp", "trophy_minigame", "lucky_spaces", "trap_spaces"]:
 		var kinds := {"warp": "portal", "trophy_minigame": "minigame", "lucky_spaces": "coin_plus", "trap_spaces": "coin_minus"}
 		var kind: String = kinds[id]
@@ -1132,6 +1121,14 @@ func _card_popup(c: Dictionary) -> void:
 		sw.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		fv.add_child(sw)
 	else:
+		var tex := _card_icon(id)
+		if id == "roll_again":
+			var at := AtlasTexture.new()
+			at.atlas = tex
+			at.region = Rect2(256 * 2, 0, 256, 256)
+			tex = at
+		var ic := _icon(tex, 110)
+		ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		fv.add_child(ic)
 	var t1 := Label.new()
 	t1.text = c["title"]
