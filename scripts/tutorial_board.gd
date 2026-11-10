@@ -18,7 +18,7 @@ const MAIN_MENU := "res://scenes/main_menu.tscn"
 const PEARL := Color("eafffa")
 const AQUA := Color("7ff0db")
 const DEEP := Color("05302c")
-const PAWN_H := 150.0          ## 세상 안에서 말 키 (월드 좌표)
+const PAWN_H := 140.0          ## 세상 안에서 말 키 (월드 좌표)
 const ZOOM_IN := 1.0
 const ZOOM_MAX := 1.4
 
@@ -148,7 +148,7 @@ func _setup_pawns() -> void:
 	if _pawns.is_empty():
 		_pawns.append({"slot": 0, "name": "You", "color": GameState.PALETTE[0], "look": {}, "pos": Vector2.ZERO, "drop": 99999.0})
 	# START 광장 위에 나란히
-	var offs := [Vector2(-62, -18), Vector2(62, -18), Vector2(-100, 30), Vector2(100, 30)]
+	var offs := [Vector2(-58, -22), Vector2(58, -22), Vector2(-58, 40), Vector2(58, 40)]
 	if _pawns.size() == 1:
 		offs = [Vector2(0, 0)]
 	for i in _pawns.size():
