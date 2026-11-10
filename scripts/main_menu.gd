@@ -147,7 +147,6 @@ var _fade: ColorRect
 
 func _ready() -> void:
 	_build_theme()
-	Audio.play_music()
 
 	_bg = BackgroundScene.instantiate()
 	add_child(_bg)
@@ -1805,6 +1804,10 @@ func _tween_scale(b: Control, target: float, time: float) -> void:
 func _play_intro() -> void:
 	_busy = true
 	_current = "main"
+	# 화면을 다 만든 뒤 첫 프레임이 실제로 그려질 때까지 기다렸다가, 화면이 밝아지는 순간 노래 시작
+	await get_tree().process_frame
+	await get_tree().process_frame
+	Audio.play_music()
 	create_tween().tween_property(_fade, "color:a", 0.0, 0.9)
 	_logo.play_intro()
 	for i in _main_buttons.size():

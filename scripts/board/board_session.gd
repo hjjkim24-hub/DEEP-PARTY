@@ -134,7 +134,6 @@ func _ready() -> void:
 	add_child(_camera)
 	_camera.make_current()
 	_build_ui()
-	Audio.play_music()
 	_intro()
 
 
@@ -1987,6 +1986,9 @@ func _intro() -> void:
 	_focus = Vector3(0, 0, 2.0)
 	_zoom = ZOOM_MAX * 1.1
 	_apply_camera()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	Audio.play_music()   # 보드가 나타나는 순간 처음부터
 	var t := create_tween()
 	t.tween_property(_fade, "color:a", 0.0, 0.7)
 	t.parallel().tween_property(_title, "modulate:a", 1.0, 0.7)

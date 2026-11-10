@@ -22,6 +22,7 @@ const PITCH_JITTER := {"hover": 0.08, "click": 0.05, "tick": 0.06, "bubbles": 0.
 const MIN_INTERVAL_MS := 40
 const VOICES := 10
 const MUSIC_DB := -4.0
+var _stopping := false
 
 var _streams := {}
 var _players: Array[AudioStreamPlayer] = []
@@ -71,25 +72,39 @@ func play(sfx_name: String, min_interval_ms: int = MIN_INTERVAL_MS) -> void:
 	p.play()
 
 
-func play_music(fade_time: float = 2.0) -> void:
-	if _music.playing:
+## 배경음악: 화면이 나타나는 순간 불러서 첫 박부터 들리게 (fade_time 0 = 바로 제 소리)
+func play_music(fade_time: float = 0.0) -> void:
+	if _music.playing and not _stopping:
 		return
+	_stopping = false
+	if _music_tween:
+		_music_tween.kill()
 	var stream := load(MUSIC_PATH) as AudioStreamOggVorbis
 	if stream == null:
 		return
 	stream.loop = true
+	_music.stop()
 	_music.stream = stream
-	_music.volume_db = -40.0
-	_music.play()
-	_fade_music(MUSIC_DB, fade_time)
+	if fade_time <= 0.05:
+		_music.volume_db = MUSIC_DB
+		_music.play()
+	else:
+		_music.volume_db = -40.0
+		_music.play()
+		_fade_music(MUSIC_DB, fade_time)
 
 
 func stop_music(fade_time: float = 0.6) -> void:
 	if not _music.playing:
 		return
+	_stopping = true
 	_fade_music(-40.0, fade_time)
-	await _music_tween.finished
-	_music.stop()
+	var tw := _music_tween
+	await tw.finished
+	# 끄는 동안 다른 화면에서 다시 틀었으면 끄지 않음
+	if _stopping and tw == _music_tween:
+		_music.stop()
+		_stopping = false
 
 
 func _fade_music(target_db: float, time: float) -> void:
