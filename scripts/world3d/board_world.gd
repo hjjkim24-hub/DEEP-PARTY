@@ -95,6 +95,8 @@ var _blocked: Array = []      ## 장식을 놓지 않을 자리 [Vector2 중심,
 var _blocked_grid := {}
 var _spinners: Array = []     ## 빙글빙글 도는 찬스 카드 {node, base_y, phase}
 var _portal_fx: Array = []    ## 포탈 고리 {node, mat, light, phase}
+var _rotors: Array = []       ## 빙글빙글 도는 것 [Node3D, 속도] (등대 불빛 …)
+var _glows: Array = []        ## 깜빡이며 빛나는 재질 [재질, 기본 세기, 위상]
 var _jellies: Array = []      ## 해파리 {node, base, phase}
 var trophy_tile := -1         ## 트로피가 떠 있는 칸 (-1 = 없음)
 var _trophy_node: Node3D
@@ -768,6 +770,26 @@ func _landmarks() -> void:
 				_whale(lm["at"], lm["dir"])
 			"clam":
 				_giant_clam(lm["at"])
+			"village":
+				_village(lm["at"])
+			"lighthouse":
+				_lighthouse(lm["at"])
+			"colossus":
+				_colossus(lm["at"])
+			"hand":
+				_giant_hand(lm["at"])
+			"crystals":
+				_crystals(lm["at"])
+			"vents":
+				_vents(lm["at"])
+			"trident":
+				_trident(lm["at"])
+			"anchor":
+				_anchor(lm["at"])
+			"cargo":
+				_cargo(lm["at"])
+			"obelisk":
+				_obelisk(lm["at"])
 
 
 # ── 맵 볼거리: 신전 · 문 · 난파선 · 고래 뼈 · 거대 조개 ─────────
@@ -1071,6 +1093,392 @@ func _giant_clam(at: Vector2) -> void:
 	add_child(l)
 	bubbles_at(p + Vector3(0, 0.8, 0), 10, 0.4)
 	_block(Vector2(p.x, p.z), 3.0)
+
+
+# ── 더 많은 볼거리 (가라앉은 섬) ─────────────────────────────
+func _glow_mat(c: Color, energy: float) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = c
+	m.emission_enabled = true
+	m.emission = c
+	m.emission_energy_multiplier = energy
+	m.roughness = 0.2
+	_glows.append([m, energy, _rng.randf() * TAU])
+	return m
+
+
+func _light(p: Vector3, c: Color, energy: float, rng_: float) -> void:
+	var l := OmniLight3D.new()
+	l.light_color = c
+	l.light_energy = energy
+	l.omni_range = rng_
+	l.position = p
+	add_child(l)
+
+
+## 무너진 바닷속 마을: 돌집 몇 채 + 우물 + 낮은 돌담
+func _village(at: Vector2) -> void:
+	var stone := _mat(Color(0.82, 0.78, 0.68), 0.75)
+	var stone2 := _mat(Color(0.7, 0.68, 0.6), 0.8)
+	var roof := _mat(Color(0.78, 0.38, 0.26), 0.7)
+	var dark := _mat(Color(0.05, 0.07, 0.08), 1.0)
+	var moss := _mat(Color(0.32, 0.56, 0.38), 0.9)
+	# 우물
+	var wp := _find_free(at.x, at.y, 1.4, 1.0)
+	if wp.x != INF:
+		var ring := _cyl(1.0, 1.05, 0.9, 20)
+		ring.cap_top = false
+		var rm := stone.duplicate() as StandardMaterial3D
+		rm.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_mi(ring, rm, wp + Vector3(0, 0.45, 0))
+		_mi(_cyl(0.9, 0.9, 0.05, 20), _glow_mat(Color(0.25, 0.85, 0.8), 1.2), wp + Vector3(0, 0.6, 0))
+		for sd: float in [-1.0, 1.0]:
+			_mi(_box(Vector3(0.16, 2.0, 0.16)), _mat(Color(0.45, 0.3, 0.18), 0.8), wp + Vector3(sd * 0.95, 1.0, 0))
+		_mi(_box(Vector3(2.4, 0.12, 1.2)), roof, wp + Vector3(0, 2.05, 0), Basis(Vector3(1, 0, 0), 0.15))
+		_block(Vector2(wp.x, wp.z), 1.6)
+	# 돌집
+	for k in 6:
+		var a := TAU * k / 6.0 + 0.4
+		var hp := _find_free(at.x + cos(a) * 5.5, at.y + sin(a) * 5.5, 1.9, 1.5)
+		if hp.x == INF:
+			continue
+		var face := atan2(at.x - hp.x, at.y - hp.z)   # 문이 마을 가운데를 보게
+		var b := Basis(Vector3.UP, face)
+		var round_ := k % 2 == 0
+		var wall_h := _rng.randf_range(1.8, 2.6)
+		var broken := k % 3 == 1
+		if round_:
+			var wall := _cyl(1.45, 1.55, wall_h, 18)
+			_mi(wall, stone, hp + Vector3(0, wall_h * 0.5, 0), b)
+		else:
+			_mi(_rbox(Vector3(2.8, wall_h, 2.6), 0.12), stone, hp + Vector3(0, wall_h * 0.5, 0), b)
+		# 문 · 창문
+		_mi(_rbox(Vector3(0.8, 1.3, 0.2), 0.08), dark, hp + b * Vector3(0, 0.65, 1.4), b)
+		for sd: float in [-1.0, 1.0]:
+			_mi(_box(Vector3(0.12, 0.45, 0.45)), dark, hp + b * Vector3(sd * 1.42, wall_h * 0.62, 0), b)
+		# 지붕 (몇 채는 무너짐)
+		if broken:
+			for q in 4:
+				var rp := hp + b * Vector3(_rng.randf_range(-1.6, 1.6), 0.15, _rng.randf_range(1.8, 2.6))
+				_mi(_box(Vector3(0.5, 0.3, 0.4)), stone2, rp, Basis(Vector3.UP, _rng.randf() * TAU))
+			_mi(_cyl(0.0, 1.0, 0.9, 12), roof, hp + Vector3(1.6, 0.35, -1.4), Basis(Vector3(0, 0, 1), 1.9))
+		elif round_:
+			_mi(_cyl(0.0, 1.85, 1.5, 18), roof, hp + Vector3(0, wall_h + 0.75, 0))
+			_mi(_cyl(1.6, 1.6, 0.06, 18), moss, hp + Vector3(0, wall_h + 0.03, 0))
+		else:
+			for sd: float in [-1.0, 1.0]:
+				_mi(_box(Vector3(3.1, 0.14, 1.75)), roof, hp + b * Vector3(0, wall_h + 0.55, sd * 0.68), b * Basis(Vector3(1, 0, 0), -sd * 0.62))
+			_mi(_box(Vector3(0.6, 0.9, 0.6)), stone2, hp + b * Vector3(0.8, wall_h + 0.8, -0.5), b)   # 굴뚝
+		_block(Vector2(hp.x, hp.z), 2.3)
+	# 마을을 두른 낮은 돌담 (군데군데 무너짐)
+	for k in 26:
+		var a := TAU * k / 26.0
+		var x := at.x + cos(a) * 9.0
+		var z := at.y + sin(a) * 8.0
+		if _rng.randf() < 0.3 or not _free_spot(x, z, 0.5):
+			continue
+		var hgt := _rng.randf_range(0.35, 1.1)
+		_mi(_rbox(Vector3(1.9, hgt, 0.6), 0.08), stone2, Vector3(x, ground_height(x, z) + hgt * 0.5, z), Basis(Vector3.UP, -a))
+		_block(Vector2(x, z), 0.8)
+
+
+## 기울어진 등대 + 빙글빙글 도는 불빛
+func _lighthouse(at: Vector2) -> void:
+	var p := _find_free(at.x, at.y, 2.6, 1.5)
+	if p.x == INF:
+		return
+	_rock(p + Vector3(0, -0.6, 0), 3.0)
+	var root := Node3D.new()
+	root.position = p + Vector3(0, 0.6, 0)
+	root.rotation = Vector3(0.07, 0.4, -0.05)
+	add_child(root)
+	var white := _mat(Color(0.95, 0.94, 0.9), 0.5)
+	var red := _mat(Color(0.82, 0.18, 0.2), 0.5)
+	var dark := _mat(Color(0.12, 0.14, 0.16), 0.4, 0.5)
+	var h := 0.0
+	var r := 1.7
+	for k in 7:
+		var seg_h := 1.6
+		_mi(_cyl(r - 0.12, r, seg_h, 20), red if k % 2 == 1 else white, Vector3(0, h + seg_h * 0.5, 0), Basis(), root)
+		h += seg_h
+		r -= 0.12
+	# 창문
+	for k in 3:
+		_mi(_rbox(Vector3(0.35, 0.6, 0.15), 0.05), dark, Vector3(0, 2.4 + k * 3.2, 1.62 - k * 0.38), Basis(), root)
+	# 발코니 + 난간
+	_mi(_cyl(r + 0.5, r + 0.3, 0.2, 20), dark, Vector3(0, h + 0.1, 0), Basis(), root)
+	for k in 14:
+		var a := TAU * k / 14.0
+		_mi(_cyl(0.03, 0.03, 0.6, 6), dark, Vector3(cos(a) * (r + 0.42), h + 0.5, sin(a) * (r + 0.42)), Basis(), root)
+	_mi(_torus_mesh(r + 0.42, 0.04), dark, Vector3(0, h + 0.8, 0), Basis(), root)
+	# 등불 방
+	var glass := StandardMaterial3D.new()
+	glass.albedo_color = Color(1.0, 0.95, 0.7, 0.5)
+	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.emission_enabled = true
+	glass.emission = Color(1.0, 0.9, 0.55)
+	glass.emission_energy_multiplier = 2.2
+	_mi(_cyl(r * 0.75, r * 0.75, 1.4, 16), glass, Vector3(0, h + 0.9, 0), Basis(), root)
+	_mi(_cyl(0.0, r * 0.95, 1.0, 16), red, Vector3(0, h + 2.1, 0), Basis(), root)
+	var ball := SphereMesh.new()
+	ball.radius = 0.22
+	ball.height = 0.44
+	_mi(ball, _mat(Color(1.0, 0.8, 0.3), 0.2, 0.9), Vector3(0, h + 2.7, 0), Basis(), root)
+	var lamp := OmniLight3D.new()
+	lamp.light_color = Color(1.0, 0.9, 0.6)
+	lamp.light_energy = 3.0
+	lamp.omni_range = 14.0
+	lamp.position = Vector3(0, h + 0.9, 0)
+	root.add_child(lamp)
+	# 도는 불빛 (양쪽으로 뻗는 빛기둥)
+	var rot := Node3D.new()
+	rot.position = Vector3(0, h + 0.9, 0)
+	root.add_child(rot)
+	var beam_m := StandardMaterial3D.new()
+	beam_m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	beam_m.albedo_color = Color(1.0, 0.95, 0.7, 0.13)
+	beam_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	beam_m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	beam_m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	for sd: float in [-1.0, 1.0]:
+		var beam := _cyl(0.25, 2.2, 16.0, 16)
+		beam.cap_top = false
+		beam.cap_bottom = false
+		var bm := _mi(beam, beam_m, Vector3(sd * 8.2, 0, 0), Basis(Vector3(0, 0, 1), sd * PI / 2), rot)
+		bm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_rotors.append([rot, 0.7])
+	_block(Vector2(p.x, p.z), 3.6)
+
+
+func _torus_mesh(ring_r: float, tube_r: float) -> TorusMesh:
+	var t := TorusMesh.new()
+	t.inner_radius = ring_r - tube_r
+	t.outer_radius = ring_r + tube_r
+	t.rings = 32
+	t.ring_segments = 8
+	return t
+
+
+## 모래에 반쯤 묻힌 거대한 석상 머리 (눈이 에메랄드로 빛남)
+func _colossus(at: Vector2) -> void:
+	var p := _find_free(at.x, at.y, 3.6, 1.5)
+	if p.x == INF:
+		return
+	var stone := _mat(Color(0.66, 0.66, 0.6), 0.85)
+	var moss := _mat(Color(0.3, 0.52, 0.36), 0.95)
+	var root := Node3D.new()
+	root.position = p + Vector3(0, -0.4, 0)
+	root.rotation = Vector3(-0.12, atan2(-p.x, -p.z), 0.18)   # 섬 가운데를 바라봄
+	add_child(root)
+	_mi(_rbox(Vector3(4.6, 6.4, 4.0), 1.1), stone, Vector3(0, 3.0, 0), Basis(), root)              # 머리
+	_mi(_rbox(Vector3(5.0, 1.0, 4.4), 0.3), stone, Vector3(0, 5.4, 0.1), Basis(), root)            # 머리띠
+	_mi(_rbox(Vector3(4.8, 0.9, 1.2), 0.3), stone, Vector3(0, 4.3, 1.8), Basis(), root)            # 이마
+	_mi(_rbox(Vector3(1.0, 2.2, 1.2), 0.3), stone, Vector3(0, 3.0, 2.2), Basis(Vector3(1, 0, 0), -0.12), root)   # 코
+	_mi(_rbox(Vector3(2.6, 0.35, 0.5), 0.12), _mat(Color(0.3, 0.3, 0.3), 0.9), Vector3(0, 1.5, 2.0), Basis(), root)   # 입
+	for sd: float in [-1.0, 1.0]:
+		var eye := SphereMesh.new()
+		eye.radius = 0.42
+		eye.height = 0.6
+		_mi(eye, _glow_mat(Color(0.3, 1.0, 0.75), 2.4), Vector3(sd * 1.1, 3.75, 1.86), Basis(), root)
+		_mi(_rbox(Vector3(0.6, 2.4, 1.6), 0.25), stone, Vector3(sd * 2.45, 3.0, 0.2), Basis(), root)   # 귀
+	var cap := SphereMesh.new()
+	cap.radius = 2.4
+	cap.height = 1.4
+	cap.is_hemisphere = true
+	_mi(cap, moss, Vector3(0, 5.9, -0.1), Basis(), root)
+	var gl := OmniLight3D.new()
+	gl.light_color = Color(0.4, 1.0, 0.8)
+	gl.light_energy = 1.5
+	gl.omni_range = 6.0
+	gl.position = Vector3(0, 3.8, 3.0)
+	root.add_child(gl)
+	# 주변에 떨어진 돌덩이
+	for k in 5:
+		var q := _find_free(p.x + _rng.randf_range(-5, 5), p.z + _rng.randf_range(-5, 5), 0.8, 1.0)
+		if q.x != INF:
+			_mi(_rbox(Vector3(_rng.randf_range(0.8, 1.6), _rng.randf_range(0.5, 1.0), _rng.randf_range(0.8, 1.4)), 0.15), stone, q + Vector3(0, 0.3, 0), Basis(Vector3.UP, _rng.randf() * TAU))
+			_block(Vector2(q.x, q.z), 1.0)
+	_block(Vector2(p.x, p.z), 4.2)
+
+
+## 모래에서 솟아오른 거대한 돌 손
+func _giant_hand(at: Vector2) -> void:
+	var p := _find_free(at.x, at.y, 2.2, 1.0)
+	if p.x == INF:
+		return
+	var stone := _mat(Color(0.72, 0.7, 0.64), 0.8)
+	var root := Node3D.new()
+	root.position = p + Vector3(0, -0.3, 0)
+	root.rotation = Vector3(0.0, _rng.randf() * TAU, 0.15)
+	add_child(root)
+	_mi(_cyl(0.85, 1.1, 2.2, 14), stone, Vector3(0, 1.1, 0), Basis(), root)              # 손목
+	_mi(_rbox(Vector3(2.1, 2.0, 1.0), 0.4), stone, Vector3(0, 3.0, 0), Basis(), root)     # 손바닥
+	for k in 4:
+		var x := -0.75 + k * 0.5
+		var ln: float = [1.5, 1.9, 1.8, 1.3][k]
+		var bend := 0.25 + k * 0.08
+		var f1 := Vector3(x, 4.0 + ln * 0.25, 0)
+		_mi(_cyl(0.2, 0.23, ln * 0.55, 10), stone, f1, Basis(Vector3(1, 0, 0), bend * 0.4), root)
+		var tip := f1 + Basis(Vector3(1, 0, 0), bend * 0.4) * Vector3(0, ln * 0.27, 0)
+		_mi(_cyl(0.17, 0.2, ln * 0.5, 10), stone, tip + Basis(Vector3(1, 0, 0), bend) * Vector3(0, ln * 0.24, 0), Basis(Vector3(1, 0, 0), bend), root)
+	_mi(_cyl(0.22, 0.26, 1.3, 10), stone, Vector3(1.25, 3.0, 0.2), Basis(Vector3(0, 0, 1), -0.9), root)   # 엄지
+	# 손바닥 위 빛나는 진주
+	var pearl := SphereMesh.new()
+	pearl.radius = 0.45
+	pearl.height = 0.9
+	_mi(pearl, _glow_mat(Color(0.9, 0.95, 1.0), 1.4), Vector3(0, 3.0, 0.85), Basis(), root)
+	_block(Vector2(p.x, p.z), 2.6)
+
+
+## 빛나는 수정 밭
+func _crystals(at: Vector2) -> void:
+	var cols := [Color(0.35, 0.95, 1.0), Color(0.7, 0.45, 1.0), Color(0.4, 1.0, 0.7)]
+	for c in 7:
+		var cp := _find_free(at.x + _rng.randfn(0.0, 3.5), at.y + _rng.randfn(0.0, 3.5), 1.2, 1.0)
+		if cp.x == INF:
+			continue
+		var col: Color = cols[c % cols.size()]
+		var m := _glow_mat(col, 1.6)
+		m.albedo_color = Color(col, 0.85)
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		var n := _rng.randi_range(4, 7)
+		for k in n:
+			var hgt := _rng.randf_range(0.9, 2.8) * (1.4 if k == 0 else 1.0)
+			var rad := hgt * 0.16
+			var tilt := Basis(Vector3.UP, _rng.randf() * TAU) * Basis(Vector3(1, 0, 0), 0.0 if k == 0 else _rng.randf_range(0.25, 0.7))
+			var base := cp + tilt * Vector3(0, -0.2, 0)
+			_mi(_cyl(rad, rad, hgt, 6), m, base + tilt * Vector3(0, hgt * 0.5, 0), tilt)
+			_mi(_cyl(0.0, rad, hgt * 0.3, 6), m, base + tilt * Vector3(0, hgt + hgt * 0.15, 0), tilt)
+		if c % 2 == 0:
+			_light(cp + Vector3(0, 1.4, 0), col, 1.4, 5.0)
+		_block(Vector2(cp.x, cp.z), 1.5)
+
+
+## 뜨거운 물이 뿜어져 나오는 굴뚝
+func _vents(at: Vector2) -> void:
+	var rock := _mat(Color(0.22, 0.2, 0.2), 0.95)
+	for k in 4:
+		var vp := _find_free(at.x + _rng.randfn(0.0, 2.2), at.y + _rng.randfn(0.0, 2.2), 0.9, 1.0)
+		if vp.x == INF:
+			continue
+		var hgt := _rng.randf_range(1.5, 3.6)
+		var segs := 3
+		for s2 in segs:
+			var f := float(s2) / segs
+			var r0 := lerpf(0.75, 0.3, f)
+			var r1 := lerpf(0.75, 0.3, f + 1.0 / segs)
+			_mi(_cyl(r1, r0, hgt / segs, 10), rock, vp + Vector3(_rng.randf_range(-0.08, 0.08), hgt * (f + 0.5 / segs), _rng.randf_range(-0.08, 0.08)))
+		_mi(_cyl(0.28, 0.28, 0.06, 10), _glow_mat(Color(1.0, 0.5, 0.2), 2.5), vp + Vector3(0, hgt + 0.02, 0))
+		var smoke := bubbles_at(vp + Vector3(0, hgt + 0.2, 0), 26, 0.15)
+		smoke.initial_velocity_min = 1.4
+		smoke.initial_velocity_max = 2.6
+		_block(Vector2(vp.x, vp.z), 1.1)
+	_light(Vector3(at.x, ground_height(at.x, at.y) + 2.0, at.y), Color(1.0, 0.55, 0.25), 1.6, 6.0)
+
+
+## 땅에 꽂힌 거대한 황금 삼지창
+func _trident(at: Vector2) -> void:
+	var p := _find_free(at.x, at.y, 1.2, 1.0)
+	if p.x == INF:
+		return
+	var gold := _mat(Color(1.0, 0.78, 0.3), 0.25, 0.9)
+	var b := Basis(Vector3.UP, 0.6) * Basis(Vector3(0, 0, 1), 0.2)
+	var base := p + Vector3(0, -0.5, 0)
+	_mi(_cyl(0.18, 0.22, 9.0, 12), gold, base + b * Vector3(0, 4.5, 0), b)
+	_mi(_box(Vector3(2.6, 0.3, 0.3)), gold, base + b * Vector3(0, 9.0, 0), b)
+	for x: float in [-1.15, 0.0, 1.15]:
+		var hh := 2.4 if x == 0.0 else 1.9
+		_mi(_cyl(0.13, 0.16, hh, 10), gold, base + b * Vector3(x, 9.0 + hh * 0.5, 0), b)
+		_mi(_cyl(0.0, 0.3, 0.7, 10), gold, base + b * Vector3(x, 9.0 + hh + 0.3, 0), b)
+	var gem := SphereMesh.new()
+	gem.radius = 0.35
+	gem.height = 0.7
+	_mi(gem, _glow_mat(Color(0.3, 1.0, 0.75), 2.2), base + b * Vector3(0, 9.0, 0.2))
+	for k in 4:
+		_rock(p + Vector3(cos(k * 1.6) * 1.0, -0.4, sin(k * 1.6) * 1.0), _rng.randf_range(0.6, 0.9))
+	_block(Vector2(p.x, p.z), 2.0)
+
+
+## 쇠사슬이 달린 거대한 닻 (모래에 누움)
+func _anchor(at: Vector2) -> void:
+	var p := _find_free(at.x, at.y, 2.5, 1.5)
+	if p.x == INF:
+		return
+	var iron := _mat(Color(0.32, 0.3, 0.3), 0.6, 0.6)
+	var rust := _mat(Color(0.55, 0.3, 0.18), 0.85, 0.3)
+	var yaw := _rng.randf() * TAU
+	var root := Node3D.new()
+	root.position = p + Vector3(0, 0.35, 0)
+	root.rotation = Vector3(PI / 2 - 0.15, yaw, 0)   # 눕힘
+	add_child(root)
+	_mi(_cyl(0.28, 0.28, 6.0, 12), iron, Vector3(0, 0, 0), Basis(), root)                   # 몸대
+	_mi(_torus_mesh(0.7, 0.16), rust, Vector3(0, 3.6, 0), Basis(Vector3(1, 0, 0), PI / 2), root)   # 고리
+	_mi(_cyl(0.2, 0.2, 3.2, 10), iron, Vector3(0, 2.6, 0), Basis(Vector3(0, 0, 1), PI / 2), root)   # 가로대
+	for sd: float in [-1.0, 1.0]:
+		_mi(_cyl(0.24, 0.26, 2.6, 10), iron, Vector3(sd * 1.0, -2.6, 0), Basis(Vector3(0, 0, 1), sd * 0.9), root)   # 팔
+		_mi(_rbox(Vector3(0.9, 1.1, 0.2), 0.08), rust, Vector3(sd * 1.95, -1.9, 0), Basis(Vector3(0, 0, 1), sd * 0.5), root)   # 갈고리 날
+	_mi(_cyl(0.0, 0.3, 0.6, 10), iron, Vector3(0, -3.3, 0), Basis(Vector3(1, 0, 0), PI), root)
+	# 쇠사슬
+	var dir := Vector3(cos(yaw + 0.6), 0, sin(yaw + 0.6))
+	var cp := p + Basis(Vector3.UP, yaw) * Vector3(0, 0, 3.8)
+	for k in 16:
+		var q := cp + dir * (k * 0.42) + Vector3(0, 0, sin(k * 0.5) * 0.4)
+		var gy := ground_height(q.x, q.z)
+		var link := _torus_mesh(0.22, 0.06)
+		var lb := Basis(Vector3.UP, atan2(dir.x, dir.z)) * (Basis(Vector3(0, 0, 1), PI / 2) if k % 2 == 0 else Basis())
+		_mi(link, rust, Vector3(q.x, gy + 0.12, q.z), lb * Basis(Vector3(1, 0, 0), PI / 2))
+	_block(Vector2(p.x, p.z), 3.5)
+
+
+## 가라앉은 화물: 대포 · 나무통 · 상자
+func _cargo(at: Vector2) -> void:
+	var wood := _mat(Color(0.5, 0.34, 0.2), 0.8)
+	var dark := _mat(Color(0.3, 0.2, 0.12), 0.85)
+	var iron := _mat(Color(0.18, 0.18, 0.2), 0.45, 0.7)
+	var band := _mat(Color(0.35, 0.33, 0.3), 0.5, 0.6)
+	for k in 3:
+		var cp := _find_free(at.x + _rng.randfn(0.0, 3.0), at.y + _rng.randfn(0.0, 3.0), 1.3, 1.0)
+		if cp.x == INF:
+			continue
+		var b := Basis(Vector3.UP, _rng.randf() * TAU)
+		_mi(_cyl(0.22, 0.36, 2.6, 14), iron, cp + Vector3(0, 0.62, 0) + b * Vector3(0, 0, 0.2), b * Basis(Vector3(1, 0, 0), PI / 2 - 0.15))
+		_mi(_torus_mesh(0.3, 0.07), iron, cp + Vector3(0, 0.75, 0) + b * Vector3(0, 0, 1.45), b)
+		_mi(_rbox(Vector3(1.0, 0.45, 1.4), 0.06), dark, cp + Vector3(0, 0.22, -0.2), b)
+		for sd: float in [-1.0, 1.0]:
+			_mi(_cyl(0.32, 0.32, 0.1, 12), dark, cp + Vector3(0, 0.3, 0) + b * Vector3(sd * 0.55, 0, -0.2), b * Basis(Vector3(0, 0, 1), PI / 2))
+		_block(Vector2(cp.x, cp.z), 1.6)
+	for k in 8:
+		var bp := _find_free(at.x + _rng.randfn(0.0, 3.5), at.y + _rng.randfn(0.0, 3.5), 0.6, 1.0)
+		if bp.x == INF:
+			continue
+		if k % 3 == 0:
+			_mi(_rbox(Vector3(1.1, 1.0, 1.1), 0.06), wood, bp + Vector3(0, 0.5, 0), Basis(Vector3.UP, _rng.randf() * TAU))
+		else:
+			var lying := k % 3 == 1
+			var bb := Basis(Vector3.UP, _rng.randf() * TAU) * (Basis(Vector3(1, 0, 0), PI / 2) if lying else Basis())
+			var c := bp + Vector3(0, 0.45 if lying else 0.6, 0)
+			_mi(_cyl(0.42, 0.42, 1.2, 14), wood, c, bb)
+			for e: float in [-0.35, 0.35]:
+				_mi(_cyl(0.45, 0.45, 0.08, 14), band, c + bb * Vector3(0, e, 0), bb)
+		_block(Vector2(bp.x, bp.z), 0.8)
+
+
+## 금빛 무늬가 빛나는 오벨리스크
+func _obelisk(at: Vector2) -> void:
+	var p := _find_free(at.x, at.y, 1.0, 1.0)
+	if p.x == INF:
+		return
+	var stone := _mat(Color(0.3, 0.34, 0.38), 0.6)
+	var b := Basis(Vector3.UP, PI / 4 + _rng.randf_range(-0.2, 0.2))
+	_mi(_rbox(Vector3(2.0, 0.5, 2.0), 0.08), stone, p + Vector3(0, 0.25, 0), b)
+	_mi(_cyl(0.55, 0.85, 5.5, 4), stone, p + Vector3(0, 0.5 + 2.75, 0), b)
+	_mi(_cyl(0.0, 0.58, 0.9, 4), _mat(Color(1.0, 0.78, 0.3), 0.25, 0.9), p + Vector3(0, 6.0 + 0.45, 0), b)
+	var rune := _glow_mat(Color(0.35, 1.0, 0.8), 1.8)
+	for k in 3:
+		var y := 1.8 + k * 1.4
+		var rr := lerpf(0.85, 0.55, (y - 0.5) / 5.5) + 0.02
+		_mi(_cyl(rr, rr, 0.12, 4), rune, p + Vector3(0, y, 0), b)
+	_block(Vector2(p.x, p.z), 1.5)
 
 
 func _free_spot(x: float, z: float, r: float) -> bool:
@@ -1917,6 +2325,10 @@ func _process(delta: float) -> void:
 		_trophy_node.rotation.y += delta * 1.2
 		var cup := _trophy_node.get_child(0) as Node3D
 		cup.position.y = 2.6 + sin(_time * 2.2) * 0.18
+	for r in _rotors:
+		(r[0] as Node3D).rotation.y += delta * float(r[1])
+	for g in _glows:
+		(g[0] as StandardMaterial3D).emission_energy_multiplier = float(g[1]) * (0.75 + 0.25 * sin(_time * 1.7 + float(g[2])))
 	for j in _jellies:
 		var jn: Node3D = j["node"]
 		var ph: float = j["phase"]
