@@ -1314,29 +1314,29 @@ func _open_shop(p: Dictionary) -> void:
 	_shop_buy = null
 	for k in 3:
 		var x := 105.0 + k * 315.0
-		wall_box.add_child(_tex_rect(SHOP_TEX["slot"], Vector2(x, 70), Vector2(230, 250)))
+		wall_box.add_child(_tex_rect(SHOP_TEX["slot"], Vector2(x, 26), Vector2(230, 236)))
 		var trophy_slot := k == 0 and has_trophy
 		if trophy_slot:
 			var ic := _icon(TROPHY_TEX, 150)
-			ic.position = Vector2(x + 40, 115)
-			ic.size = Vector2(150, 150)
+			ic.position = Vector2(x + 45, 66)
+			ic.size = Vector2(140, 140)
 			wall_box.add_child(ic)
 		else:
 			var q := _outlined_label("?", 96)
 			q.add_theme_color_override("font_color", Color(1.0, 0.88, 0.7, 0.45))
 			q.add_theme_color_override("font_outline_color", Color(0.2, 0.1, 0.04))
-			q.size = Vector2(230, 250)
-			q.position = Vector2(x, 70)
+			q.size = Vector2(230, 236)
+			q.position = Vector2(x, 26)
 			q.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			wall_box.add_child(q)
 		# 가격표
-		var tag := _tex_rect(SHOP_TEX["tag"], Vector2(x + 40, 340), Vector2(150, 64))
+		var tag := _tex_rect(SHOP_TEX["tag"], Vector2(x + 40, 272), Vector2(150, 60))
 		wall_box.add_child(tag)
 		var price := HBoxContainer.new()
 		price.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		price.alignment = BoxContainer.ALIGNMENT_CENTER
-		price.position = Vector2(x + 82, 340)
-		price.size = Vector2(100, 64)
+		price.position = Vector2(x + 82, 272)
+		price.size = Vector2(100, 60)
 		price.add_theme_constant_override("separation", 6)
 		wall_box.add_child(price)
 		var pl := Label.new()
@@ -1349,8 +1349,8 @@ func _open_shop(p: Dictionary) -> void:
 		pl.add_theme_color_override("font_color", Color(0.42, 0.24, 0.1))
 		price.add_child(pl)
 		if trophy_slot:
-			var buy := _wood_button("BUY", Vector2(190, 66))
-			buy.position = Vector2(x + 20, 430)
+			var buy := _wood_button("BUY", Vector2(190, 62))
+			buy.position = Vector2(x + 20, 344)
 			buy.disabled = int(p["coins"]) < Rules.SHOP_TROPHY_PRICE
 			wall_box.add_child(buy)
 			_shop_buy = buy
