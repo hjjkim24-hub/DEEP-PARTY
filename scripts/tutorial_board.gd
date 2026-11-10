@@ -471,9 +471,11 @@ func _play_turn(p: Dictionary, rig: int = 0, forced: Dictionary = {}) -> void:
 	_dice_hit = false
 	_highlight_chip(p)
 	await _turn_banner(p)
-	focus_on(p, 0.8)
-	await get_tree().create_timer(0.85).timeout
 	var node: Node3D = p["node"]
+	# 말과 머리 위 주사위가 같이 잘 보이게
+	_follow = null
+	_move_camera(node.position + Vector3(0, 1.3, 0), 1.25, 0.8)
+	await get_tree().create_timer(0.85).timeout
 	_dice.show_at(node.position + Vector3(0, DICE_H, 0))
 	if p["cpu"]:
 		await get_tree().create_timer(1.0).timeout

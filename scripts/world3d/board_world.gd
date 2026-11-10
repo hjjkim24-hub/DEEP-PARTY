@@ -48,7 +48,7 @@ const CHANCE_CARD_TEX := preload("res://textures/tiles/card_chance.png")
 const TILE_COLORS := {
 	"plain": Color(0.84, 0.82, 0.72), "chance": Color(0.98, 0.72, 0.2), "minigame": Color(0.26, 0.58, 0.9),
 	"portal": Color(0.58, 0.38, 0.92), "shop": Color(0.94, 0.43, 0.56),
-	"junction": Color(0.86, 0.88, 0.83), "start": Color(0.84, 0.86, 0.8),
+	"junction": Color(0.8, 0.82, 0.77), "start": Color(0.7, 0.72, 0.66),
 }
 const INK_COLORS := {
 	"plain": Color(1, 1, 1), "chance": Color(1.0, 0.98, 0.9), "minigame": Color(0.95, 0.98, 1.0),
@@ -315,7 +315,7 @@ func _environment() -> void:
 	env.ambient_light_color = Color(0.3, 0.6, 0.6)
 	env.ambient_light_energy = 0.5
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 0.95
+	env.tonemap_exposure = 0.88
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.05, 0.3, 0.33)
 	env.fog_density = 0.012
@@ -453,7 +453,7 @@ func _tiles() -> void:
 		var kind: String = sp["kind"]
 		var b := Basis(Vector3.UP, sp["yaw"])
 		if kind == "start":
-			_mi(_rbox(Vector3(PLAZA, 0.5, PLAZA), 0.22), _mat(Color(0.93, 0.91, 0.84), 0.3), base + Vector3(0, 0.25, 0), b)
+			_mi(_rbox(Vector3(PLAZA, 0.5, PLAZA), 0.22), _mat(Color(0.74, 0.72, 0.64), 0.5), base + Vector3(0, 0.25, 0), b)
 			_mi(_rbox(Vector3(PLAZA + 0.6, 0.2, PLAZA + 0.6), 0.08), foot_m, base + Vector3(0, 0.1, 0), b)
 			var top := PlaneMesh.new()
 			top.size = Vector2(PLAZA - 0.5, PLAZA - 0.5)
@@ -486,10 +486,10 @@ func _tiles() -> void:
 func _connectors() -> void:
 	var cobble := _mat(Color(0.84, 0.8, 0.67), 0.85)
 	var step_m := _mat(Color(0.88, 0.85, 0.74), 0.6)
-	var pebble_cols := [Color(0.98, 0.95, 0.88), Color(0.98, 0.8, 0.74), Color(0.74, 0.92, 0.9), Color(0.85, 0.8, 0.95)]
+	var pebble_cols := [Color(0.82, 0.78, 0.7), Color(0.9, 0.7, 0.64), Color(0.62, 0.8, 0.78), Color(0.74, 0.68, 0.84)]
 	var pebble := SphereMesh.new()
-	pebble.radius = 0.17
-	pebble.height = 0.16
+	pebble.radius = 0.13
+	pebble.height = 0.12
 	pebble.radial_segments = 12
 	pebble.rings = 6
 	var wood := _mat(Color(0.48, 0.33, 0.2), 0.8)
@@ -541,7 +541,7 @@ func _connectors() -> void:
 			for s in int(glen / 0.42):
 				var f := (float(s) + 0.5) / int(glen / 0.42)
 				var pp := p0.lerp(p1, f)
-				for side in [-0.66, 0.66]:
+				for side in [-0.7, 0.7]:
 					var off: Vector3 = bas.x * (side + _rng.randf_range(-0.04, 0.04))
 					var pm := _mat(pebble_cols[_rng.randi() % pebble_cols.size()], 0.35)
 					var mi := _mi(pebble, pm, Vector3(pp.x + off.x, y + 0.04, pp.z + off.z))

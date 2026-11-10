@@ -287,7 +287,9 @@ func _update_target(snap: bool) -> void:
 	_quad_rect.visible = false
 	var target: Control = null
 	if st.has("target"):
-		target = (st["target"] as Callable).call()
+		var got = (st["target"] as Callable).call()
+		if is_instance_valid(got):
+			target = got
 	if target and target.is_visible_in_tree():
 		var pad: float = st.get("pad", 12.0)
 		var r := target.get_global_rect().grow(pad)
