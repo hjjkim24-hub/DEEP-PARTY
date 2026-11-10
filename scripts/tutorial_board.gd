@@ -304,6 +304,7 @@ func _build_ui() -> void:
 	_dice_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	dv.add_child(_dice_label)
 	_set_dice_state(false, "Wait for your turn")
+	_dice_panel.visible = false   # 규칙이 정해지면 켜요
 
 	_fade = ColorRect.new()
 	_fade.color = Color.BLACK
@@ -462,6 +463,8 @@ func _start_tutorial() -> void:
 	_overlay.start(_steps())
 
 
+## 규칙은 나중에 정해지면 여기에 단계를 추가해요. 지금은 입장까지만.
+## (주사위·말 이동 코드는 아래에 준비돼 있어요: _begin_player_turn, _move, _run_cpu_turns)
 func _steps() -> Array:
 	return [
 		{
@@ -470,32 +473,7 @@ func _steps() -> Array:
 			"pad": 20.0,
 		},
 		{
-			"text": "Players take turns one by one. The highlighted name shows whose turn it is.",
-			"target": func() -> Control: return _turn_bar,
-			"enter": func() -> void: _set_turn(_player_index()),
-		},
-		{
-			"text": "On your turn, roll the dice and move forward that many spaces. Click the dice!",
-			"target": func() -> Control: return _dice_panel,
-			"enter": func() -> void: _begin_player_turn(),
-			"until": func() -> bool: return _player_moved and not _busy,
-			"auto": func() -> void: _dice.roll(),
-		},
-		{
-			"text": "Nice roll! Your pawn hopped forward one space for each dot on the dice.",
-			"target": func() -> Control: return _markers[int(_pawns[_player_index()]["tile"])],
-			"pad": 30.0,
-		},
-		{
-			"text": "Now the other players take their turns. Watch them go!",
-			"enter": func() -> void: _run_cpu_turns(),
-			"until": func() -> bool: return _cpus_done,
-		},
-		{
-			"text": "When everyone has moved, the round is over. In a real game a minigame starts after every round, and winning minigames helps you get ahead!",
-		},
-		{
-			"text": "That's the basics of DEEP PARTY! More rules will be added to this tutorial as the game grows. Have fun!",
+			"text": "The rules of the board game will be explained here soon. Stay tuned!",
 		},
 	]
 

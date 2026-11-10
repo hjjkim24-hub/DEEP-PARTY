@@ -143,7 +143,7 @@ func _run() -> void:
 	var tb: Node = get_tree().current_scene
 	while tb._overlay == null:
 		await get_tree().process_frame
-	await _drive(tb._overlay, {0: "15_board_start", 2: "16_board_dice", 3: "17_board_moved", 5: "18_board_round"})
+	await _drive(tb._overlay, {0: "15_board_start", 1: "16_board_rules_soon"})
 	await _sec(0.6)
 	await _shot("19_tutorial_complete")
 	while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":

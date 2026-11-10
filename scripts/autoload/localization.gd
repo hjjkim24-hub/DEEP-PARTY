@@ -177,6 +177,7 @@ const KO := {
 	"When everyone has moved, the round is over. In a real game a minigame starts after every round, and winning minigames helps you get ahead!": "모두 움직이면 한 라운드가 끝나요. 실제 게임에서는 라운드마다 미니게임이 열리고, 미니게임에서 이기면 앞서 나갈 수 있어요!",
 	"That's the basics of DEEP PARTY! More rules will be added to this tutorial as the game grows. Have fun!": "이게 DEEP PARTY의 기본이에요! 게임이 커지면 튜토리얼에 규칙이 더 추가될 거예요. 즐거운 파티 되세요!",
 	"TUTORIAL COMPLETE!": "튜토리얼 완료!",
+	"The rules of the board game will be explained here soon. Stay tuned!": "보드게임 규칙은 곧 여기서 알려 줄게요. 조금만 기다려 주세요!",
 }
 
 
