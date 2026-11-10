@@ -164,7 +164,12 @@ func _node_at(p: Vector3, kind: String, yaw: float) -> int:
 func _build_spaces() -> void:
 	_node_at(start_pos, "start", 0.0)
 	var fill: Array = cfg["fill"]
-	for r in cfg["routes"]:
+	var routes: Array = cfg["routes"]
+	for ri in routes.size():
+		var r: Dictionary = routes[ri]
+		var style: String = r.get("style", "")
+		var rough := style == "rough"
+		var wig: float = r.get("wiggle", 0.0)
 		var kinds: Array = r.get("tiles", [])
 		var k := 0
 		var curve := _catmull(r["pts"], 24)
@@ -179,6 +184,8 @@ func _build_spaces() -> void:
 		var ids := []
 		for j in n + 1:
 			var d := total * j / n
+			if rough and j != 0 and j != n:
+				d += (_hash(ri, j, 1) - 0.5) * 0.9      # 험한 길은 간격도 들쭉날쭉
 			var idx := 0
 			while idx < cum.size() - 2 and cum[idx + 1] < d:
 				idx += 1
@@ -193,6 +200,18 @@ func _build_spaces() -> void:
 				p = r["pts"][r["pts"].size() - 1]
 			elif Vector2(p.x - start_pos.x, p.z - start_pos.z).length() < PLAZA * 0.5 + 1.9:
 				continue
+			else:
+				# 길 모양 흔들기 (구불구불 · 험한 길)
+				var side := Vector3(dir.z, 0, -dir.x).normalized()
+				var off := 0.0
+				var dy := 0.0
+				if wig > 0.0:
+					off = wig * sin(j * 1.9 + ri)
+				if rough:
+					off = (_hash(ri, j, 2) - 0.5) * 1.4
+					dy = _hash(ri, j, 3) * 1.1 - 0.2
+					yaw += (_hash(ri, j, 4) - 0.5) * 0.7
+				p += side * off + Vector3(0, dy, 0)
 			# 배 갑판 위 칸은 갑판 높이에 딱 맞춤 (곡선이 살짝 출렁여도)
 			if r.get("deck", false) and j != 0 and j != n:
 				var dh := 0.0
@@ -202,7 +221,7 @@ func _build_spaces() -> void:
 					p.y = dh
 			var kind := "space"
 			if j != 0 and j != n:
-				kind = kinds[k] if k < kinds.size() else fill[(k + cfg["routes"].find(r) * 3) % fill.size()]
+				kind = kinds[k] if k < kinds.size() else fill[(k + ri * 3) % fill.size()]
 				k += 1
 			elif j == n and r.has("end"):
 				kind = r["end"]
@@ -211,6 +230,8 @@ func _build_spaces() -> void:
 				spaces[id]["bridge"] = true
 			if r.get("deck", false) and p.y > 1.0:
 				spaces[id]["deck"] = true
+			if rough and j != 0 and j != n:
+				spaces[id]["rough"] = true
 			ids.append(id)
 		for j in ids.size() - 1:
 			var a: int = ids[j]
@@ -261,6 +282,11 @@ func _build_spaces() -> void:
 	for i in range(0, loose.size() - 1, 2):
 		spaces[loose[i]]["partner"] = loose[i + 1]
 		spaces[loose[i + 1]]["partner"] = loose[i]
+
+
+## 늘 같은 값이 나오는 0~1 난수 (맵 모양이 매번 같도록)
+func _hash(a: int, b: int, k: int) -> float:
+	return fposmod(sin(a * 12.9898 + b * 78.233 + k * 37.719) * 43758.5453, 1.0)
 
 
 # ── 높이 ─────────────────────────────────────────────────────
@@ -653,6 +679,10 @@ func _connectors() -> void:
 					_bridge(p0, p1, bas, glen, wood, rope)
 				# 아니면 징검다리 — 아무것도 없이 뚝 떨어져 있음
 				continue
+			var rough_link: bool = spaces[i].get("rough", false) or spaces[j].get("rough", false)
+			if rough_link:
+				_rough_link(p0, p1, a.y + TILE_H, b.y + TILE_H, bas, glen)
+				continue
 			if absf(dy) > 0.3:
 				var n := maxi(2, int(ceil(absf(dy) / 0.28)))
 				for s in n:
@@ -681,6 +711,22 @@ func _connectors() -> void:
 		vm.vertex_color_use_as_albedo = true
 		vm.roughness = 0.35
 		_multi(pebble, vm, peb_x, peb_c)
+
+
+## 험한 길: 울퉁불퉁한 바위 디딤돌이 칸 사이를 이어 줌 (높이 차가 크면 바위 계단)
+func _rough_link(p0: Vector3, p1: Vector3, y0: float, y1: float, bas: Basis, glen: float) -> void:
+	var n := maxi(2, int(ceil(glen / 0.75)))
+	for s2 in n:
+		var f := (float(s2) + 0.5) / n
+		var pos := p0.lerp(p1, f)
+		var top := lerpf(y0, y1, f) - 0.04
+		var low := minf(natural_height(pos.x, pos.z), top - 0.3) - 0.2
+		var hgt := top - low
+		var w := _rng.randf_range(1.0, 1.6)
+		var dd := glen / n + _rng.randf_range(0.0, 0.25)
+		var jitter := bas.x * _rng.randf_range(-0.25, 0.25)
+		var b := bas.rotated(Vector3.UP, _rng.randf_range(-0.3, 0.3))
+		_mi(_rbox(Vector3(w, hgt, dd), 0.12), _rock_mat(s2 % 3), Vector3(pos.x, low + hgt * 0.5, pos.z) + jitter, b)
 
 
 func _bridge(p0: Vector3, p1: Vector3, bas: Basis, glen: float, wood: Material, rope: Material) -> void:
@@ -1977,6 +2023,20 @@ func _decor() -> void:
 			if _free_spot(x, zz, 0.4):
 				_kelp(Vector3(x, ground_height(x, zz), zz), _rng.randf_range(3.5, 6.5))
 				break
+	# 험한 길 옆 큰 바위들
+	for sp in spaces:
+		if not sp.get("rough", false):
+			continue
+		var b3: Vector3 = sp["base"]
+		var side := Basis(Vector3.UP, sp["yaw"]).x
+		for sd: float in [-1.0, 1.0]:
+			if _rng.randf() < 0.45:
+				continue
+			var q := b3 + side * sd * _rng.randf_range(2.4, 3.2)
+			var rr := _rng.randf_range(0.6, 1.2)
+			if _free_spot(q.x, q.z, rr * 0.6):
+				_rock(Vector3(q.x, ground_height(q.x, q.z) - rr * 0.2, q.z), rr)
+				_block(Vector2(q.x, q.z), rr * 0.8)
 	_seagrass()
 	_scatter()
 	# 물고기 떼

@@ -80,63 +80,61 @@ static func _tutorial() -> Dictionary:
 
 
 # ── 가라앉은 섬 (튜토리얼의 4배) ──────────────────────────────
-## 바깥 큰 순환로 + 섬 꼭대기 십자 길 + 안쪽 고리길이 거미줄처럼 얽혀 있어요.
-## 갈림길이 많고, 길마다 성격이 달라요 (난파선 갑판, 고래 뼈 터널, 징검다리, 흔들다리, 지그재그 골목, 언덕길 …)
+## 길은 일부러 제각각: 곧게 뻗은 큰 계단, 구불구불한 해변길, 들쭉날쭉 험한 바위길(style "rough"),
+## 난파선 갑판, 고래 뼈 터널, 징검다리, 흔들다리 … 갈림길도 여기저기 불규칙하게.
+##   style "simple" = 반듯한 길, "rough" = 높낮이·간격·방향이 제멋대로인 험한 길, wiggle = 좌우로 흔들리는 정도
 static func _sunken_island() -> Dictionary:
 	var S := Vector3(0, 0, 34)          # 남쪽 해변 START
-	var JS := Vector3(0, 0, 24)         # START 위 광장 갈림길
-	var T := Vector3(0, 6, -3)          # 섬 꼭대기 신전 (네 갈래)
+	var J2 := Vector3(0, 0, 22)         # 큰 계단 아래 갈림길
+	var T := Vector3(0, 6, -3)          # 섬 꼭대기 신전
 	var JN := Vector3(0, 0, -27)        # 북쪽 갈림길
 	var N := Vector3(0, 0, -40)
 	var SW := Vector3(-30, 0, 26)
-	var SE := Vector3(30, 0, 26)
+	var SE := Vector3(31, 0, 25)
 	var W := Vector3(-44, 0, 0)
-	var E := Vector3(44, 0, 0)
+	var E := Vector3(44, 0, 2)
 	var NW := Vector3(-30, 0, -32)
 	var NE := Vector3(30, 0, -32)
-	var JW := Vector3(-28, 0, -1)       # 서쪽 둑길 갈림길
-	var JE := Vector3(28, 0, -1)
-	var IW := Vector3(-20, 0, 14)       # 안쪽 고리 (마을 어귀)
-	var IE := Vector3(20, 0, 14)        # 안쪽 고리 (등대 어귀)
-	var INW := Vector3(-18, 0, -22)     # 안쪽 고리 (석상 골짜기)
-	var INE := Vector3(18, 3.5, -22)    # 안쪽 고리 (수정 언덕 꼭대기)
+	var JW := Vector3(-29, 0, -1)       # 서쪽 둑길 갈림길
+	var V := Vector3(-23, 0, 12)        # 마을 어귀
+	var M := Vector3(-11, 0, 24)        # 해초 들판
+	var CV := Vector3(-19, 0, -22)      # 석상 골짜기
+	var H := Vector3(17, 3.5, -21)      # 수정 언덕 꼭대기
+	var L := Vector3(22, 0, 15)         # 등대 어귀
+	var K := Vector3(27, 0, -4)         # 동쪽 바위 고개
 	return {
 		"half": Vector2(56, 48),
 		"spacing": 3.5,
 		"start": S,
 		"routes": [
-			# ── 가운데 십자 ──
-			{"pts": [S, JS]},
-			{"pts": [JS, Vector3(0, 0, 18), Vector3(0, 3, 13.5), Vector3(0, 6, 8.5), T]},           # 큰 계단 (문 아래로)
-			{"pts": [T, Vector3(0, 6, -10), Vector3(0, 3, -15), Vector3(0, 0, -20), JN]},
-			{"pts": [JN, Vector3(0, 0, -33), N]},
-			{"pts": [W, Vector3(-36, 0, -0.5), JW]},
+			{"pts": [S, J2], "style": "simple"},
+			{"pts": [J2, Vector3(0, 0, 18), Vector3(0, 3, 13.5), Vector3(0, 6, 8.5), T], "style": "simple"},
+			{"pts": [T, Vector3(0, 6, -10), Vector3(0, 3, -16), Vector3(0, 0, -21), JN], "style": "simple"},
+			{"pts": [JN, Vector3(0, 0, -33), N], "style": "simple"},
+			{"pts": [W, Vector3(-36, 0, -0.5), JW], "style": "simple"},
 			{"pts": [JW, Vector3(-22, 0, -1.5), Vector3(-18, 3, -2), Vector3(-13, 6, -3), T]},
-			{"pts": [E, Vector3(36, 0, -0.5), JE]},
-			{"pts": [JE, Vector3(22, 0, -1.5), Vector3(18, 3, -2), Vector3(13, 6, -3), T]},
-			# ── 바깥 순환로 ──
-			{"pts": [S, Vector3(-10, 0, 38.5), Vector3(-20, 0, 37.5), Vector3(-26, 0, 33), SW]},
-			{"pts": [S, Vector3(10, 0, 38.5), Vector3(20, 0, 37.5), Vector3(26, 0, 33), SE]},
-			{"pts": [SW, Vector3(-37, 0, 22), Vector3(-44, 2.6, 16), Vector3(-46, 2.6, 10), Vector3(-46, 2.6, 4.5), W], "deck": true},   # 난파선 갑판
-			{"pts": [W, Vector3(-47, 0, -8), Vector3(-45, 0, -16), Vector3(-38, 0, -25), NW]},          # 고래 뼈 터널
-			{"pts": [NW, Vector3(-22, 1.0, -37), Vector3(-14, 1.0, -41), Vector3(-6, 1.0, -41.5), N], "spacing": 4.6},   # 협곡 징검다리
-			{"pts": [N, Vector3(7, 1.3, -42), Vector3(16, 1.3, -41.5), Vector3(23, 0, -37), NE], "bridge": true},       # 협곡 흔들다리
-			{"pts": [NE, Vector3(38, 0, -27), Vector3(45, 0, -18), Vector3(47, 0, -9), E]},             # 화산 옆
-			{"pts": [E, Vector3(47, 0, 9), Vector3(43, 0, 18), Vector3(36, 0, 24), SE]},                # 바위 아치
-			# ── 안쪽 고리 (서쪽: 마을 · 석상) ──
-			{"pts": [SW, Vector3(-27, 0, 20), IW]},
-			{"pts": [IW, Vector3(-15, 0, 21), Vector3(-10, 0, 18.5), Vector3(-5, 0, 22.5), JS]},         # 구불구불 골목
-			{"pts": [IW, Vector3(-24, 0, 8), Vector3(-27, 0, 3), JW]},
-			{"pts": [NW, Vector3(-25, 0, -27), INW]},
-			{"pts": [INW, Vector3(-12, 0, -25), Vector3(-6, 0, -27), JN]},
-			{"pts": [INW, Vector3(-22, 0, -14), Vector3(-26, 0, -7), JW]},                               # 석상 문 아래
-			# ── 안쪽 고리 (동쪽: 등대 · 수정 언덕) ──
-			{"pts": [SE, Vector3(27, 0, 20), IE]},
-			{"pts": [IE, Vector3(14, 0.8, 19), Vector3(7, 0.8, 22.5), JS], "bridge": true},            # 바닷속 골짜기 흔들다리
-			{"pts": [IE, Vector3(25.5, 0, 11.5), Vector3(23, 0, 7), Vector3(28, 0, 3.5), JE]},          # 지그재그
-			{"pts": [NE, Vector3(25, 1.5, -28), INE]},                                                   # 언덕 오르막
-			{"pts": [INE, Vector3(12, 2, -25), Vector3(6, 0, -27), JN]},
-			{"pts": [INE, Vector3(22, 2, -15), Vector3(26, 0, -8), JE]},
+			{"pts": [T, Vector3(7, 6, -6), Vector3(12, 5.5, -9), Vector3(17, 3.5, -7), Vector3(21, 2, -9), K], "style": "rough"},
+			{"pts": [K, Vector3(33, 0, -1), Vector3(38, 0, 3), E], "wiggle": 0.8},
+			{"pts": [S, Vector3(-9, 0, 38.5), Vector3(-17, 0, 37), Vector3(-24, 0, 39.5), SW], "wiggle": 0.9},
+			{"pts": [S, Vector3(8, 0, 39), Vector3(15, 0, 37), Vector3(21, 0, 40.5), Vector3(27, 0, 35), SE], "wiggle": 0.7},
+			{"pts": [SW, Vector3(-37, 0, 22), Vector3(-44, 2.6, 16), Vector3(-46, 2.6, 10), Vector3(-46, 2.6, 4.5), W], "deck": true},
+			{"pts": [W, Vector3(-47, 0, -8), Vector3(-45, 0, -16), Vector3(-38, 0, -25), NW]},
+			{"pts": [NW, Vector3(-22, 1.0, -37), Vector3(-14, 1.0, -41), Vector3(-6, 1.0, -41.5), N], "spacing": 4.6},
+			{"pts": [N, Vector3(7, 1.3, -42), Vector3(16, 1.3, -41.5), Vector3(23, 0, -37), NE], "bridge": true},
+			{"pts": [NE, Vector3(37, 1, -28), Vector3(42, 2.5, -23), Vector3(45, 1.5, -17), Vector3(47, 2.5, -11), Vector3(46, 0, -5), E], "style": "rough"},
+			{"pts": [E, Vector3(47, 0, 9), Vector3(43, 0, 18), Vector3(37, 0, 23), SE]},
+			{"pts": [SW, Vector3(-27, 0, 21), Vector3(-25, 0, 16), V], "style": "simple"},
+			{"pts": [V, Vector3(-24, 0, 6), Vector3(-27, 0, 3), JW], "style": "simple"},
+			{"pts": [V, Vector3(-17, 0, 15), Vector3(-14, 0, 20), M], "wiggle": 1.0},
+			{"pts": [M, Vector3(-5, 0, 29), S]},
+			{"pts": [JW, Vector3(-27, 0, -6), Vector3(-22, 1.2, -11), Vector3(-25, 0, -16), Vector3(-20, 0.8, -19), CV], "style": "rough"},
+			{"pts": [NW, Vector3(-25, 0, -27), CV], "style": "simple"},
+			{"pts": [CV, Vector3(-13, 0, -24), Vector3(-8, 0, -28), Vector3(-4, 0, -26), JN], "wiggle": 0.8},
+			{"pts": [SE, Vector3(28, 0, 20), L], "style": "simple"},
+			{"pts": [L, Vector3(14, 0.8, 19), Vector3(7, 0.8, 22.5), J2], "bridge": true},
+			{"pts": [L, Vector3(26, 0, 10), Vector3(22, 0, 6.5), Vector3(28, 0, 2.5), K], "style": "rough"},
+			{"pts": [NE, Vector3(24, 1.5, -28), H]},
+			{"pts": [H, Vector3(11, 2, -25), Vector3(6, 0, -29), JN], "wiggle": 0.6},
 		],
 		"fill": ["minigame", "plain", "minigame", "chance", "minigame", "plain", "chance", "minigame", "plain", "minigame"],
 		"specials": [
@@ -174,12 +172,12 @@ static func _sunken_island() -> Dictionary:
 			{"type": "hand", "at": Vector2(-9, -18)},
 			{"type": "crystals", "at": Vector2(34, -15)},
 			{"type": "vents", "at": Vector2(8, -16)},
-			{"type": "trident", "at": Vector2(-10, -32.5)},
+			{"type": "trident", "at": Vector2(-14, -31)},
 			{"type": "anchor", "at": Vector2(-36, 42)},
 			{"type": "cargo", "at": Vector2(40, 38)},
 			{"type": "obelisk", "at": Vector2(-9, 12)},
 			{"type": "obelisk", "at": Vector2(9, 11)},
-			{"type": "clam", "at": Vector2(-11, 29)},
+			{"type": "clam", "at": Vector2(-18, 29.5)},
 		],
 		"decor_zones": [[Vector2(0, -3), 7.0, 22], [Vector2(-28, 10), 5.0, 8], [Vector2(28, 10), 5.0, 8],
 			[Vector2(-24, -18), 5.0, 10], [Vector2(24, -18), 5.0, 10], [Vector2(-40, 40), 4.0, 10], [Vector2(40, 30), 4.0, 8],
