@@ -11,7 +11,12 @@
   3) 50도 위에서 비스듬히 내려다본 모양으로 투영 (앞쪽부터 그려 가려짐 처리)
   4) 산호·해면은 작은 3D 모형을 따로 레이마칭으로 그려 같은 각도로 붙임
 
-칸 구조: 가로 11 x 세로 7 격자의 바깥 테두리 + 가운데 십자 ('田' 모양). 45칸, 골인 없음.
+맵 구조 (Wii 파티 보드처럼):
+  - 구불구불한 큰 고리 길이 산호 정원 → 난파 협곡 → 화산 분수 → 진주 석호 → 다시마 숲을 한 바퀴 돎
+  - 가운데 START 광장(부서진 기둥들)에서 지름길 3개가 고리로 이어짐
+  - 그중 하나는 깊은 협곡 위 돌다리를 건넘
+  - 칸은 네모, 길 방향을 따라 돌아가 있고, 색깔별 종류(파랑·빨강·초록 ?·금별·갈림길)
+골인 지점 없음.
 """
 import json
 import math
@@ -32,18 +37,16 @@ rng = np.random.default_rng(5)
 ELEV = math.radians(50)            # 내려다보는 각도
 KZ = math.sin(ELEV)                # 바닥 깊이 방향 줄어드는 비율
 KH = math.cos(ELEV)                # 높이가 화면 위로 올라가는 비율
-GW, GD = 3840, 3200                # 바닥 크기 (가로, 깊이)
-TOP_PAD = 150                      # 높은 것들이 위로 튀어나올 여유
+GW, GD = 2400, 2100                # 바닥 크기 (가로, 깊이) — 튜토리얼이라 작게
+TOP_PAD = 190                      # 높은 것들이 위로 튀어나올 여유
 SW = GW
 SH = int(GD * KZ + TOP_PAD + 10)   # 화면(지도 그림) 크기
 
-U = 262                            # 칸 사이 거리
-TILE = 160                         # 칸 한 변
+SPACING = 212                      # 칸 사이 거리
+TILE = 150                         # 칸 한 변
+START_SIZE = 300
 TILE_H = 22.0
-START_SIZE = 330
 START_H = 30.0
-CX, CZ = GW / 2, GD / 2 + 40
-NI, NJ = 5, 3                      # 가운데에서 가로 ±5, 세로 ±3 칸
 
 RIM = 70                           # 판 테두리 폭
 
@@ -71,71 +74,161 @@ def fbm(h, w, seed, cells=(256, 96, 36, 12), amps=(0.55, 0.25, 0.13, 0.07)):
     return out
 
 
-# ── 칸 구조 ──────────────────────────────────────────────────
-def grid_nodes():
-    pts = []
-    for j in range(-NJ, NJ + 1):
-        for i in range(-NI, NI + 1):
-            if abs(i) == NI or abs(j) == NJ or i == 0 or j == 0:
-                pts.append((i, j))
-    ids = {p: k for k, p in enumerate(pts)}
-    links = {k: [] for k in range(len(pts))}
-    for (i, j), k in ids.items():
-        for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            q = (i + di, j + dj)
-            if q in ids:
-                links[k].append(ids[q])
-    return pts, ids, links
+# ── 맵 구조 ──────────────────────────────────────────────────
+F = 0.6                            # 큰 판 설계를 이만큼 줄여서 씀
+OLD_C, NEW_C = (1920, 1640), (1200, 1080)
 
 
-def gpos(i, j):
-    return CX + i * U, CZ + j * U
+def P(x, z):
+    return (round(NEW_C[0] + (x - OLD_C[0]) * F), round(NEW_C[1] + (z - OLD_C[1]) * F))
+
+
+S = P(1920, 1640)
+JN = {
+    "S": S,
+    "A": P(1180, 1080),   # 산호 정원 갈림길
+    "B": P(2700, 1000),   # 난파 협곡 갈림길
+    "C": P(2760, 2300),   # 진주 석호 갈림길
+    "D": P(1120, 2260),   # 다시마 숲 (꺾임)
+}
+# (시작, 끝, 지나가는 점들)
+EDGES = [
+    ("A", "B", [P(1420, 700), P(1800, 860), P(2180, 560), P(2480, 720)]),       # 위: 산호 언덕 물결
+    ("B", "C", [P(3080, 1080), P(3330, 1480), P(3170, 1880), P(3260, 2160)]),    # 오른쪽: 화산 옆 S자
+    ("C", "D", [P(2500, 2700), P(2100, 2560), P(1700, 2800), P(1380, 2620)]),    # 아래: 석호 물결
+    ("D", "A", [P(820, 2080), P(600, 1700), P(820, 1420)]),                    # 왼쪽: 다시마 숲
+    ("S", "A", [P(1640, 1520), P(1420, 1300)]),                               # 지름길
+    ("S", "B", [P(2180, 1380), P(2440, 1160)]),                               # 지름길
+    ("S", "C", [P(2200, 1880), P(2500, 2050)]),                               # 지름길 (협곡 다리)
+]
+TRENCH = [P(2740, 1460), P(2620, 1650), P(2490, 1850), P(2370, 2040), P(2270, 2220)]
+VOLCANO = P(3420, 560)
+CLAM = P(1330, 2020)
+
+
+def catmull(pts, n_per=60):
+    pts = [pts[0]] + list(pts) + [pts[-1]]
+    out = []
+    for i in range(1, len(pts) - 2):
+        p0, p1, p2, p3 = (np.array(p, float) for p in pts[i - 1:i + 3])
+        for t in np.linspace(0, 1, n_per, endpoint=False):
+            t2, t3 = t * t, t * t * t
+            out.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3))
+    out.append(np.array(pts[-2], float))
+    return np.array(out)
+
+
+def build_graph():
+    nodes = []
+    index = {}
+
+    def node_at(p, ang, kind="space"):
+        key = (round(p[0]), round(p[1]))
+        if key in index:
+            return index[key]
+        nid = len(nodes)
+        nodes.append({"id": nid, "x": float(p[0]), "z": float(p[1]), "ang": float(ang), "links": set(), "kind": kind})
+        index[key] = nid
+        return nid
+
+    node_at(S, 0.0, "start")
+    curves = []
+    for a, b, mid in EDGES:
+        c = catmull([JN[a]] + mid + [JN[b]])
+        curves.append(c)
+        seg = np.linalg.norm(np.diff(c, axis=0), axis=1)
+        cum = np.concatenate([[0], np.cumsum(seg)])
+        total = cum[-1]
+        n = max(1, int(round(total / SPACING)))
+        ids = []
+        for k in range(n + 1):
+            d = total * k / n
+            x = np.interp(d, cum, c[:, 0])
+            z = np.interp(d, cum, c[:, 1])
+            i2 = min(len(c) - 2, int(np.searchsorted(cum, d)))
+            tx, tz = c[i2 + 1] - c[max(0, i2 - 1)]
+            ang = math.atan2(tz, tx)
+            if k == 0:
+                p, ang = JN[a], 0.0
+            elif k == n:
+                p, ang = JN[b], 0.0
+            else:
+                p = (x, z)
+                if a == "S" and math.dist(p, S) < 230:
+                    continue
+            ids.append(node_at(p, ang))
+        for u, v in zip(ids, ids[1:]):
+            nodes[u]["links"].add(v)
+            nodes[v]["links"].add(u)
+    for nd in nodes:
+        if nd["kind"] != "start" and len(nd["links"]) > 2:
+            nd["kind"] = "junction"
+    # 칸 종류 (색). 규칙은 나중에 — 지금은 보기 좋게 섞어 둠
+    pattern = ["blue", "blue", "red", "blue", "event", "blue", "blue", "red", "blue", "star"]
+    k = 0
+    for nd in nodes:
+        if nd["kind"] == "space":
+            nd["kind"] = pattern[k % len(pattern)]
+            k += 1
+    return nodes, curves
 
 
 # ── 높이 지도 + 재질 ─────────────────────────────────────────
-def build_ground():
+def build_ground(curves):
     zz, xx = np.mgrid[0:GD, 0:GW].astype(f32)
     h = np.zeros((GD, GW), f32)
     alb = np.zeros((GD, GW, 3), f32)
-    spec = np.zeros((GD, GW), f32)        # 반짝임 세기
-    mat = np.zeros((GD, GW), np.uint8)    # 0 모래, 1 돌길, 2 칸, 3 바위, 4 테두리, 5 상감
+    spec = np.zeros((GD, GW), f32)
+    mat = np.zeros((GD, GW), np.uint8)
 
-    # 모래: 큰 언덕 + 물결
-    dunes = fbm(GD, GW, 3) * 40.0
+    dunes = fbm(GD, GW, 3) * 46.0
     warp = fbm(GD, GW, 9, cells=(300, 120), amps=(0.7, 0.3))
     rip = np.sin((zz * 0.95 + xx * 0.32) * 0.085 + warp * 9.0)
     rip = np.sign(rip) * np.abs(rip) ** 0.8
     h += dunes + rip * 2.4 + fbm(GD, GW, 21, cells=(8, 4), amps=(0.6, 0.4)) * 1.2
     sand_var = fbm(GD, GW, 31)
-    sand = np.array([176, 168, 140], f32) / 255
-    sand2 = np.array([132, 142, 122], f32) / 255
+    sand = np.array([206, 192, 150], f32) / 255
+    sand2 = np.array([160, 168, 132], f32) / 255
     alb[:] = sand * (1 - sand_var[..., None] * 0.6) + sand2 * (sand_var[..., None] * 0.6)
     alb *= (0.92 + 0.08 * (rip[..., None] * 0.5 + 0.5))
-    # 군데군데 조개 가루·자갈
     grit = (value_noise(GD, GW, 3, 77) > 0.86).astype(f32) * fbm(GD, GW, 78, cells=(64,), amps=(1.0,))
     alb += grit[..., None] * np.array([0.12, 0.1, 0.08], f32)
     h += grit * 1.0
 
-    pts, ids, links = grid_nodes()
+    # 협곡 (깊은 골짜기)
+    tm = Image.new("L", (GW, GD), 0)
+    td = ImageDraw.Draw(tm)
+    tc = catmull(TRENCH, 30)
+    td.line([tuple(p) for p in tc], fill=255, width=150, joint="curve")
+    for p in (tc[0], tc[-1]):
+        td.ellipse([p[0] - 75, p[1] - 75, p[0] + 75, p[1] + 75], fill=255)
+    trench = np.asarray(tm.filter(ImageFilter.GaussianBlur(26)), f32) / 255
+    rough = fbm(GD, GW, 91, cells=(40, 14), amps=(0.6, 0.4))
+    trench = smoothstep(0.25, 0.75, trench + (rough - 0.5) * 0.35)
+    h -= trench * 170.0
+    wall = np.clip(trench * (1 - trench) * 4, 0, 1)
+    rock_c = np.array([0.42, 0.44, 0.42], f32) * (0.8 + 0.4 * rough[..., None])
+    alb = alb * (1 - wall[..., None]) + rock_c * wall[..., None]
+    alb *= (1 - trench[..., None] * 0.45)
 
-    # 돌길 (칸 사이)
-    path_mask = np.zeros((GD, GW), f32)
-    pw = 70
-    for (i, j), k in ids.items():
-        for q in links[k]:
-            i2, j2 = pts[q]
-            if (i2, j2) < (i, j):
-                continue
-            x0, z0 = gpos(i, j)
-            x1, z1 = gpos(i2, j2)
-            xa, xb = min(x0, x1) - pw / 2, max(x0, x1) + pw / 2
-            za, zb = min(z0, z1) - pw / 2, max(z0, z1) + pw / 2
-            sl = (slice(int(za) - 8, int(zb) + 8), slice(int(xa) - 8, int(xb) + 8))
-            dx = np.maximum(np.maximum(xa - xx[sl], xx[sl] - xb), 0)
-            dz = np.maximum(np.maximum(za - zz[sl], zz[sl] - zb), 0)
-            d = np.sqrt(dx * dx + dz * dz)
-            path_mask[sl] = np.maximum(path_mask[sl], smoothstep(5, 0, d))
-    # 자갈돌 무늬 (격자 + 흔들림)
+    # 화산 분수 (큰 원뿔 + 분화구)
+    vx, vz = VOLCANO
+    d = np.sqrt((xx - vx) ** 2 + ((zz - vz) * 1.15) ** 2)
+    cone = np.clip(1 - d / 200, 0, 1) ** 1.25 * 140
+    crater = np.exp(-(d / 48) ** 2) * 90
+    h += cone - crater
+    vrock = np.array([0.36, 0.33, 0.32], f32) * (0.75 + 0.5 * rough[..., None])
+    vm = smoothstep(200, 145, d)
+    alb = alb * (1 - vm[..., None]) + vrock * vm[..., None]
+    glow = np.exp(-(d / 38) ** 2)
+    alb = alb * (1 - glow[..., None]) + np.array([1.0, 0.55, 0.25], f32) * glow[..., None]   # 안쪽이 따뜻하게
+
+    # 길 (구불구불한 자갈길) — 그림으로 그려서 마스크로
+    pm = Image.new("L", (GW, GD), 0)
+    pd = ImageDraw.Draw(pm)
+    for c in curves:
+        pd.line([tuple(p) for p in c], fill=255, width=78, joint="curve")
+    path_mask = np.asarray(pm.filter(ImageFilter.GaussianBlur(4)), f32) / 255
     cell = 22
     jx = value_noise(GD, GW, cell, 41) * 8
     jz = value_noise(GD, GW, cell, 42) * 8
@@ -144,14 +237,20 @@ def build_ground():
     cob = np.minimum(np.minimum(fx, 1 - fx), np.minimum(fz, 1 - fz))
     cob_h = smoothstep(0.0, 0.18, cob) * 3.0
     cob_shade = 0.85 + 0.3 * value_noise(GD, GW, cell, 43)
-    path_top = 7.0 + cob_h
-    h = h * (1 - path_mask) + np.maximum(h, h * 0.3 + path_top) * path_mask
-    stone_col = np.array([118, 126, 122], f32) / 255
+    ground_ref = gaussian_filter(dunes, 30)
+    deck = ground_ref + 8.0 + cob_h
+    h = h * (1 - path_mask) + np.maximum(h, deck) * path_mask
+    # 다리: 협곡 위의 길은 난간 기둥
+    over = path_mask * trench
+    posts = (np.sin(xx * 0.09) * np.sin(zz * 0.09) > 0.92).astype(f32)
+    edge_band = smoothstep(0.35, 0.6, path_mask) * smoothstep(0.95, 0.75, path_mask)
+    h += posts * edge_band * (over > 0.3) * 26.0
+    stone_col = np.array([150, 150, 140], f32) / 255
     pc = stone_col * cob_shade[..., None] * (0.75 + 0.25 * smoothstep(0.0, 0.15, cob)[..., None])
     alb = alb * (1 - path_mask[..., None]) + pc * path_mask[..., None]
     mat[path_mask > 0.5] = 1
 
-    # 판 테두리 (멀리서 보면 보드게임 판)
+    # 판 테두리
     edge = np.minimum.reduce([xx, GW - 1 - xx, zz, GD - 1 - zz])
     rim_m = smoothstep(RIM + 6, RIM - 6, edge)
     rim_h = 46.0 + 4.0 * smoothstep(RIM - 18, RIM - 26, edge)
@@ -162,171 +261,157 @@ def build_ground():
     rc = rc * (1 - inlay[..., None]) + np.array([0.86, 0.95, 0.9], f32) * inlay[..., None]
     alb = alb * (1 - rim_m[..., None]) + rc * rim_m[..., None]
     spec = np.maximum(spec, rim_m * 0.55)
-    mat[rim_m > 0.5] = 4
-    # 테두리 안쪽으로 모래가 살짝 쌓인 느낌
     h += smoothstep(RIM + 60, RIM + 4, edge) * 8 * (1 - rim_m)
 
-    return h, alb, spec, mat, (pts, ids, links), (xx, zz)
+    busy = np.maximum.reduce([np.asarray(pm, f32) / 255, trench, vm, rim_m])
+    return h, alb, spec, mat, (xx, zz), busy
 
 
-def carve_tiles(h, alb, spec, mat, graph, coords):
-    pts, ids, links = graph
+TILE_STYLE = {
+    "blue":  {"col": (70, 150, 230), "icon": "pearl", "ink": (232, 244, 255)},
+    "red":   {"col": (226, 82, 78), "icon": "urchin", "ink": (255, 232, 226)},
+    "event": {"col": (88, 196, 110), "icon": "?", "ink": (240, 255, 236)},
+    "star":  {"col": (240, 190, 60), "icon": "star", "ink": (255, 250, 220)},
+    "junction": {"col": (236, 238, 230), "icon": "arrows", "ink": (214, 160, 50)},
+    "start": {"col": (240, 242, 234), "icon": "START", "ink": (214, 160, 50)},
+}
+
+
+def icon_mask(icon, n):
+    im = Image.new("L", (n * 4, n * 4), 0)
+    d = ImageDraw.Draw(im)
+    c = n * 2
+    R = n * 1.5
+    if icon == "pearl":
+        d.ellipse([c - R * 0.62, c - R * 0.62, c + R * 0.62, c + R * 0.62], fill=255)
+        d.ellipse([c - R * 0.42, c - R * 0.42, c + R * 0.42, c + R * 0.42], fill=0)
+        d.ellipse([c - R * 0.28, c - R * 0.28, c + R * 0.28, c + R * 0.28], fill=255)
+    elif icon == "urchin":
+        pts = []
+        for k in range(24):
+            a = k * math.pi / 12
+            rr = R * (0.85 if k % 2 == 0 else 0.45)
+            pts.append((c + math.cos(a) * rr, c + math.sin(a) * rr))
+        d.polygon(pts, fill=255)
+    elif icon == "star":
+        pts = []
+        for k in range(10):
+            a = -math.pi / 2 + k * math.pi / 5
+            rr = R * (0.95 if k % 2 == 0 else 0.42)
+            pts.append((c + math.cos(a) * rr, c + math.sin(a) * rr))
+        d.polygon(pts, fill=255)
+    elif icon == "arrows":
+        for a in range(4):
+            ang = a * math.pi / 2
+            tip = (c + math.cos(ang) * R, c + math.sin(ang) * R)
+            l = (c + math.cos(ang + 0.38) * R * 0.62, c + math.sin(ang + 0.38) * R * 0.62)
+            r = (c + math.cos(ang - 0.38) * R * 0.62, c + math.sin(ang - 0.38) * R * 0.62)
+            d.polygon([tip, l, r], fill=255)
+        d.ellipse([c - R * 0.28, c - R * 0.28, c + R * 0.28, c + R * 0.28], fill=255)
+    else:
+        f = ImageFont.truetype(FONT, int(n * (2.6 if len(icon) == 1 else 0.95)))
+        tw = d.textlength(icon, font=f)
+        asc, desc = f.getmetrics()
+        d.text((c - tw / 2, c - (asc + desc) * 0.55), icon, font=f, fill=255)
+    im = im.resize((n, n), Image.LANCZOS).filter(ImageFilter.GaussianBlur(0.7))
+    return np.asarray(im, f32) / 255
+
+
+def carve_tiles(h, alb, spec, mat, nodes, coords):
     xx, zz = coords
     stone_noise = fbm(GD, GW, 61, cells=(60, 20, 6), amps=(0.5, 0.3, 0.2))
-    vein_warp = fbm(GD, GW, 62, cells=(120, 40), amps=(0.7, 0.3))
-    font_big = ImageFont.truetype(FONT, 96)
-
-    def text_mask(text, size_px):
-        f = ImageFont.truetype(FONT, size_px)
-        tw = int(ImageDraw.Draw(Image.new("L", (1, 1))).textlength(text, font=f))
-        im = Image.new("L", (tw + 40, size_px + 40), 0)
-        ImageDraw.Draw(im).text((20, 10), text, font=f, fill=255)
-        return np.asarray(im.filter(ImageFilter.GaussianBlur(1.6)), f32) / 255
-
-    def emblem_mask(kind, n):
-        """칸 가운데 새김 무늬 (n x n)."""
-        im = Image.new("L", (n * 4, n * 4), 0)
-        d = ImageDraw.Draw(im)
-        c = n * 2
-        if kind == "junction":
-            # 네 방향 화살표 (갈림길)
-            for a in range(4):
-                ang = a * math.pi / 2
-                tip = (c + math.cos(ang) * n * 1.45, c + math.sin(ang) * n * 1.45)
-                l = (c + math.cos(ang + 0.35) * n * 0.95, c + math.sin(ang + 0.35) * n * 0.95)
-                r = (c + math.cos(ang - 0.35) * n * 0.95, c + math.sin(ang - 0.35) * n * 0.95)
-                d.polygon([tip, l, r], fill=255)
-            d.ellipse([c - n * 0.42, c - n * 0.42, c + n * 0.42, c + n * 0.42], outline=255, width=int(n * 0.16))
-        else:
-            # 조개 (부채꼴 + 골)
-            r = n * 1.35
-            d.pieslice([c - r, c - r * 0.95, c + r, c + r * 1.05], 200, 340, fill=255)
-            for k in range(6):
-                a = math.radians(205 + k * 26)
-                d.line([(c, c + r * 0.05), (c + math.cos(a) * r, c + r * 0.05 + math.sin(a) * r)], fill=0, width=int(n * 0.1))
-            d.rectangle([c - n * 0.32, c + n * 0.0, c + n * 0.32, c + n * 0.36], fill=255)
-        im = im.resize((n, n), Image.LANCZOS).filter(ImageFilter.GaussianBlur(0.8))
-        return np.asarray(im, f32) / 255
-
-    def place(cx, cz, size, height, kind, label=None):
+    glaze_noise = fbm(GD, GW, 62, cells=(30, 10), amps=(0.6, 0.4))
+    tops = {}
+    for nd in nodes:
+        kind = nd["kind"]
+        style = TILE_STYLE[kind]
+        size = START_SIZE if kind == "start" else (TILE + 14 if kind == "junction" else TILE)
+        height = 30.0 if kind == "start" else TILE_H
+        cx, cz, ang = nd["x"], nd["z"], nd["ang"]
         half = size / 2
-        bevel = 9.0
-        pad = 12
-        z0, z1 = int(cz - half - pad), int(cz + half + pad)
-        x0, x1 = int(cx - half - pad), int(cx + half + pad)
-        sl = (slice(z0, z1), slice(x0, x1))
-        lx = xx[sl] - cx
-        lz = zz[sl] - cz
-        # 둥근 모서리 네모 거리
-        r = 10.0
+        pad = int(half * 1.5 + 14)
+        z0, x0 = int(cz - pad), int(cx - pad)
+        sl = (slice(z0, z0 + 2 * pad), slice(x0, x0 + 2 * pad))
+        dx = xx[sl] - cx
+        dz = zz[sl] - cz
+        ca, sa = math.cos(-ang), math.sin(-ang)
+        lx = dx * ca - dz * sa
+        lz = dx * sa + dz * ca
+        r = 12.0
         qx = np.abs(lx) - (half - r)
         qz = np.abs(lz) - (half - r)
         d = np.sqrt(np.maximum(qx, 0) ** 2 + np.maximum(qz, 0) ** 2) + np.minimum(np.maximum(qx, qz), 0) - r
-        body = smoothstep(0, -bevel, d)                 # 모서리 둥글게 깎임
-        top = height * (body ** 0.6)
-        # 가장자리 안쪽 홈 (테두리)
-        groove = np.exp(-((d + 16.0) / 2.6) ** 2)
-        top -= groove * 2.6
-        # 테두리 띠는 살짝 높게
-        band = smoothstep(-16, -13, d) * smoothstep(-2, -6, d)
-        top += band * 1.2
-        # 새김 무늬
-        inner = np.zeros_like(top)
-        inlay_m = np.zeros_like(top)
-        if kind in ("space", "junction"):
-            n = int(size * 0.5)
-            em = emblem_mask(kind, n)
-            ez0 = int(cz - n / 2) - z0
-            ex0 = int(cx - n / 2) - x0
-            inner[ez0:ez0 + n, ex0:ex0 + n] = em
-            inlay_m = inner
-            top -= inner * 3.0
-        elif kind == "start":
-            # 모자이크 격자 + START 글씨
-            inner_d = -d - 40
-            mos = (inner_d > 0).astype(f32)
-            g = 36
-            mx = ((lx + 1000) % g) / g
-            mz = ((lz + 1000) % g) / g
-            line = np.maximum(np.exp(-((mx - 0.5) / 0.04) ** 2), np.exp(-((mz - 0.5) / 0.04) ** 2))
-            top -= line * mos * 1.5
-            tm = text_mask(label, 92)
-            th, tw = tm.shape
-            tz0 = int(cz - th / 2) - z0
-            tx0 = int(cx - tw / 2) - x0
-            tm_full = np.zeros_like(top)
-            tm_full[tz0:tz0 + th, tx0:tx0 + tw] = tm
-            # 글씨 뒤 원판
-            disk = smoothstep(150, 140, np.sqrt(lx ** 2 + (lz * 1.0) ** 2))
-            top -= disk * 0.0
-            inlay_m = np.maximum(tm_full, np.exp(-((np.sqrt(lx ** 2 + lz ** 2) - 150) / 4.0) ** 2) * 0.9)
-            top -= tm_full * 3.5
-            groove2 = np.exp(-((d + 40.0) / 2.6) ** 2)
-            top -= groove2 * 2.0
-        # 바닥에 얹기 (주변 모래보다 위로)
-        base = np.median(h[sl])
+        bevel = 8.0
+        body = smoothstep(0, -bevel, d)
+        top = height * (body ** 0.55)
+        # 유약 바른 위판 + 테두리 띠
+        rim_band = smoothstep(-15, -12, d) * smoothstep(-1, -5, d)
+        groove = np.exp(-((d + 17.0) / 2.4) ** 2)
+        top += rim_band * 1.6 - groove * 2.4
+        # 아이콘 (볼록하게 도드라짐)
+        n = int(size * (0.62 if kind != "start" else 0.8))
+        im = icon_mask(style["icon"], n)
+        icon = np.zeros_like(top)
+        # 아이콘도 칸 방향대로 돌림 → 회전한 좌표로 샘플
+        u = np.clip((lx / n + 0.5) * (n - 1), 0, n - 1).astype(np.int32)
+        v = np.clip((lz / n + 0.5) * (n - 1), 0, n - 1).astype(np.int32)
+        inside_icon = (np.abs(lx) < n / 2) & (np.abs(lz) < n / 2)
+        icon = np.where(inside_icon, im[v, u], 0.0)
+        top += icon * 2.2
+        base = float(np.median(h[sl][body > 0.5])) if (body > 0.5).any() else 0.0
+        base = max(base, float(np.percentile(h[sl], 70)))
         new_h = base + top
-        m = body > 0.001
-        h[sl] = np.where(m, np.maximum(h[sl] * (1 - body) + new_h * body, h[sl]), h[sl])
-        # 재질 색
+        h[sl] = np.where(body > 0.001, np.maximum(h[sl] * (1 - body) + new_h * body, h[sl]), h[sl])
+        # 색
         sn = stone_noise[sl]
-        vw = vein_warp[sl]
-        veins = np.abs(np.sin((lx * 0.03 + lz * 0.017) + vw * 10.0)) ** 30
-        if kind == "start":
-            base_c = np.array([240, 242, 234], f32) / 255
-        elif kind == "junction":
-            base_c = np.array([226, 238, 232], f32) / 255
-        else:
-            base_c = np.array([232, 234, 224], f32) / 255
-        col = base_c * (0.88 + 0.14 * sn[..., None]) - veins[..., None] * 0.07
-        # 테두리 띠는 청록 유리 상감
-        col = col * (1 - band[..., None] * 0.8) + np.array([0.25, 0.68, 0.64], f32) * band[..., None] * 0.8
-        # 모서리 쪽은 살짝 닳고 이끼·모래
-        wear = smoothstep(-22, -2, d)
-        col = col * (1 - wear[..., None] * 0.18) + np.array([0.55, 0.6, 0.45], f32) * wear[..., None] * 0.12
-        col -= groove[..., None] * 0.25
-        # 상감 (진주빛 / 금빛)
-        inlay_col = np.array([0.95, 0.76, 0.36], f32) if kind != "space" else np.array([0.2, 0.62, 0.6], f32)
-        col = col * (1 - inlay_m[..., None]) + inlay_col * inlay_m[..., None]
-        alb[sl] = alb[sl] * (1 - body[..., None]) + col * body[..., None]
-        spec[sl] = np.maximum(spec[sl], body * (0.35 + 0.5 * inlay_m))
+        gz = glaze_noise[sl]
+        col = np.array(style["col"], f32) / 255
+        face = col * (0.9 + 0.16 * gz[..., None])
+        # 가운데가 살짝 밝은 유약 느낌
+        center_glow = np.exp(-((lx / (half * 0.9)) ** 2 + (lz / (half * 0.9)) ** 2))
+        face = face + center_glow[..., None] * 0.08
+        # 테두리 띠: 흰 돌
+        band_col = np.array([0.93, 0.94, 0.9], f32) * (0.9 + 0.1 * sn[..., None])
+        face = face * (1 - rim_band[..., None]) + band_col * rim_band[..., None]
+        # 옆면: 돌 색
+        side = smoothstep(-2, -bevel, d)
+        stone = np.array([0.82, 0.83, 0.8], f32) * (0.85 + 0.2 * sn[..., None])
+        face = stone * (1 - side[..., None]) + face * side[..., None]
+        ink = np.array(style["ink"], f32) / 255
+        face = face * (1 - icon[..., None]) + ink * icon[..., None]
+        face -= groove[..., None] * 0.2
+        alb[sl] = alb[sl] * (1 - body[..., None]) + face * body[..., None]
+        spec[sl] = np.maximum(spec[sl], body * (0.7 if kind not in ("start",) else 0.45))
         mat[sl][body > 0.5] = 2
-
-    tops = {}
-    for (i, j), k in ids.items():
-        x, z = gpos(i, j)
-        if (i, j) == (0, 0):
-            place(x, z, START_SIZE, START_H, "start", "START")
-            tops[k] = START_H
-        else:
-            kind = "junction" if len(links[k]) > 2 else "space"
-            place(x, z, TILE, TILE_H, kind)
-            tops[k] = TILE_H
+        tops[nd["id"]] = base + height
     return tops
 
 
-def add_rocks(h, alb, spec, mat, coords, keep_out):
+def add_rocks(h, alb, spec, mat, coords, busy):
     xx, zz = coords
     rock_noise = fbm(GD, GW, 71, cells=(30, 10, 4), amps=(0.5, 0.3, 0.2))
     placed = []
-    regions = [((700, 700), 40), ((3200, 650), 26), ((650, 2650), 18), ((3250, 2650), 22), ((1920, 400), 10), ((1920, 2900), 10)]
+    regions = [(P(560, 520), 7), (P(3300, 520), 5), (P(520, 2900), 5), (P(3400, 2900), 5), (P(1920, 2150), 2),
+               (P(3560, 1050), 3), (P(1650, 1150), 2), (P(300, 1700), 3)]
     for (rx, rz), n in regions:
         for _ in range(n):
-            for _t in range(30):
-                x = rx + rng.normal(0, 380)
-                z = rz + rng.normal(0, 300)
-                r = rng.uniform(26, 90) if rng.random() < 0.8 else rng.uniform(100, 170)
+            for _t in range(40):
+                x = rx + rng.normal(0, 180)
+                z = rz + rng.normal(0, 150)
+                r = rng.uniform(26, 80) if rng.random() < 0.8 else rng.uniform(90, 150)
                 if not (RIM + r + 30 < x < GW - RIM - r - 30 and RIM + r + 30 < z < GD - RIM - r - 30):
                     continue
-                if any(abs(x - kx) < kw + r + 40 and abs(z - kz) < kd + r + 40 for kx, kz, kw, kd in keep_out):
+                zi, xi = int(z), int(x)
+                rr = int(r) + 60
+                if busy[max(0, zi - rr):zi + rr, max(0, xi - rr):xi + rr].max() > 0.05:
                     continue
                 if any((x - px) ** 2 + (z - pz) ** 2 < (r + pr) ** 2 * 0.5 for px, pz, pr in placed):
                     continue
                 placed.append((x, z, r))
                 break
     for x, z, r in placed:
-        s = int(r * 1.6)
-        sl = (slice(int(z - s), int(z + s)), slice(int(x - s), int(x + s)))
+        sz = int(r * 1.6)
+        sl = (slice(int(z - sz), int(z + sz)), slice(int(x - sz), int(x + sz)))
         lx = (xx[sl] - x) / r
         lz = (zz[sl] - z) / (r * rng.uniform(0.75, 1.0))
         rn = rock_noise[sl]
@@ -335,46 +420,28 @@ def add_rocks(h, alb, spec, mat, coords, keep_out):
         hh = dome * r * rng.uniform(0.75, 1.05) + dome * rn * r * 0.22
         m = hh > 0.5
         h[sl] = np.where(m, np.maximum(h[sl], h[sl] * 0.2 + hh + 2), h[sl])
-        base = np.array(rng.choice([[120, 120, 112], [132, 126, 114], [108, 114, 112]]), f32) / 255
+        base = np.array(rng.choice([[128, 126, 116], [140, 132, 118], [116, 122, 118]]), f32) / 255
         col = base * (0.75 + 0.4 * rn[..., None])
         moss = smoothstep(0.7, 0.95, dome) * smoothstep(0.55, 0.75, rn)
-        col = col * (1 - moss[..., None] * 0.4) + np.array([0.32, 0.48, 0.34], f32) * moss[..., None] * 0.4
+        col = col * (1 - moss[..., None] * 0.4) + np.array([0.32, 0.5, 0.34], f32) * moss[..., None] * 0.4
         a = smoothstep(0.0, 0.08, dome)
         alb[sl] = alb[sl] * (1 - a[..., None]) + col * a[..., None]
         spec[sl] = np.where(m, 0.08, spec[sl])
         mat[sl][m] = 3
+        busy[sl] = np.maximum(busy[sl], m.astype(f32))
     return placed
 
 
-def add_vents(h, alb, coords, centers):
+def add_small(h, alb, coords, busy):
     xx, zz = coords
-    fbm_cache = fbm(GD, GW, 88, cells=(24, 8), amps=(0.6, 0.4))
-    for x, z in centers:
-        r = rng.uniform(46, 64)
-        s = int(r * 2.4)
-        sl = (slice(int(z - s), int(z + s)), slice(int(x - s), int(x + s)))
-        d = np.sqrt((xx[sl] - x) ** 2 + (zz[sl] - z) ** 2) / r
-        cone = np.clip(1 - d / 2.2, 0, 1) ** 1.2 * 70
-        crater = np.exp(-(d / 0.35) ** 2) * 30
-        h[sl] = np.maximum(h[sl], h[sl] + cone - crater)
-        col = np.array([0.58, 0.56, 0.5], f32) * (0.8 + 0.4 * fbm_cache[sl][..., None]) * (1 - np.exp(-(d / 0.38) ** 2)[..., None] * 0.85)
-        a = smoothstep(2.2, 1.2, d)
-        alb[sl] = alb[sl] * (1 - a[..., None]) + col * a[..., None]
-
-
-def add_small(h, alb, coords, keep_out):
-    """불가사리·조개·성게 (작은 것들)."""
-    xx, zz = coords
-    items = []
-    for _ in range(140):
+    for _ in range(80):
         x = rng.uniform(RIM + 60, GW - RIM - 60)
         z = rng.uniform(RIM + 60, GD - RIM - 60)
-        if any(abs(x - kx) < kw + 30 and abs(z - kz) < kd + 30 for kx, kz, kw, kd in keep_out):
+        if busy[int(z), int(x)] > 0.05:
             continue
         kind = rng.choice(["star", "shell", "shell", "urchin"])
-        items.append((x, z, kind))
-        s = 40
-        sl = (slice(int(z - s), int(z + s)), slice(int(x - s), int(x + s)))
+        sz = 40
+        sl = (slice(int(z - sz), int(z + sz)), slice(int(x - sz), int(x + sz)))
         lx, lz = xx[sl] - x, zz[sl] - z
         rr = np.sqrt(lx ** 2 + lz ** 2)
         ang = np.arctan2(lz, lx) + rng.uniform(0, 6.28)
@@ -384,8 +451,7 @@ def add_small(h, alb, coords, keep_out):
             m = smoothstep(arm, arm - 3, rr)
             h[sl] += m * 4.0 * (1 - rr / (R + 1)).clip(0, 1)
             col = np.array(rng.choice([[0.93, 0.5, 0.32], [0.96, 0.72, 0.36], [0.8, 0.3, 0.35]]), f32)
-            dots = (np.sin(lx * 1.4) * np.sin(lz * 1.4) > 0.6).astype(f32) * 0.15
-            alb[sl] = alb[sl] * (1 - m[..., None]) + (col + dots[..., None]) * m[..., None]
+            alb[sl] = alb[sl] * (1 - m[..., None]) + col * m[..., None]
         elif kind == "shell":
             R = rng.uniform(9, 16)
             m = smoothstep(R, R - 2, rr) * (np.sin(ang) > -0.2)
@@ -399,7 +465,6 @@ def add_small(h, alb, coords, keep_out):
             m = smoothstep(R * 1.6 * spikes, R * 1.6 * spikes - 2, rr)
             h[sl] += m * 7 * np.sqrt(np.clip(1 - rr / (R * 1.6), 0, 1))
             alb[sl] = alb[sl] * (1 - m[..., None]) + np.array([0.2, 0.12, 0.25], f32) * m[..., None]
-    return items
 
 
 # ── 빛 ───────────────────────────────────────────────────────
@@ -420,8 +485,8 @@ def shade(h, alb, spec, mat):
     dirx, dirz = lxz / lxz_len
     tan_e = LIGHT[1] / lxz_len
     sh = np.ones_like(h)
-    for k in range(1, 70):
-        dist = k * 3.0
+    for k in range(1, 46):
+        dist = k * 4.5
         ox, oz = dirx * dist, dirz * dist
         hx = _shift(hs, ox, oz)
         occ = (hx - hs - dist * tan_e)
@@ -619,66 +684,168 @@ def render_sprite(kind, seed, color, px=260):
     return im, (px / 2, px * (1 - base_v))
 
 
+
+
+def _ortho_raymarch(sdf_fn, color_fn, ext, px, steps=110):
+    n = px * 2
+    us = np.linspace(-ext, ext, n, dtype=f32)
+    vs = np.linspace(ext * 1.15, -ext * 0.45, n, dtype=f32)
+    U_, V_ = np.meshgrid(us, vs)
+    fwd = np.array([0, -math.sin(ELEV), -math.cos(ELEV)], f32)
+    up = np.array([0, math.cos(ELEV), -math.sin(ELEV)], f32)
+    right = np.array([1, 0, 0], f32)
+    orig = ((U_[..., None] * right + V_[..., None] * up) - fwd * 6.0).reshape(-1, 3)
+    t = np.zeros(len(orig), f32)
+    hit = np.zeros(len(orig), bool)
+    for _ in range(steps):
+        p = orig + fwd * t[:, None]
+        d = sdf_fn(p)
+        hit |= d < 0.002
+        t = np.where(hit, t, t + np.maximum(d, 0.004))
+    p = orig + fwd * t[:, None]
+    e = 0.003
+    nrm = np.stack([sdf_fn(p + [e, 0, 0]) - sdf_fn(p - [e, 0, 0]), sdf_fn(p + [0, e, 0]) - sdf_fn(p - [0, e, 0]),
+                    sdf_fn(p + [0, 0, e]) - sdf_fn(p - [0, 0, e])], -1)
+    nrm /= np.linalg.norm(nrm, axis=-1, keepdims=True) + 1e-9
+    diff = np.clip(nrm @ LIGHT * 0.85 + 0.15, 0, 1)
+    hv = LIGHT + VIEW
+    hv /= np.linalg.norm(hv)
+    alb, spc = color_fn(p, nrm)
+    c = alb * (0.32 + 0.85 * diff[:, None]) + (np.clip(nrm @ hv, 0, 1) ** 30 * spc)[:, None]
+    ao = np.clip(0.55 + p[:, 1] * 0.5, 0.55, 1.0)
+    c *= ao[:, None]
+    img = np.zeros((len(orig), 4), f32)
+    img[:, :3] = np.clip(c, 0, 1) * 255
+    img[:, 3] = hit * 255
+    im = Image.fromarray(img.reshape(n, n, 4).astype(np.uint8), "RGBA").resize((px, px), Image.LANCZOS)
+    base_v = (0 - (-ext * 0.45)) / (ext * 1.15 + ext * 0.45)
+    return im, (px / 2, px * (1 - base_v))
+
+
+def render_clam():
+    """거대 조개 + 진주."""
+    def sdf(p):
+        x, y, z = p[:, 0], p[:, 1], p[:, 2]
+        # 아래 껍데기: 납작한 반구 + 골
+        r = np.sqrt(x * x + z * z)
+        ang = np.arctan2(z, x)
+        ridge = 0.025 * np.cos(ang * 14)
+        low = np.sqrt(x * x + (y * 2.6) ** 2 + z * z) - (0.9 + ridge)
+        low = np.maximum(low, y - 0.05)
+        # 위 껍데기: 뒤쪽으로 열린 채 비스듬히
+        c, s = math.cos(-0.9), math.sin(-0.9)
+        y2 = (y - 0.05) * c - (z + 0.75) * s
+        z2 = (y - 0.05) * s + (z + 0.75) * c - 0.75
+        up = np.sqrt(x * x + (y2 * 2.6) ** 2 + z2 * z2) - (0.9 + 0.025 * np.cos(np.arctan2(z2, x) * 14))
+        up = np.maximum(up, -y2 - 0.02)
+        pearl = np.sqrt(x * x + (y - 0.22) ** 2 + (z - 0.05) ** 2) - 0.24
+        return np.minimum(np.minimum(low, up), pearl)
+
+    def col(p, n):
+        x, y, z = p[:, 0], p[:, 1], p[:, 2]
+        pearl = np.sqrt(x * x + (y - 0.22) ** 2 + (z - 0.05) ** 2) < 0.26
+        shell = np.array([0.78, 0.7, 0.86], f32) * (0.85 + 0.15 * np.cos(np.arctan2(z, x) * 14))[:, None]
+        inner = np.array([0.95, 0.82, 0.88], f32)
+        a = np.where((n[:, 1] > 0.3)[:, None] & (y < 0.12)[:, None], inner, shell)
+        a = np.where(pearl[:, None], np.array([0.98, 0.97, 0.95], f32), a)
+        spc = np.where(pearl, 1.4, 0.35)
+        return a, spc
+    return _ortho_raymarch(sdf, col, 1.7, 520)
+
+
+def render_pillar(seed):
+    """부서진 돌기둥."""
+    r = np.random.default_rng(seed)
+    hgt = r.uniform(0.9, 1.6)
+    cut_a, cut_b = r.uniform(-0.5, 0.5), r.uniform(-0.5, 0.5)
+
+    def sdf(p):
+        x, y, z = p[:, 0], p[:, 1], p[:, 2]
+        rr = np.sqrt(x * x + z * z)
+        ang = np.arctan2(z, x)
+        flute = 0.012 * np.cos(ang * 16)
+        col_ = rr - (0.2 + flute)
+        col_ = np.maximum(col_, y - (hgt + cut_a * x + cut_b * z) * 1.0)
+        col_ = np.maximum(col_, -y)
+        base = np.maximum(np.maximum(np.abs(x) - 0.3, np.abs(z) - 0.3), np.abs(y - 0.06) - 0.06)
+        cap = np.maximum(rr - 0.26, np.abs(y - 0.2) - 0.05)
+        return np.minimum(np.minimum(col_, base), cap)
+
+    def col(p, n):
+        a = np.array([0.86, 0.85, 0.8], f32) * (0.85 + 0.15 * np.sin(p[:, 1] * 40 + p[:, 0] * 10))[:, None]
+        moss = (n[:, 1] > 0.6) & (p[:, 1] > 0.3)
+        a = np.where(moss[:, None], np.array([0.4, 0.6, 0.4], f32), a)
+        return a, np.full(len(p), 0.2, f32)
+    return _ortho_raymarch(sdf, col, 1.0, 230)
+
+
 # ── 조립 ─────────────────────────────────────────────────────
 def main():
     os.makedirs(OUT, exist_ok=True)
     os.makedirs(os.path.join(HERE, "out"), exist_ok=True)
+    nodes, curves = build_graph()
+    print("spaces", len(nodes))
     print("ground")
-    h, alb, spec, mat, graph, coords = build_ground()
-    pts, ids, links = graph
+    h, alb, spec, mat, coords, busy = build_ground(curves)
     print("tiles")
-    tops = carve_tiles(h, alb, spec, mat, graph, coords)
-    # 길·칸 주변은 장식 금지 구역
-    keep = []
-    for (i, j) in pts:
-        x, z = gpos(i, j)
-        keep.append((x, z, 120, 120))
-    keep.append((CX, CZ, 260, 260))
-    vents = [(3000, 420), (3420, 520), (3220, 880), (2700, 640)]
-    vents = [(x, z) for x, z in vents if not any(abs(x - kx) < kw + 70 and abs(z - kz) < kd + 70 for kx, kz, kw, kd in keep)]
-    for x, z in vents:
-        keep.append((x, z, 80, 80))
-    print("rocks / vents / small")
-    rocks = add_rocks(h, alb, spec, mat, coords, keep)
-    for x, z, r in rocks:
-        keep.append((x, z, r, r))
-    add_vents(h, alb, coords, vents)
-    add_small(h, alb, coords, keep)
+    carve_tiles(h, alb, spec, mat, nodes, coords)
+    print("rocks / small")
+    add_rocks(h, alb, spec, mat, coords, busy)
+    add_small(h, alb, coords, busy)
     print("shade")
     col = shade(h, alb, spec, mat)
     img = project(col, h)
     img = water_grade(img)
     out = Image.fromarray(np.clip(img * 255, 0, 255).astype(np.uint8), "RGB").convert("RGBA")
 
-    # 산호·해면 붙이기 (뒤에서 앞 순서)
-    print("coral sprites")
-    palette = [(255, 120, 110), (250, 160, 90), (190, 120, 230), (255, 110, 160), (240, 220, 120)]
+    print("sprites")
+    palette = [(255, 110, 100), (250, 160, 80), (190, 110, 235), (255, 100, 160), (250, 220, 110)]
     sprites = []
     for k in range(10):
         kind = "branch" if k % 3 != 2 else "tube"
         sprites.append(render_sprite(kind, 100 + k, palette[k % len(palette)], px=220 if kind == "branch" else 180))
     decor = []
-    coral_regions = [((620, 560), 16), ((3300, 2700), 10), ((560, 2700), 6), ((1920, 2950), 6), ((1920, 330), 4), ((3500, 1600), 4), ((350, 1600), 4)]
-    for (rx, rz), n in coral_regions:
+    # 큰 볼거리: START 둘레 부서진 기둥
+    placed_p = 0
+    for a in np.linspace(0, 2 * math.pi, 24, endpoint=False):
+        if placed_p >= 4:
+            break
+        x, z = S[0] + math.cos(a) * 250, S[1] + math.sin(a) * 215
+        zi, xi = int(z), int(x)
+        if busy[zi - 60:zi + 40, xi - 50:xi + 50].max() > 0.05:
+            continue
+        decor.append((x, z, ("pillar", int(rng.integers(3))), rng.uniform(0.9, 1.1)))
+        busy[zi - 120:zi + 120, xi - 120:xi + 120] = 1
+        placed_p += 1
+    zones = [(P(700, 560), 9), (P(1300, 420), 3), (P(520, 2900), 3), (P(3400, 2850), 4), (P(1500, 3000), 2),
+             (P(2500, 3000), 2), (P(300, 1300), 2), (P(3650, 2250), 2), (P(1100, 1650), 2), (P(2800, 1650), 2)]
+    for (rx, rz), n in zones:
         for _ in range(n):
-            for _t in range(40):
-                x = rx + rng.normal(0, 260)
-                z = rz + rng.normal(0, 200)
+            for _t in range(50):
+                x = rx + rng.normal(0, 150)
+                z = rz + rng.normal(0, 115)
                 if not (RIM + 80 < x < GW - RIM - 80 and RIM + 140 < z < GD - RIM - 40):
                     continue
-                if any(abs(x - kx) < kw + 60 and abs(z - kz) < kd + 60 for kx, kz, kw, kd in keep):
+                zi, xi = int(z), int(x)
+                if busy[max(0, zi - 300):zi + 40, max(0, xi - 70):xi + 70].max() > 0.05:
                     continue
-                decor.append((x, z, rng.integers(len(sprites)), rng.uniform(0.7, 1.2)))
-                keep.append((x, z, 50, 50))
+                decor.append((x, z, ("coral", int(rng.integers(len(sprites)))), rng.uniform(0.75, 1.25)))
+                busy[max(0, zi - 50):zi + 50, max(0, xi - 50):xi + 50] = 1
                 break
-    for x, z, si, sc in sorted(decor, key=lambda t: t[1]):
-        im, (bx, by) = sprites[si]
+    clam_sprite = None
+    pillar_sprites = [render_pillar(s) for s in range(3)]
+    for x, z, (kind, si), sc in sorted(decor, key=lambda t: t[1]):
+        if kind == "coral":
+            im, (bx, by) = sprites[si]
+        elif kind == "clam":
+            im, (bx, by) = clam_sprite
+        else:
+            im, (bx, by) = pillar_sprites[si]
         if sc != 1.0:
             im = im.resize((int(im.width * sc), int(im.height * sc)), Image.LANCZOS)
             bx, by = bx * sc, by * sc
         gh = h[int(z), int(x)]
         sx, sy = x, screen_y(z, gh)
-        # 그림자
         shl = Image.new("RGBA", (int(im.width * 1.2), int(im.height * 0.5)), (0, 0, 0, 0))
         ImageDraw.Draw(shl).ellipse([shl.width * 0.25, shl.height * 0.35, shl.width * 0.95, shl.height * 0.75], fill=(0, 20, 18, 120))
         shl = shl.filter(ImageFilter.GaussianBlur(8))
@@ -688,39 +855,28 @@ def main():
     out.save(os.path.join(OUT, "tutorial_map.png"))
     out.resize((1200, int(1200 * SH / SW)), Image.LANCZOS).save(os.path.join(HERE, "out", "tutorial_map_small.png"))
 
-    # JSON (화면 = 지도 그림 좌표)
     spaces = []
-    for (i, j), k in ids.items():
-        x, z = gpos(i, j)
-        kind = "start" if (i, j) == (0, 0) else ("junction" if len(links[k]) > 2 else "space")
+    for nd in nodes:
+        x, z = nd["x"], nd["z"]
         sy = screen_y(z, h[int(z), int(x)])
-        spaces.append({"id": k, "x": round(x, 1), "y": round(float(sy), 1), "kind": kind, "links": links[k],
-                       "grid": [i, j]})
-    start = ids[(0, 0)]
+        spaces.append({"id": nd["id"], "x": round(x, 1), "y": round(float(sy), 1), "kind": nd["kind"], "links": sorted(nd["links"])})
     kelp = []
-    for _ in range(80):
-        x = 600 + rng.normal(0, 380)
-        z = 2600 + rng.normal(0, 280)
+    for _ in range(140):
+        x, z = P(700 + rng.normal(0, 330), 1900 + rng.normal(0, 420))
         if RIM + 100 < x < GW - RIM - 60 and RIM + 200 < z < GD - RIM - 40 and \
-                not any(abs(x - kx) < kw + 50 and abs(z - kz) < kd + 50 for kx, kz, kw, kd in keep):
+                busy[max(0, int(z) - 420):int(z) + 30, int(x) - 50:int(x) + 50].max() < 0.05:
             kelp.append([round(x), round(float(screen_y(z, h[int(z), int(x)]))), round(float(rng.uniform(260, 520))),
                          round(float(rng.uniform(0, 6.28)), 2)])
-    for _ in range(30):
-        x = rng.uniform(RIM + 100, GW - RIM - 100)
-        z = rng.uniform(RIM + 300, GD - RIM - 60)
-        if not any(abs(x - kx) < kw + 60 and abs(z - kz) < kd + 60 for kx, kz, kw, kd in keep):
-            kelp.append([round(x), round(float(screen_y(z, h[int(z), int(x)]))), round(float(rng.uniform(180, 340))),
-                         round(float(rng.uniform(0, 6.28)), 2)])
-    data = {
-        "size": [SW, SH],
-        "start": start,
-        "spaces": spaces,
-        "kelp": kelp,
-        "vents": [[round(x), round(float(screen_y(z, h[int(z), int(x)])) - 10)] for x, z in vents],
-    }
+            busy[int(z) - 20:int(z) + 20, int(x) - 20:int(x) + 20] = 1
+    vx, vz = VOLCANO
+    vents = [[vx, round(float(screen_y(vz, h[int(vz), int(vx)]))) - 10]]
+    for ox, oz in ((-170, 80), (160, 110)):
+        x, z = vx + ox, vz + oz
+        vents.append([x, round(float(screen_y(z, h[int(z), int(x)])))])
+    data = {"size": [SW, SH], "start": 0, "spaces": spaces, "kelp": kelp, "vents": vents}
     with open(os.path.join(OUT, "tutorial_world.json"), "w") as f:
         json.dump(data, f)
-    print("spaces", len(spaces), "size", SW, SH)
+    print("done", SW, SH)
 
 
 if __name__ == "__main__":
