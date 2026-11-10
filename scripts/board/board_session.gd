@@ -1384,7 +1384,7 @@ func _open_shop(p: Dictionary) -> void:
 	# 차양 · 간판
 	var awn := _tex_rect(SHOP_TEX["awning"], Vector2(0, -260), Vector2(1240, 210))
 	stall.add_child(awn)
-	var board_sign := _tex_rect(SHOP_TEX["board_sign"], Vector2(400, -220), Vector2(440, 190))
+	var board_sign := _tex_rect(SHOP_TEX["sign"], Vector2(400, -220), Vector2(440, 190))
 	board_sign.pivot_offset = Vector2(220, 0)
 	stall.add_child(board_sign)
 	var sh := HBoxContainer.new()
