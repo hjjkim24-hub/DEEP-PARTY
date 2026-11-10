@@ -1,5 +1,6 @@
 extends Node3D
 ## 튜토리얼 보드 (3D). 보드 고르기에서 튜토리얼 상자를 열면 여기로 와요.
+## 칸 종류(일반·찬스·미니게임·포탈·상점)를 하나씩 찾아가 보여주고, 왼쪽 아래에 안내판.
 ## 1) 보드판을 위에서 내려다보다가  2) 카메라가 판 속으로 쑥 들어가 내 말 가까이 가고
 ## 3) 말들이 위에서 START 광장으로 떨어져요.  이후 튜토리얼 안내 (규칙은 나중에 추가).
 ## 카메라는 '지금 보는 말'을 가까이 따라가요 (나중에 차례마다 그 사람 말로 바꾸면 됨: focus_on()).
@@ -29,6 +30,10 @@ var _chips: HBoxContainer
 var _my_pawn_btn: Button
 var _start_marker: Control
 var _screen_marker: Control
+var _tile_marker: Control     ## 튜토리얼이 가리키는 칸 (화면 위치를 매 프레임 따라감)
+var _marker_tile := -1
+var _demo_token := 0
+var _legend: PanelContainer
 var _overlay
 var _fade: ColorRect
 var _title: Label
@@ -117,6 +122,32 @@ func _process(_delta: float) -> void:
 	var v := get_viewport().get_visible_rect().size
 	_screen_marker.position = Vector2(60, 110)
 	_screen_marker.size = v - Vector2(120, 220)
+	_update_tile_marker()
+
+
+func _update_tile_marker() -> void:
+	if _marker_tile < 0:
+		return
+	var sp: Dictionary = world.spaces[_marker_tile]
+	var kind: String = sp["kind"]
+	var rr := 3.4 if kind == "shop" else 1.3
+	var hh := 0.3 if kind == "plain" or kind == "minigame" else 3.3
+	var top: Vector3 = sp["pos"]
+	var r := Rect2()
+	var first := true
+	for c in [Vector3(-rr, 0, -rr), Vector3(rr, 0, -rr), Vector3(-rr, 0, rr), Vector3(rr, 0, rr),
+			Vector3(-rr * 0.6, hh, 0), Vector3(rr * 0.6, hh, 0)]:
+		var wp: Vector3 = top + c
+		if _camera.is_position_behind(wp):
+			continue
+		var p2 := _camera.unproject_position(wp)
+		if first:
+			r = Rect2(p2, Vector2.ZERO)
+			first = false
+		else:
+			r = r.expand(p2)
+	_tile_marker.position = r.position
+	_tile_marker.size = r.size
 
 
 func _move_camera(focus: Vector3, zoom: float, time: float) -> void:
@@ -130,6 +161,45 @@ func _move_camera(focus: Vector3, zoom: float, time: float) -> void:
 ## 이 말을 가까이 보기 (차례가 생기면 차례마다 부르면 됨)
 func focus_on(p: Dictionary, time: float = 0.9) -> void:
 	_move_camera((p["node"] as Node3D).position, 1.0, time)
+
+
+## 튜토리얼에서 칸 하나 보여주기
+func _show_tile(i: int, zoom: float = 1.5) -> void:
+	_demo_token += 1
+	if i < 0:
+		return
+	_marker_tile = i
+	_move_camera(world.spaces[i]["pos"], zoom, 1.3)
+
+
+func _my_spot() -> Vector3:
+	return _my_pawn()["spot"]
+
+
+## 포탈 칸 보여주고 → 슝 → 반대편 포탈로 카메라 이동
+func _portal_demo() -> void:
+	var a: int = world.nearest_of_kind("portal", _my_spot())
+	_show_tile(a, 1.8)
+	var token := _demo_token
+	var b: int = world.portal_partner(a)
+	await get_tree().create_timer(2.0).timeout
+	if token != _demo_token or b < 0:
+		return
+	Audio.play("bubbles")
+	world.portal_burst(world.spaces[a]["pos"])
+	_marker_tile = b
+	_move_camera(world.spaces[b]["pos"], 1.8, 0.9)
+	await get_tree().create_timer(0.9).timeout
+	if token != _demo_token:
+		return
+	Audio.play("add")
+	world.portal_burst(world.spaces[b]["pos"])
+
+
+func _back_to_my_pawn() -> void:
+	_demo_token += 1
+	_marker_tile = -1
+	_focus_my_pawn()
 
 
 func _focus_my_pawn() -> void:
@@ -179,6 +249,15 @@ func _build_ui() -> void:
 	_screen_marker = Control.new()
 	_screen_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_screen_marker)
+	_tile_marker = Control.new()
+	_tile_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_tile_marker)
+
+	_legend = _build_legend()
+	root.add_child(_legend)
+	_legend.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT, Control.PRESET_MODE_MINSIZE, 30)
+	_legend.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_legend.visible = false
 
 	_chips = HBoxContainer.new()
 	_chips.add_theme_constant_override("separation", 10)
@@ -250,6 +329,56 @@ func _glass_button(text: String) -> Button:
 	return b
 
 
+## 왼쪽 아래 칸 종류 안내판
+func _build_legend() -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var st := _glass(Color(0.02, 0.15, 0.14, 0.72), Color(AQUA, 0.25), 1, 14)
+	st.content_margin_left = 16
+	st.content_margin_right = 18
+	st.content_margin_top = 12
+	st.content_margin_bottom = 12
+	panel.add_theme_stylebox_override("panel", st)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 7)
+	panel.add_child(v)
+	var head := Label.new()
+	head.text = "SPACES"
+	head.add_theme_font_size_override("font_size", 14)
+	head.add_theme_color_override("font_color", AQUA)
+	v.add_child(head)
+	for kind in BoardWorld.KIND_ORDER:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		v.add_child(row)
+		var sw := Panel.new()
+		sw.custom_minimum_size = Vector2(30, 30)
+		var ss := StyleBoxFlat.new()
+		ss.bg_color = BoardWorld.TILE_COLORS[kind]
+		ss.border_color = Color(0.95, 0.95, 0.9)
+		ss.set_border_width_all(2)
+		ss.set_corner_radius_all(6)
+		sw.add_theme_stylebox_override("panel", ss)
+		row.add_child(sw)
+		var ic := TextureRect.new()
+		ic.texture = BoardWorld.ICONS[kind]
+		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		ic.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		ic.offset_left = 5
+		ic.offset_top = 5
+		ic.offset_right = -5
+		ic.offset_bottom = -5
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		sw.add_child(ic)
+		var l := Label.new()
+		l.text = BoardWorld.KIND_NAMES[kind]
+		l.add_theme_font_size_override("font_size", 17)
+		l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(l)
+	return panel
+
+
 func _make_chip(p: Dictionary) -> PanelContainer:
 	var chip := PanelContainer.new()
 	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -295,6 +424,7 @@ func _intro() -> void:
 	await get_tree().create_timer(1.0).timeout
 	_intro_done = true
 	_my_pawn_btn.visible = true
+	_legend.visible = true
 	_start_tutorial()
 
 
@@ -335,6 +465,41 @@ func _steps() -> Array:
 			"text": "Climb the stairs up the coral hill, cross the bridge, hop across the stone pillars and go through the rock tunnel!",
 			"enter": func() -> void: _move_camera(Vector3(-13, 3.5, -11), 1.7, 1.6),
 			"dim": false,
+		},
+		{
+			"text": "There are five kinds of spaces! Plain spaces: nothing happens here. Take a breather.",
+			"enter": func() -> void: _show_tile(world.nearest_of_kind("plain", _my_spot())),
+			"target": func() -> Control: return _tile_marker,
+			"pad": 14.0,
+		},
+		{
+			"text": "Chance spaces: draw a random Chance Card!",
+			"enter": func() -> void: _show_tile(world.nearest_of_kind("chance", _my_spot()), 1.7),
+			"target": func() -> Control: return _tile_marker,
+			"pad": 14.0,
+		},
+		{
+			"text": "Minigame spaces: stop here and a minigame begins! You'll find lots of them all over the board.",
+			"enter": func() -> void: _show_tile(world.nearest_of_kind("minigame", _my_spot())),
+			"target": func() -> Control: return _tile_marker,
+			"pad": 14.0,
+		},
+		{
+			"text": "Portal spaces: whoosh! You warp to the portal on the other side of the board.",
+			"enter": func() -> void: _portal_demo(),
+			"target": func() -> Control: return _tile_marker,
+			"pad": 14.0,
+		},
+		{
+			"text": "Shop spaces: drop by the stall to buy items.",
+			"enter": func() -> void: _show_tile(world.nearest_of_kind("shop", _my_spot()), 2.1),
+			"target": func() -> Control: return _tile_marker,
+			"pad": 14.0,
+		},
+		{
+			"text": "Forgot what a space does? Check the guide in the bottom left.",
+			"enter": func() -> void: _back_to_my_pawn(),
+			"target": func() -> Control: return _legend,
 		},
 		{
 			"text": "Drag with the mouse to look around, and roll the mouse wheel to zoom in and out.",

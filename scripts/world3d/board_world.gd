@@ -9,28 +9,47 @@ extends Node3D
 ##   서→남: 바위 아치 터널
 ##   남→동: 협곡 위 나무다리
 ##   동→북: 협곡 위 돌기둥 징검다리 (칸 사이가 멀리 떨어짐)
-##   골인 없음. 칸 색깔 종류는 규칙이 정해지면 의미를 붙여요.
+##   골인 없음.
+##
+## 칸 종류 (kind):
+##   plain    일반 칸 — 아무 일도 없음
+##   chance   찬스 칸 — 랜덤 찬스 카드 (카드 내용은 나중에)
+##   minigame 미니게임 칸 — 가장 많음
+##   portal   포탈 칸 — 짝이 되는 반대편 포탈로 이동 (portal_partner())
+##   shop     상점 칸 — 옆에 가게 노점 (상품은 나중에)
+##   junction 갈림길, start 시작 광장
+## 칸 배치는 아래 ROUTES 의 "tiles" 에서 길마다 순서대로 정해요.
 
 const FloorShader := preload("res://shaders/sea_floor.gdshader")
 const TileShader := preload("res://shaders/tile_top.gdshader")
 const KelpShader := preload("res://shaders/kelp3d.gdshader")
 const RayShader := preload("res://shaders/light_ray.gdshader")
+const PortalShader := preload("res://shaders/portal_top.gdshader")
 const ICONS := {
-	"blue": preload("res://textures/tiles/icon_pearl.png"),
-	"red": preload("res://textures/tiles/icon_urchin.png"),
-	"event": preload("res://textures/tiles/icon_event.png"),
-	"star": preload("res://textures/tiles/icon_star.png"),
+	"plain": preload("res://textures/tiles/icon_plain.png"),
+	"chance": preload("res://textures/tiles/icon_chance.png"),
+	"minigame": preload("res://textures/tiles/icon_minigame.png"),
+	"portal": preload("res://textures/tiles/icon_portal.png"),
+	"shop": preload("res://textures/tiles/icon_shop.png"),
 	"junction": preload("res://textures/tiles/icon_arrows.png"),
 	"start": preload("res://textures/tiles/icon_start.png"),
 }
 const BORDER_TEX := preload("res://textures/tiles/icon_border.png")
+const CHANCE_CARD_TEX := preload("res://textures/tiles/card_chance.png")
 const TILE_COLORS := {
-	"blue": Color(0.27, 0.59, 0.9), "red": Color(0.89, 0.32, 0.31), "event": Color(0.35, 0.77, 0.43),
-	"star": Color(0.95, 0.75, 0.24), "junction": Color(0.86, 0.88, 0.83), "start": Color(0.84, 0.86, 0.8),
+	"plain": Color(0.84, 0.82, 0.72), "chance": Color(0.98, 0.72, 0.2), "minigame": Color(0.26, 0.58, 0.9),
+	"portal": Color(0.58, 0.38, 0.92), "shop": Color(0.94, 0.43, 0.56),
+	"junction": Color(0.86, 0.88, 0.83), "start": Color(0.84, 0.86, 0.8),
 }
 const INK_COLORS := {
-	"blue": Color(0.92, 0.96, 1.0), "red": Color(1.0, 0.92, 0.89), "event": Color(0.95, 1.0, 0.93),
-	"star": Color(1.0, 0.98, 0.86), "junction": Color(0.84, 0.63, 0.2), "start": Color(0.84, 0.63, 0.2),
+	"plain": Color(1, 1, 1), "chance": Color(1.0, 0.98, 0.9), "minigame": Color(0.95, 0.98, 1.0),
+	"portal": Color(1, 1, 1), "shop": Color(1.0, 0.96, 0.97),
+	"junction": Color(0.84, 0.63, 0.2), "start": Color(0.84, 0.63, 0.2),
+}
+## 범례 순서 + 화면에 보일 이름 (번역 키)
+const KIND_ORDER := ["plain", "chance", "minigame", "portal", "shop"]
+const KIND_NAMES := {
+	"plain": "Plain", "chance": "Chance", "minigame": "Minigame", "portal": "Portal", "shop": "Shop",
 }
 
 const HALF_W := 28.0          ## 판 가로 반
@@ -47,17 +66,23 @@ const W := Vector3(-15, 0, 0)
 const E := Vector3(15, 0, 0)
 const SO := Vector3(0, 0, 12)
 
-## 길: 지나가는 점들 (x, 높이, z), 다리 여부
+## 길: 지나가는 점들 (x, 높이, z), 다리 여부, 칸 종류 (길 처음→끝 순서, 양 끝 갈림길 제외)
+## (일반 7 · 찬스 6 · 미니게임 15 · 포탈 2 · 상점 2)
 var ROUTES := [
-	{"pts": [S, N]},
-	{"pts": [S, W]},
-	{"pts": [S, E]},
+	{"pts": [S, N], "tiles": ["minigame"]},
+	{"pts": [S, W], "tiles": ["minigame", "chance"]},
+	{"pts": [S, E], "tiles": ["minigame", "plain"]},
 	{"pts": [N, Vector3(-4, 0, -14), Vector3(-8, 2.0, -16.5), Vector3(-12.5, 4.0, -16), Vector3(-16.5, 4.0, -12),
-			Vector3(-18, 4.0, -7.5), Vector3(-17.5, 2.0, -3.5), W]},
-	{"pts": [W, Vector3(-16.5, 0, 5), Vector3(-12.5, 0, 9.5), Vector3(-6.5, 0, 12.5), SO]},
-	{"pts": [SO, Vector3(5, 0, 13.5), Vector3(8.8, 1.3, 11.2), Vector3(12, 1.3, 8.2), Vector3(15, 0, 5), E], "bridge": true},
-	{"pts": [E, Vector3(16.5, 0, -4), Vector3(14.2, 0.9, -8), Vector3(10.2, 0.9, -11.2), Vector3(5, 0, -13.5), N], "spacing": 4.6},
+			Vector3(-18, 4.0, -7.5), Vector3(-17.5, 2.0, -3.5), W],
+		"tiles": ["plain", "minigame", "chance", "minigame", "shop", "minigame", "plain", "chance", "minigame"]},
+	{"pts": [W, Vector3(-16.5, 0, 5), Vector3(-12.5, 0, 9.5), Vector3(-6.5, 0, 12.5), SO],
+		"tiles": ["plain", "portal", "minigame", "chance", "minigame", "plain"], "end": "minigame"},
+	{"pts": [SO, Vector3(5, 0, 13.5), Vector3(8.8, 1.3, 11.2), Vector3(12, 1.3, 8.2), Vector3(15, 0, 5), E], "bridge": true,
+		"tiles": ["plain", "shop", "minigame", "chance", "minigame", "plain"]},
+	{"pts": [E, Vector3(16.5, 0, -4), Vector3(14.2, 0.9, -8), Vector3(10.2, 0.9, -11.2), Vector3(5, 0, -13.5), N], "spacing": 4.6,
+		"tiles": ["minigame", "portal", "minigame", "chance", "minigame"]},
 ]
+const FILL_PATTERN := ["minigame", "plain", "minigame", "chance"]   ## tiles 가 모자랄 때
 const PLATEAU_C := Vector2(-15.5, -12.0)
 const PLATEAU_R := Vector2(5.8, 6.2)
 const PLATEAU_H := 4.0
@@ -72,6 +97,10 @@ var spaces: Array = []        ## {pos: Vector3 (칸 윗면 가운데), kind, lin
 var start_index := 0
 var _rng := RandomNumberGenerator.new()
 var _mats := {}
+var _blocked: Array = []      ## 장식을 놓지 않을 자리 [Vector2 중심, 반지름]
+var _spinners: Array = []     ## 빙글빙글 도는 찬스 카드 {node, base_y, phase}
+var _portal_fx: Array = []    ## 포탈 고리 {node, mat, light, phase}
+var _time := 0.0
 
 
 func _ready() -> void:
@@ -82,6 +111,7 @@ func _ready() -> void:
 	_board_rim()
 	_tiles()
 	_connectors()
+	_tile_props()
 	_landmarks()
 	_decor()
 	_effects()
@@ -116,9 +146,9 @@ func _node_at(p: Vector3, kind: String, yaw: float) -> int:
 
 func _build_spaces() -> void:
 	_node_at(S, "start", 0.0)
-	var pattern := ["blue", "blue", "red", "blue", "event", "blue", "star", "blue", "red", "blue", "event"]
-	var k := 0
 	for r in ROUTES:
+		var kinds: Array = r.get("tiles", [])
+		var k := 0
 		var curve := _catmull(r["pts"], 24)
 		var cum := [0.0]
 		for i in range(1, curve.size()):
@@ -147,8 +177,10 @@ func _build_spaces() -> void:
 				continue
 			var kind := "space"
 			if j != 0 and j != n:
-				kind = pattern[k % pattern.size()]
+				kind = kinds[k] if k < kinds.size() else FILL_PATTERN[k % FILL_PATTERN.size()]
 				k += 1
+			elif j == n and r.has("end"):
+				kind = r["end"]
 			var id := _node_at(p, kind, yaw)
 			if r.get("bridge", false):
 				spaces[id]["bridge"] = true
@@ -161,12 +193,17 @@ func _build_spaces() -> void:
 				spaces[b]["links"].append(a)
 	for sp in spaces:
 		if sp["kind"] == "space":
-			sp["kind"] = "junction" if sp["links"].size() > 2 else "blue"
+			sp["kind"] = "junction" if sp["links"].size() > 2 else "plain"
 		if sp["kind"] != "start" and sp["links"].size() > 2:
 			sp["kind"] = "junction"
 			sp["yaw"] = 0.0
 		var top_h: float = PLAZA * 0.0 + (0.5 if sp["kind"] == "start" else TILE_H)
 		sp["pos"] = (sp["base"] as Vector3) + Vector3(0, top_h, 0)
+	# 포탈은 나온 순서대로 둘씩 짝 (1번↔2번, 3번↔4번 …)
+	var portals := spaces_of_kind("portal")
+	for i in range(0, portals.size() - 1, 2):
+		spaces[portals[i]]["partner"] = portals[i + 1]
+		spaces[portals[i + 1]]["partner"] = portals[i]
 
 
 # ── 높이 ─────────────────────────────────────────────────────
@@ -228,12 +265,12 @@ func _mat(c: Color, rough: float = 0.8, metal: float = 0.0) -> StandardMaterial3
 	return m
 
 
-func _mi(mesh: Mesh, mat: Material, pos: Vector3, basis_: Basis = Basis()) -> MeshInstance3D:
+func _mi(mesh: Mesh, mat: Material, pos: Vector3, basis_: Basis = Basis(), parent: Node = null) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	mi.material_override = mat
 	mi.transform = Transform3D(basis_, pos)
-	add_child(mi)
+	(parent if parent else self).add_child(mi)
 	return mi
 
 
@@ -343,6 +380,11 @@ func _tile_top_mat(kind: String) -> ShaderMaterial:
 	if _mats.has(key):
 		return _mats[key]
 	var m := ShaderMaterial.new()
+	if kind == "portal":
+		m.shader = PortalShader
+		m.set_shader_parameter("border_tex", BORDER_TEX)
+		_mats[key] = m
+		return m
 	m.shader = TileShader
 	m.set_shader_parameter("tile_color", TILE_COLORS[kind])
 	m.set_shader_parameter("ink_color", INK_COLORS[kind])
@@ -525,6 +567,9 @@ func _free_spot(x: float, z: float, r: float) -> bool:
 				return false
 	if Vector2(x - ARCH_AT.x, z - ARCH_AT.y).length() < 3.5 + r:
 		return false
+	for bl in _blocked:
+		if Vector2(x, z).distance_to(bl[0]) < float(bl[1]) + r:
+			return false
 	return true
 
 
@@ -743,6 +788,315 @@ func _effects() -> void:
 		var p := Vector3(_rng.randf_range(-HALF_W, HALF_W), 14.0, _rng.randf_range(-HALF_D, HALF_D))
 		var b := Basis(Vector3.UP, _rng.randf() * TAU) * Basis(Vector3(0, 0, 1), deg_to_rad(18))
 		_mi(q, m, p, b)
+
+
+# ── 칸 소품 (포탈 고리 · 상점 노점 · 찬스 카드) ───────────────
+func _unshaded(c: Color, energy: float = 1.0) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = c
+	m.emission_enabled = true
+	m.emission = c
+	m.emission_energy_multiplier = energy
+	return m
+
+
+func _tile_props() -> void:
+	for i in spaces.size():
+		match String(spaces[i]["kind"]):
+			"portal":
+				_portal_gate(i)
+			"shop":
+				_shop_stall(i)
+			"chance":
+				_chance_card(i)
+
+
+## 포탈: 칸 위에 서 있는 빛나는 고리 (말이 그 사이를 지나감) + 반짝이 + 보라 불빛
+func _portal_gate(i: int) -> void:
+	var sp: Dictionary = spaces[i]
+	var top: Vector3 = sp["pos"]
+	var yaw := _path_yaw(i)
+	var ring_mat := _unshaded(Color(0.72, 0.48, 1.0), 2.2)
+	var t := TorusMesh.new()
+	t.inner_radius = 1.04
+	t.outer_radius = 1.26
+	t.rings = 40
+	t.ring_segments = 12
+	var pivot := Node3D.new()
+	pivot.position = top + Vector3(0, 1.3, 0)
+	pivot.basis = Basis(Vector3.UP, yaw) * Basis(Vector3(1, 0, 0), PI / 2)
+	add_child(pivot)
+	var ring := MeshInstance3D.new()
+	ring.mesh = t
+	ring.material_override = ring_mat
+	pivot.add_child(ring)
+	# 고리 바깥 돌테
+	var t2 := TorusMesh.new()
+	t2.inner_radius = 1.24
+	t2.outer_radius = 1.4
+	t2.rings = 40
+	t2.ring_segments = 8
+	var frame := MeshInstance3D.new()
+	frame.mesh = t2
+	frame.material_override = _mat(Color(0.36, 0.3, 0.46), 0.6, 0.2)
+	pivot.add_child(frame)
+	# 받침돌 두 개
+	var side := Basis(Vector3.UP, yaw).x
+	for sgn in [-1.0, 1.0]:
+		_mi(_box(Vector3(0.42, 0.34, 0.5)), _mat(Color(0.4, 0.34, 0.5), 0.7), top + side * (1.18 * sgn) + Vector3(0, 0.12, 0), Basis(Vector3.UP, yaw))
+	# 고리 둘레 반짝이
+	var sparks := CPUParticles3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.05
+	sm.height = 0.1
+	sm.radial_segments = 6
+	sm.rings = 3
+	sm.material = _unshaded(Color(0.92, 0.8, 1.0), 3.0)
+	sparks.mesh = sm
+	sparks.amount = 36
+	sparks.lifetime = 1.6
+	sparks.emission_shape = CPUParticles3D.EMISSION_SHAPE_RING
+	sparks.emission_ring_axis = Vector3(0, 1, 0)   # 고리 축 (피벗 기준)
+	sparks.emission_ring_radius = 1.15
+	sparks.emission_ring_inner_radius = 0.9
+	sparks.emission_ring_height = 0.1
+	sparks.direction = Vector3(0, 0, 0)
+	sparks.spread = 180.0
+	sparks.gravity = Vector3.ZERO
+	sparks.initial_velocity_min = 0.05
+	sparks.initial_velocity_max = 0.3
+	sparks.scale_amount_min = 0.4
+	sparks.scale_amount_max = 1.2
+	pivot.add_child(sparks)
+	var light := OmniLight3D.new()
+	light.light_color = Color(0.7, 0.45, 1.0)
+	light.light_energy = 1.6
+	light.omni_range = 5.5
+	light.position = top + Vector3(0, 1.0, 0)
+	add_child(light)
+	_portal_fx.append({"node": pivot, "mat": ring_mat, "light": light, "phase": float(i)})
+	_blocked.append([Vector2(top.x, top.z), 2.0])
+
+
+## 상점: 칸 옆에 줄무늬 차양을 친 작은 노점
+func _shop_stall(i: int) -> void:
+	var sp: Dictionary = spaces[i]
+	var base: Vector3 = sp["base"]
+	var yaw := _path_yaw(i)
+	var side := Basis(Vector3.UP, yaw).x
+	var at := Vector3.ZERO
+	var dir := 0.0
+	for sgn in [1.0, -1.0]:
+		var c: Vector3 = base + side * (2.9 * sgn)
+		if _stall_ok(c, i):
+			at = c
+			dir = sgn
+			break
+	if dir == 0.0:
+		at = base + side * 2.9
+		dir = 1.0
+	at.y = base.y
+	# 노점 정면(+Z)이 칸을 보게
+	var face := -side * dir
+	var b := Basis(Vector3.UP, atan2(face.x, face.z))
+	var root := Node3D.new()
+	root.transform = Transform3D(b, at)
+	add_child(root)
+	var wood := _mat(Color(0.55, 0.36, 0.22), 0.75)
+	var light_wood := _mat(Color(0.78, 0.6, 0.4), 0.6)
+	var pink := _mat(Color(0.94, 0.43, 0.56), 0.55)
+	var cream := _mat(Color(0.99, 0.95, 0.88), 0.55)
+	# 받침 + 계산대
+	_mi(_box(Vector3(2.3, 0.9, 1.7)), _mat(Color(0.6, 0.6, 0.56), 0.9), Vector3(0, -0.37, 0), Basis(), root)
+	_mi(_box(Vector3(1.9, 0.9, 0.7)), wood, Vector3(0, 0.53, 0.35), Basis(), root)
+	_mi(_box(Vector3(2.05, 0.08, 0.86)), light_wood, Vector3(0, 1.02, 0.35), Basis(), root)
+	_mi(_box(Vector3(1.6, 0.12, 0.02)), pink, Vector3(0, 0.75, 0.71), Basis(), root)
+	# 기둥
+	for x in [-0.9, 0.9]:
+		_mi(_cyl(0.06, 0.07, 2.5, 8), wood, Vector3(x, 1.3, -0.45), Basis(), root)
+		_mi(_cyl(0.06, 0.07, 2.15, 8), wood, Vector3(x, 1.12, 0.66), Basis(), root)
+	# 줄무늬 차양 (앞으로 기울어짐)
+	var tilt := Basis(Vector3(1, 0, 0), 0.32)
+	for k in 7:
+		var x := -1.05 + 0.35 * k
+		_mi(_box(Vector3(0.35, 0.05, 1.5)), pink if k % 2 == 0 else cream, Vector3(x + 0.175, 2.35, 0.12), tilt, root)
+	# 차양 끝 물결 장식
+	for k in 7:
+		var x := -0.875 + 0.35 * k
+		var sph := SphereMesh.new()
+		sph.radius = 0.16
+		sph.height = 0.2
+		sph.radial_segments = 10
+		sph.rings = 5
+		_mi(sph, pink if k % 2 == 0 else cream, Vector3(x, 2.05, 0.86), Basis(), root)
+	# 간판 (쇼핑백 그림)
+	_mi(_box(Vector3(0.9, 0.9, 0.08)), pink, Vector3(0, 2.95, -0.2), Basis(), root)
+	var q := QuadMesh.new()
+	q.size = Vector2(0.72, 0.72)
+	var icon_m := StandardMaterial3D.new()
+	icon_m.albedo_texture = ICONS["shop"]
+	icon_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	icon_m.alpha_scissor_threshold = 0.4
+	icon_m.emission_enabled = true
+	icon_m.emission = Color(0.4, 0.35, 0.35)
+	_mi(q, icon_m, Vector3(0, 2.95, -0.155), Basis(), root)
+	# 물건: 진주, 작은 보물상자, 병
+	var pearl := SphereMesh.new()
+	pearl.radius = 0.12
+	pearl.height = 0.24
+	for k in 3:
+		_mi(pearl, _mat(Color(0.95, 0.93, 1.0).lerp(Color(1.0, 0.75, 0.85), k * 0.4), 0.15, 0.3), Vector3(-0.65 + k * 0.22, 1.18, 0.35), Basis(), root)
+	_mi(_box(Vector3(0.42, 0.28, 0.3)), _mat(Color(0.6, 0.38, 0.18), 0.6), Vector3(0.25, 1.2, 0.3), Basis(), root)
+	_mi(_box(Vector3(0.44, 0.06, 0.32)), _mat(Color(0.95, 0.75, 0.25), 0.3, 0.6), Vector3(0.25, 1.36, 0.3), Basis(), root)
+	_mi(_cyl(0.08, 0.1, 0.36, 10), _mat(Color(0.35, 0.8, 0.7), 0.1), Vector3(0.7, 1.24, 0.38), Basis(), root)
+	# 등불
+	var lamp := SphereMesh.new()
+	lamp.radius = 0.13
+	lamp.height = 0.26
+	_mi(lamp, _unshaded(Color(1.0, 0.8, 0.45), 2.5), Vector3(0.7, 1.95, 0.75), Basis(), root)
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.78, 0.5)
+	l.light_energy = 1.0
+	l.omni_range = 4.0
+	l.position = Vector3(0.7, 1.9, 0.9)
+	root.add_child(l)
+	_blocked.append([Vector2(at.x, at.z), 1.8])
+
+
+func _stall_ok(c: Vector3, own: int) -> bool:
+	if _in_chasm(c.x, c.z) or absf(c.x) > HALF_W - 1.5 or absf(c.z) > HALF_D - 1.5:
+		return false
+	if absf(natural_height(c.x, c.z) - (spaces[own]["base"] as Vector3).y) > 0.9:
+		return false
+	for j in spaces.size():
+		if j == own:
+			continue
+		var b: Vector3 = spaces[j]["base"]
+		var r := PLAZA * 0.5 + 1.0 if spaces[j]["kind"] == "start" else 2.4
+		if Vector2(c.x - b.x, c.z - b.z).length() < r:
+			return false
+	for i in spaces.size():
+		for j in spaces[i]["links"]:
+			var a: Vector3 = spaces[i]["base"]
+			var b: Vector3 = spaces[j]["base"]
+			var ab := Vector2(b.x - a.x, b.z - a.z)
+			var ap := Vector2(c.x - a.x, c.z - a.z)
+			var t := clampf(ap.dot(ab) / maxf(ab.length_squared(), 0.001), 0.0, 1.0)
+			if (ap - ab * t).length() < 1.7:
+				return false
+	return true
+
+
+## 찬스: 칸 위에 떠서 빙글빙글 도는 ? 카드
+func _chance_card(i: int) -> void:
+	var top: Vector3 = spaces[i]["pos"]
+	var pivot := Node3D.new()
+	pivot.position = top + Vector3(0, 2.9, 0)
+	add_child(pivot)
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = CHANCE_CARD_TEX
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	m.alpha_scissor_threshold = 0.5
+	m.emission_enabled = true
+	m.emission_texture = CHANCE_CARD_TEX
+	m.emission = Color.WHITE
+	m.emission_energy_multiplier = 0.45
+	m.roughness = 0.35
+	for back in [false, true]:
+		var q := QuadMesh.new()
+		q.size = Vector2(0.8, 1.1)
+		var mi := MeshInstance3D.new()
+		mi.mesh = q
+		mi.material_override = m
+		mi.position = Vector3(0, 0, -0.012 if back else 0.012)
+		mi.rotation.y = PI if back else 0.0
+		pivot.add_child(mi)
+	# 카드 아래 작은 빛
+	var glow := OmniLight3D.new()
+	glow.light_color = Color(1.0, 0.8, 0.35)
+	glow.light_energy = 0.8
+	glow.omni_range = 3.0
+	pivot.add_child(glow)
+	_spinners.append({"node": pivot, "base_y": pivot.position.y, "phase": float(i) * 0.7})
+
+
+## 칸에서 길이 나가는 방향 (yaw)
+func _path_yaw(i: int) -> float:
+	var sp: Dictionary = spaces[i]
+	var links: Array = sp["links"]
+	if links.size() >= 2:
+		var a: Vector3 = spaces[links[0]]["base"]
+		var b: Vector3 = spaces[links[1]]["base"]
+		var d := b - a
+		return atan2(d.x, d.z)
+	return float(sp["yaw"])
+
+
+func _process(delta: float) -> void:
+	_time += delta
+	for s in _spinners:
+		var n: Node3D = s["node"]
+		n.rotation.y += delta * 1.3
+		n.position.y = float(s["base_y"]) + sin(_time * 2.0 + float(s["phase"])) * 0.15
+	for f in _portal_fx:
+		var k := 0.5 + 0.5 * sin(_time * 3.0 + float(f["phase"]))
+		(f["mat"] as StandardMaterial3D).emission_energy_multiplier = 1.6 + k * 1.6
+		(f["light"] as OmniLight3D).light_energy = 1.2 + k * 0.9
+
+
+# ── 다른 스크립트가 쓰는 것들 ─────────────────────────────────
+func spaces_of_kind(kind: String) -> Array:
+	var out := []
+	for i in spaces.size():
+		if spaces[i]["kind"] == kind:
+			out.append(i)
+	return out
+
+
+## 포탈 칸이면 짝 포탈 번호, 아니면 -1
+func portal_partner(i: int) -> int:
+	return int(spaces[i].get("partner", -1))
+
+
+## p 에서 가장 가까운 그 종류 칸 번호
+func nearest_of_kind(kind: String, p: Vector3) -> int:
+	var best := -1
+	var bd := INF
+	for i in spaces_of_kind(kind):
+		var d := (spaces[i]["pos"] as Vector3).distance_to(p)
+		if d < bd:
+			bd = d
+			best = i
+	return best
+
+
+## 포탈 이동할 때 반짝 터지는 효과
+func portal_burst(p: Vector3) -> void:
+	var c := CPUParticles3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.07
+	sm.height = 0.14
+	sm.radial_segments = 6
+	sm.rings = 3
+	sm.material = _unshaded(Color(0.9, 0.75, 1.0), 3.0)
+	c.mesh = sm
+	c.amount = 60
+	c.lifetime = 1.2
+	c.one_shot = true
+	c.explosiveness = 0.95
+	c.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	c.emission_sphere_radius = 0.6
+	c.direction = Vector3.UP
+	c.spread = 70.0
+	c.gravity = Vector3(0, -1.0, 0)
+	c.initial_velocity_min = 2.0
+	c.initial_velocity_max = 4.5
+	c.scale_amount_min = 0.6
+	c.scale_amount_max = 1.6
+	c.position = p + Vector3(0, 1.0, 0)
+	add_child(c)
+	c.emitting = true
+	get_tree().create_timer(2.0).timeout.connect(c.queue_free)
 
 
 ## START 광장 위 말 세울 자리

@@ -169,6 +169,19 @@ const KO := {
 	"Paths split off at the arrow spaces and loop back around, so there's no finish line. Take any road you like!": "화살표 칸에서 길이 갈라졌다가 다시 이어져서, 골인 지점이 따로 없어요. 원하는 길로 가면 돼요!",
 	"Drag with the mouse to look around, and roll the mouse wheel to zoom in and out.": "마우스로 끌면 주변을 둘러볼 수 있고, 마우스 휠로 확대·축소할 수 있어요.",
 	"Lost? Press MY PAWN to jump back to your pawn.": "길을 잃었나요? 내 말 버튼을 누르면 내 말에게 바로 돌아가요.",
+	# 칸 종류
+	"SPACES": "칸 종류",
+	"Plain": "일반",
+	"Chance": "찬스",
+	"Minigame": "미니게임",
+	"Portal": "포탈",
+	"Shop": "상점",
+	"There are five kinds of spaces! Plain spaces: nothing happens here. Take a breather.": "칸은 다섯 종류가 있어요! 일반 칸: 아무 일도 일어나지 않아요. 잠깐 쉬어 가요.",
+	"Chance spaces: draw a random Chance Card!": "찬스 칸: 랜덤 찬스 카드를 한 장 뽑아요!",
+	"Minigame spaces: stop here and a minigame begins! You'll find lots of them all over the board.": "미니게임 칸: 여기 멈추면 미니게임이 시작돼요! 보드 곳곳에 아주 많아요.",
+	"Portal spaces: whoosh! You warp to the portal on the other side of the board.": "포탈 칸: 슝! 보드 반대편에 있는 포탈로 순간이동해요.",
+	"Shop spaces: drop by the stall to buy items.": "상점 칸: 가게에 들러 아이템을 살 수 있어요.",
+	"Forgot what a space does? Check the guide in the bottom left.": "칸이 뭐였는지 헷갈리면 왼쪽 아래 안내판을 보세요.",
 	"How to play in this world will be explained here soon. Stay tuned!": "이 세상에서 노는 방법은 곧 여기서 알려 줄게요. 조금만 기다려 주세요!",
 }
 

@@ -147,7 +147,7 @@ func _run() -> void:
 	await _shot("16_world_diving_in")
 	while tb._overlay == null:
 		await get_tree().process_frame
-	await _drive(tb._overlay, {0: "17_world_start", 1: "18_world_overview", 2: "19_world_plateau", 4: "20_world_my_pawn"})
+	await _drive(tb._overlay, {0: "17_world_start", 1: "18_world_overview", 2: "19_world_plateau", 3: "22_tile_plain", 4: "23_tile_chance", 5: "24_tile_minigame", 6: "25_tile_portal", 7: "26_tile_shop", 8: "27_legend", 10: "20_world_my_pawn"})
 	await _sec(0.6)
 	await _shot("21_tutorial_complete")
 	while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
