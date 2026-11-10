@@ -438,7 +438,7 @@ func _steps() -> Array:
 			"target": func() -> Control: return _start_marker,
 		},
 		{
-			"text": "This world is big. Paths split off in many directions and loop back around, so there's no finish line.",
+			"text": "Paths split off at the arrow spaces and loop back around, so there's no finish line. Take any road you like!",
 			"enter": func() -> void: _move_camera(map_size * 0.5, _fit_zoom() * 1.05, 1.6),
 			"dim": false,
 		},

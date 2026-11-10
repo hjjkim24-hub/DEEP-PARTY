@@ -165,7 +165,7 @@ const KO := {
 	"This is the Tutorial Board. Open the box and your pawn will jump right into the world inside!": "이건 튜토리얼 보드예요. 상자를 열면 내 말이 그 안의 세상으로 쏙 뛰어들어요!",
 	"MY PAWN": "내 말",
 	"You've jumped into the board! In DEEP PARTY, your pawn walks around inside the board world.": "보드 속으로 뛰어들었어요! DEEP PARTY에서는 내 말이 보드 속 세상을 직접 돌아다녀요.",
-	"This world is big. Paths split off in many directions and loop back around, so there's no finish line.": "이 세상은 넓어요. 길이 여러 갈래로 갈라졌다가 다시 이어져서, 골인 지점이 따로 없어요.",
+	"Paths split off at the arrow spaces and loop back around, so there's no finish line. Take any road you like!": "화살표 칸에서 길이 갈라졌다가 다시 이어져서, 골인 지점이 따로 없어요. 원하는 길로 가면 돼요!",
 	"Drag with the mouse to look around, and roll the mouse wheel to zoom in and out.": "마우스로 끌면 주변을 둘러볼 수 있고, 마우스 휠로 확대·축소할 수 있어요.",
 	"Lost? Press MY PAWN to jump back to your pawn.": "길을 잃었나요? 내 말 버튼을 누르면 내 말에게 바로 돌아가요.",
 	"How to play in this world will be explained here soon. Stay tuned!": "이 세상에서 노는 방법은 곧 여기서 알려 줄게요. 조금만 기다려 주세요!",
