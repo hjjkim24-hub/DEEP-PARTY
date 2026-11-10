@@ -48,7 +48,7 @@ const CHANCE_CARD_TEX := preload("res://textures/tiles/card_chance.png")
 const TILE_COLORS := {
 	"plain": Color(0.84, 0.82, 0.72), "chance": Color(0.98, 0.72, 0.2), "minigame": Color(0.26, 0.58, 0.9),
 	"portal": Color(0.58, 0.38, 0.92), "shop": Color(0.94, 0.43, 0.56),
-	"junction": Color(0.8, 0.82, 0.77), "start": Color(0.7, 0.72, 0.66),
+	"junction": Color(0.8, 0.82, 0.77), "start": Color(0.5, 0.64, 0.62),
 }
 const INK_COLORS := {
 	"plain": Color(1, 1, 1), "chance": Color(1.0, 0.98, 0.9), "minigame": Color(0.95, 0.98, 1.0),
@@ -441,7 +441,7 @@ func _rbox(size: Vector3, r: float) -> ArrayMesh:
 
 
 func _tiles() -> void:
-	var foot_m := _mat(Color(0.88, 0.84, 0.72), 0.55)
+	var foot_m := _mat(Color(0.76, 0.72, 0.62), 0.55)
 	var gold := _mat(Color(0.95, 0.76, 0.34), 0.25, 0.85)
 	var stud := SphereMesh.new()
 	stud.radius = 0.08
@@ -453,7 +453,7 @@ func _tiles() -> void:
 		var kind: String = sp["kind"]
 		var b := Basis(Vector3.UP, sp["yaw"])
 		if kind == "start":
-			_mi(_rbox(Vector3(PLAZA, 0.5, PLAZA), 0.22), _mat(Color(0.74, 0.72, 0.64), 0.5), base + Vector3(0, 0.25, 0), b)
+			_mi(_rbox(Vector3(PLAZA, 0.5, PLAZA), 0.22), _mat(Color(0.5, 0.6, 0.58), 0.35), base + Vector3(0, 0.25, 0), b)
 			_mi(_rbox(Vector3(PLAZA + 0.6, 0.2, PLAZA + 0.6), 0.08), foot_m, base + Vector3(0, 0.1, 0), b)
 			var top := PlaneMesh.new()
 			top.size = Vector2(PLAZA - 0.5, PLAZA - 0.5)
@@ -484,8 +484,8 @@ func _tiles() -> void:
 
 # ── 길 (돌길 / 계단 / 다리 / 징검다리) ────────────────────────
 func _connectors() -> void:
-	var cobble := _mat(Color(0.84, 0.8, 0.67), 0.85)
-	var step_m := _mat(Color(0.88, 0.85, 0.74), 0.6)
+	var cobble := _mat(Color(0.7, 0.66, 0.55), 0.85)
+	var step_m := _mat(Color(0.74, 0.71, 0.62), 0.6)
 	var pebble_cols := [Color(0.82, 0.78, 0.7), Color(0.9, 0.7, 0.64), Color(0.62, 0.8, 0.78), Color(0.74, 0.68, 0.84)]
 	var pebble := SphereMesh.new()
 	pebble.radius = 0.13
