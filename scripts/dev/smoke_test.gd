@@ -145,10 +145,10 @@ func _run() -> void:
 		await _sec(0.8)
 		if m._current != "board":
 			push_error("Board select page did not open")
-		m._select_board(1)
+		m._select_board(2)
 		await _sec(0.3)
 		m._on_board_play()   # 잠긴 보드 → 아무 일 없음
-		m._select_board(0)
+		m._select_board(1)
 		await _sec(0.3)
 		m._on_board_play()   # 아직 보드판 장면이 없으니 안내 메시지
 		await _sec(0.5)
