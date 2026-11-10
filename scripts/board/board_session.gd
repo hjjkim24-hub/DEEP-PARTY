@@ -121,6 +121,7 @@ var shot_hint := ""           ## 자동 스크린샷용: 지금 보여 주는 �
 func _ready() -> void:
 	_rng.randomize()
 	world = BoardWorld.new()
+	world.map_id = map_id()
 	add_child(world)
 	_setup_pawns()
 	_dice = Dice3D.new()
@@ -280,7 +281,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif mb.pressed and (mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN):
 			if _cam_tween:
 				_cam_tween.kill()
-			_zoom = clampf(_zoom * (0.88 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 0.88), ZOOM_MIN, ZOOM_MAX)
+			_zoom = clampf(_zoom * (0.88 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 0.88), ZOOM_MIN, world.zoom_max)
 	var mm := event as InputEventMouseMotion
 	if mm and _dragging:
 		if _cam_tween:
@@ -288,8 +289,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_follow = null
 		var k := 0.02 * _zoom
 		_focus += Vector3(-mm.relative.x * k, 0, -mm.relative.y * k)
-		_focus.x = clampf(_focus.x, -BoardWorld.HALF_W, BoardWorld.HALF_W)
-		_focus.z = clampf(_focus.z, -BoardWorld.HALF_D, BoardWorld.HALF_D)
+		_focus.x = clampf(_focus.x, -world.half_w, world.half_w)
+		_focus.z = clampf(_focus.z, -world.half_d, world.half_d)
 
 
 # ── 화면 UI ──────────────────────────────────────────────────
@@ -1333,7 +1334,7 @@ func _spawn_coin_spaces(p: Dictionary, kind: String) -> void:
 			pool.append(i)
 	pool.shuffle()
 	_follow = null
-	_move_camera(Vector3(0, 0, 1.5), 3.4, 1.0)
+	_move_camera(world.overview, world.overview_zoom, 1.0)
 	await get_tree().create_timer(1.05, false).timeout
 	_legend_add(kind)
 	for k in mini(Rules.COIN_SPACES_PER_CARD, pool.size()):
@@ -1764,7 +1765,7 @@ func _pick_player(p: Dictionary, cands: Array, prompt: String, by: String) -> Di
 ## 원하는 칸 고르기 (순간이동 카드): 보드 전체를 보여주고 칸을 클릭
 func _pick_tile(p: Dictionary) -> int:
 	_follow = null
-	_move_camera(Vector3(0, 0, 1.5), 3.6, 1.0)
+	_move_camera(world.overview, world.overview_zoom * 1.06, 1.0)
 	await get_tree().create_timer(1.0, false).timeout
 	var prompt := _outlined_label(tr("Click the space you want to warp to!"), 34)
 	prompt.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
@@ -2006,11 +2007,16 @@ func _tile_near(x: float, z: float) -> int:
 	return best
 
 
+## 어떤 맵을 쓸지 (튜토리얼 · 게임이 덮어씀)
+func map_id() -> String:
+	return "tutorial"
+
+
 # ── 들어가기 연출 ────────────────────────────────────────────
 func _intro() -> void:
 	# 1) 보드판처럼 위에서 내려다보기
-	_focus = Vector3(0, 0, 2.0)
-	_zoom = ZOOM_MAX * 1.1
+	_focus = world.overview + Vector3(0, 0, 0.5)
+	_zoom = world.zoom_max * 1.1
 	_apply_camera()
 	await get_tree().process_frame
 	await get_tree().process_frame

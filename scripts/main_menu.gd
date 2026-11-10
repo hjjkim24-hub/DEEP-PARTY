@@ -1805,8 +1805,11 @@ func _play_intro() -> void:
 	_busy = true
 	_current = "main"
 	# 화면을 다 만든 뒤 첫 프레임이 실제로 그려질 때까지 기다렸다가, 화면이 밝아지는 순간 노래 시작
-	await get_tree().process_frame
-	await get_tree().process_frame
+	var tree := get_tree()
+	await tree.process_frame
+	await tree.process_frame
+	if not is_inside_tree():
+		return
 	Audio.play_music(0.0, "menu")
 	create_tween().tween_property(_fade, "color:a", 0.0, 0.9)
 	_logo.play_intro()

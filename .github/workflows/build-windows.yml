@@ -118,6 +118,7 @@ jobs:
           xvfb-run -a -s "-screen 0 1920x1080x24" godot --path . --rendering-method gl_compatibility --rendering-driver opengl3 --resolution 1600x900 -- --screenshot-tour --shots-dir="$PWD/shots" 2>&1 | tee tour.log
           ls -la shots
       - name: Save screenshots to the ci-screenshots branch
+        if: always()
         run: |
           cd shots
           cp ../tour.log .
