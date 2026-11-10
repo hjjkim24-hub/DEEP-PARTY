@@ -10,6 +10,7 @@ extends Control
 ##   "enter":  func()              단계 시작할 때 할 일
 ##   "auto":   func()              자동 점검용: 플레이어 대신 눌러 줄 동작
 ##   "pad":    float               뚫는 영역 여유 (기본 12)
+##   "dim":    bool                false 면 화면을 어둡게 하지 않음 (전체를 보여줄 때)
 ## 다 끝나면 finished, 건너뛰면 skipped 신호.
 
 signal finished
@@ -250,6 +251,8 @@ func _gui_input(event: InputEvent) -> void:
 
 func _draw() -> void:
 	var full := Rect2(Vector2.ZERO, size)
+	if index >= 0 and index < steps.size() and not bool(steps[index].get("dim", true)):
+		return
 	if not _has_hole or _hole.size.x < 2.0:
 		draw_rect(full, DIM)
 		return

@@ -440,6 +440,7 @@ func _steps() -> Array:
 		{
 			"text": "This world is big. Paths split off in many directions and loop back around, so there's no finish line.",
 			"enter": func() -> void: _move_camera(map_size * 0.5, _fit_zoom() * 1.05, 1.6),
+			"dim": false,
 		},
 		{
 			"text": "Drag with the mouse to look around, and roll the mouse wheel to zoom in and out.",
