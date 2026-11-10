@@ -64,5 +64,7 @@ func _debug_showcase() -> void:
 			return
 	force_shop_trophy = 1
 	await _open_shop(me)
-	await _run_minigame(me, false)
+	for id in Minigames.ids():
+		rig_minigame = String(id)
+		await _run_minigame(me, false)
 	_trophy_next_round = 1

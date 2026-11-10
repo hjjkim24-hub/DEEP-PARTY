@@ -4,10 +4,11 @@ extends Node
 ## 시작 로고 → 메인화면 → 설정/모드/로비/꾸미기 화면을 자동으로 한 바퀴 돌고 종료합니다.
 ## GitHub 자동 빌드에서 스크립트 오류를 미리 잡는 데 씁니다.
 
-const TIMEOUT_SEC := 600.0
+const TIMEOUT_SEC := 1500.0
 
 
 func _ready() -> void:
+	GameState.debug_auto_minigames = true
 	get_tree().create_timer(TIMEOUT_SEC, true, false, true).timeout.connect(func() -> void:
 		print("SMOKE TEST TIMEOUT (scene: %s)" % [get_tree().current_scene.name if get_tree().current_scene else "none"])
 		get_tree().quit(2))
@@ -195,7 +196,7 @@ func _play_board_game(mode: int, showcase: bool, rounds: int, others: Array) -> 
 		waited += get_process_delta_time()
 	var last_hint := ""
 	waited = 0.0
-	while (get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu") and waited < 300.0:
+	while (get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu") and waited < 900.0:
 		await _sec(0.5)
 		waited += 0.5
 		var sc := get_tree().current_scene

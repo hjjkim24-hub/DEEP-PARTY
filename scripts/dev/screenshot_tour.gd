@@ -10,6 +10,7 @@ func _ready() -> void:
 	# 가상 화면은 아주 느려서(초당 몇 장) 게임 시계가 실제 시간보다 느리게 감 → 물리 단계 제한을 풀어 맞춤
 	Engine.physics_ticks_per_second = 20
 	Engine.max_physics_steps_per_frame = 1000
+	GameState.debug_auto_minigames = true
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shots-dir="):
 			_dir = a.substr("--shots-dir=".length())
@@ -188,7 +189,7 @@ func _run() -> void:
 	get_tree().change_scene_to_file("res://scenes/board.tscn")
 	var taken := {}
 	var waited := 0.0
-	while waited < 400.0:
+	while waited < 1500.0:
 		await get_tree().create_timer(0.3).timeout
 		waited += 0.3
 		var sc := get_tree().current_scene

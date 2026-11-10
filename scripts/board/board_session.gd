@@ -7,6 +7,7 @@ extends Node3D
 ## 상속: scripts/tutorial_board.gd (튜토리얼), scripts/board_game.gd (진짜 게임)
 
 const Rules := preload("res://scripts/board/rules.gd")
+const Minigames := preload("res://scripts/minigames/registry.gd")
 const BoardWorld := preload("res://scripts/world3d/board_world.gd")
 const Pawn3D := preload("res://scripts/world3d/pawn3d.gd")
 const Dice3D := preload("res://scripts/world3d/dice3d.gd")
@@ -108,6 +109,7 @@ var _tile_catcher: Control
 # 튜토리얼·점검용으로 결과를 미리 정해 둘 수 있음
 var rig_ranking: Array = []   ## 다음 미니게임 순위 (pawn 목록)
 var rig_card := ""            ## 다음 찬스 카드 id
+var rig_minigame := ""        ## 다음 미니게임 id ("" = 랜덤)
 var force_shop_trophy := -1   ## 1 = 다음 상점에 트로피 꼭 진열, 0 = 꼭 안 함, -1 = 확률대로
 var force_trophy_buy := false ## 튜토리얼: 트로피 살지 물을 때 BUY 만 누를 수 있게
 var shot_hint := ""           ## 자동 스크린샷용: 지금 보여 주는 장면 이름
@@ -1009,11 +1011,14 @@ func _warp_to(p: Dictionary, b: int) -> void:
 ## 미니게임 (아직 미니게임이 없어서 순위는 운으로 정함). trophy=true 면 1등이 트로피
 func _run_minigame(lander: Dictionary, trophy: bool) -> void:
 	Audio.play("start")
-	await _banner(tr("TROPHY MINIGAME!") if trophy else tr("MINIGAME!"), tr("Minigames are coming soon! For now, luck decides the ranking."), 1.2)
-	var order: Array = rig_ranking.duplicate() if rig_ranking.size() == _pawns.size() else _pawns.duplicate()
-	if rig_ranking.size() != _pawns.size():
-		order.shuffle()
+	await _banner(tr("TROPHY MINIGAME!") if trophy else tr("MINIGAME!"), "", 0.9)
+	var order: Array
+	if rig_ranking.size() == _pawns.size():
+		order = rig_ranking.duplicate()
+	else:
+		order = await _play_minigame(rig_minigame)
 	rig_ranking = []
+	rig_minigame = ""
 	# 결과 창
 	var dim := _modal_dim()
 	var panel := _modal_panel(dim, Color(AQUA, 0.7))
@@ -1057,6 +1062,39 @@ func _run_minigame(lander: Dictionary, trophy: bool) -> void:
 				reward += Rules.MINIGAME_LANDER_BONUS
 			_add_coins(q, reward)
 	await get_tree().create_timer(0.8).timeout
+
+
+## 미니게임 화면을 보드 위에 띄워서 한 판 → 순위
+func _play_minigame(id: String) -> Array:
+	var layer := CanvasLayer.new()
+	layer.layer = 30
+	add_child(layer)
+	var black := ColorRect.new()
+	black.color = Color(0, 0, 0, 0)
+	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	black.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(black)
+	var t := create_tween()
+	t.tween_property(black, "color:a", 1.0, 0.35)
+	await t.finished
+	var mg := Minigames.create(id, _rng)
+	mg.setup(_pawns, GameState.debug_autoplay or GameState.debug_auto_minigames, func(h: String) -> void: shot_hint = h)
+	if GameState.debug_autoplay and mg.duration < 100.0:
+		mg.duration *= 0.4   # 자동 점검은 짧게
+	layer.add_child(mg)
+	layer.move_child(black, -1)
+	var t2 := create_tween()
+	t2.tween_property(black, "color:a", 0.0, 0.35)
+	var order: Array = await mg.run()
+	var t3 := create_tween()
+	t3.tween_property(black, "color:a", 1.0, 0.35)
+	await t3.finished
+	mg.queue_free()
+	var t4 := create_tween()
+	t4.tween_property(black, "color:a", 0.0, 0.35)
+	await t4.finished
+	layer.queue_free()
+	return order
 
 
 func _result_row(rank: int, q: Dictionary, reward: int, trophy: bool) -> HBoxContainer:

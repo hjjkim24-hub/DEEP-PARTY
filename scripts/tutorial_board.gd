@@ -75,12 +75,8 @@ func _run_tutorial() -> void:
 		["", "", "25_portal"])
 	await _say({"text": "Whoosh! You popped out on the other side of the board.", "dim": false, "shot": "26_warped"})
 
-	# 4) 미니게임 → 동전 (튜토리얼은 내가 1등)
-	var order := [me]
-	for p in _pawns:
-		if p != me:
-			order.append(p)
-	rig_ranking = order
+	# 4) 미니게임 → 동전 (직접 한 판!)
+	rig_minigame = "pearl_pop"
 	await _guided_turn(_tile_near(-7.0, 12.4),
 		"Roll again!",
 		"After a warp, you can pick which way to go. Let's go this way!",
@@ -88,6 +84,12 @@ func _run_tutorial() -> void:
 		["", "", "27_minigame"])
 	await _say({"text": "Minigames pay coins by rank: 10 for 1st, 6 for 2nd, 3 for 3rd and 1 for 4th. Whoever landed on the space gets 2 more!",
 		"target": func() -> Control: return _chips, "pad": 10.0})
+	# 트로피를 꼭 사 볼 수 있게, 모자라면 연습 보너스
+	var need := Rules.TROPHY_PRICE + 2 - int(me["coins"])
+	if need > 0:
+		_add_coins(me, need)
+		await _say({"text": "Tutorial bonus! Here are a few extra coins so you can try buying a trophy.",
+			"target": func() -> Control: return _chips, "pad": 10.0})
 
 	# 5) 트로피 등장 → 지나가며 사기
 	var trophy_at := _tile_near(0.0, 12.0)

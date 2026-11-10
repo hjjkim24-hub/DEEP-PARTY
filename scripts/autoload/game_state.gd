@@ -52,6 +52,7 @@ var tutorial_active := false
 var debug_autoplay := false
 var debug_showcase := false
 var debug_round_limit := 0
+var debug_auto_minigames := false   ## 미니게임에서 내 몫도 자동으로 (튜토리얼 점검용)
 
 ## 로비 자리 4개. 빈자리는 {} (빈 딕셔너리)
 ##   {"kind": "host", "color": 0~11, "hat": "crown", ...}   방장(나), color = PALETTE 번호, 꾸미기는 종류별 아이템 id
