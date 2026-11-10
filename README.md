@@ -15,7 +15,7 @@ GitHub로 자동 빌드: 이 폴더를 GitHub 저장소(main 브랜치)에 올�
 Godot 에디터로 직접 만들 때: 프로젝트 → 내보내기 → "Windows Desktop" 선택 → (템플릿이 없으면 "내보내기 템플릿 관리 → 다운로드") → 프로젝트 내보내기.
 
 ## 시작 로고 화면
-`scenes/splash.tscn` (`scripts/splash.gd`) — 검은 화면에 Godot 로고 → MS 로고 → 메인화면.
+`scenes/splash.tscn` (`scripts/splash.gd`) — 검은 화면에 Godot 로고 → MS 로고 → JS BROS 로고 → 메인화면.
 - Godot 기본 부트 스플래시는 끄고(project.godot), 창이 다 뜬 뒤에 로고를 시작해서 로딩 중에 놓치지 않게 했습니다.
 - 로고가 나오는 동안 메인화면을 뒤에서 미리 불러 둡니다. 클릭하면 지금 로고를 건너뜁니다.
 - 시간 조절: `FADE_IN`, `HOLD`, `FADE_OUT`, `GAP` 상수.

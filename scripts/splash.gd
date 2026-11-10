@@ -1,5 +1,5 @@
 extends Control
-## 시작 로고 화면: Godot 로고 → MS 로고 → 메인화면.
+## 시작 로고 화면: Godot 로고 → MS 로고 → JS BROS 로고 → 메인화면.
 ##
 ## Godot 기본 부트 스플래시는 꺼 두고(project.godot), 엔진과 창이 다 뜬 뒤에
 ## 이 장면에서 로고를 보여 줍니다. 그래서 로딩 중에 휙 지나가서 못 보는 일이 없어요.
@@ -10,8 +10,10 @@ const NEXT_SCENE := "res://scenes/main_menu.tscn"
 const LOGOS := [
 	preload("res://textures/splash/godot_logo.png"),
 	preload("res://textures/splash/ms_logo.png"),
+	preload("res://textures/splash/jsbros_logo.png"),
 ]
-const LOGO_BOX := Vector2(900, 420)   # 1920x1080 기준 로고 최대 크기
+## 로고마다 최대 크기 (1920x1080 기준). MS · JS BROS 는 조금 작게
+const LOGO_BOXES := [Vector2(900, 420), Vector2(640, 300), Vector2(640, 300)]
 
 const READY_FRAMES := 4      # 창이 실제로 그려지기 시작한 뒤 기다릴 프레임 수
 const READY_DELAY := 0.4     # 그 뒤 검은 화면으로 잠깐 쉬는 시간
@@ -44,10 +46,7 @@ func _ready() -> void:
 	_logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_logo.set_anchors_preset(Control.PRESET_CENTER)
-	_logo.offset_left = -LOGO_BOX.x * 0.5
-	_logo.offset_right = LOGO_BOX.x * 0.5
-	_logo.offset_top = -LOGO_BOX.y * 0.5
-	_logo.offset_bottom = LOGO_BOX.y * 0.5
+	_fit_box(LOGO_BOXES[0])
 	_logo.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_logo.modulate.a = 0.0
 	_logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -107,8 +106,16 @@ func _gui_input(event: InputEvent) -> void:
 func _start_logo(i: int) -> void:
 	_index = i
 	_logo.texture = LOGOS[i] as Texture2D
+	_fit_box(LOGO_BOXES[i])
 	_logo.modulate.a = 0.0
 	_set_phase(Phase.FADE_IN)
+
+
+func _fit_box(box: Vector2) -> void:
+	_logo.offset_left = -box.x * 0.5
+	_logo.offset_right = box.x * 0.5
+	_logo.offset_top = -box.y * 0.5
+	_logo.offset_bottom = box.y * 0.5
 
 
 func _begin_fade_out(duration: float) -> void:

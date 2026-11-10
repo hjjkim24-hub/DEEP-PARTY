@@ -97,6 +97,16 @@ func _run() -> void:
 		await get_tree().process_frame
 	if get_tree().current_scene.name == "Splash":
 		await _shot("00_splash_godot")
+		# 나머지 로고도 (다 나타났을 때)
+		for k in [[1, "00b_splash_ms"], [2, "00c_splash_jsbros"]]:
+			while true:
+				var sc := get_tree().current_scene
+				if sc == null or sc.name != "Splash":
+					break
+				if int(sc.get("_index")) == k[0] and int(sc.get("_phase")) == 2:
+					await _shot(k[1])
+					break
+				await get_tree().process_frame
 	while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
 		await get_tree().process_frame
 	var m: Node = get_tree().current_scene
