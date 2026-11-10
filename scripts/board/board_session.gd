@@ -27,6 +27,9 @@ const SHOP_TEX := {
 	"tag": preload("res://textures/ui/shop/tag.png"),
 	"shutter": preload("res://textures/ui/shop/shutter.png"),
 	"button": preload("res://textures/ui/shop/button.png"),
+	"awning_shadow": preload("res://textures/ui/shop/awning_shadow.png"),
+	"lantern": preload("res://textures/ui/shop/lantern.png"),
+	"glow": preload("res://textures/ui/shop/glow.png"),
 }
 const MAIN_MENU := "res://scenes/main_menu.tscn"
 
@@ -1323,8 +1326,8 @@ func _open_shop(p: Dictionary) -> void:
 			wall_box.add_child(ic)
 		else:
 			var q := _outlined_label("?", 96)
-			q.add_theme_color_override("font_color", Color(1.0, 0.88, 0.7, 0.45))
-			q.add_theme_color_override("font_outline_color", Color(0.2, 0.1, 0.04))
+			q.add_theme_color_override("font_color", Color(1.0, 0.86, 0.62, 0.22))
+			q.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0))
 			q.size = Vector2(230, 236)
 			q.position = Vector2(x, 26)
 			q.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1346,7 +1349,7 @@ func _open_shop(p: Dictionary) -> void:
 		else:
 			pl.text = "SOON"
 		pl.add_theme_font_size_override("font_size", 24 if trophy_slot else 18)
-		pl.add_theme_color_override("font_color", Color(0.42, 0.24, 0.1))
+		pl.add_theme_color_override("font_color", Color(0.28, 0.16, 0.08))
 		price.add_child(pl)
 		if trophy_slot:
 			var buy := _wood_button("BUY", Vector2(190, 62))
@@ -1368,6 +1371,9 @@ func _open_shop(p: Dictionary) -> void:
 	left.flip_h = false
 	wall_box.add_child(left)
 	wall_box.add_child(right)
+	var awn_shadow := _tex_rect(SHOP_TEX["awning_shadow"], Vector2(-70, 60), Vector2(1240, 120))
+	awn_shadow.modulate.a = 0.0
+	wall_box.add_child(awn_shadow)
 
 	# 계산대 + 안내 + 닫기
 	stall.add_child(_tex_rect(SHOP_TEX["counter"], Vector2(30, 650), Vector2(1180, 180)))
@@ -1391,15 +1397,32 @@ func _open_shop(p: Dictionary) -> void:
 	sh.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	sh.alignment = BoxContainer.ALIGNMENT_CENTER
 	sh.add_theme_constant_override("separation", 14)
-	sh.position = Vector2(0, 66)
-	sh.size = Vector2(440, 110)
+	sh.position = Vector2(0, 62)
+	sh.size = Vector2(440, 120)
 	board_sign.add_child(sh)
-	sh.add_child(_kind_swatch("shop", 56))
-	var title := _outlined_label("SHOP", 56)
-	title.add_theme_color_override("font_color", Color(1.0, 0.93, 0.78))
-	title.add_theme_color_override("font_outline_color", Color(0.22, 0.1, 0.04))
+	var title := Label.new()
+	title.text = "SHOP"
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title.add_theme_font_size_override("font_size", 64)
+	# 나무에 새긴 글씨처럼: 어두운 글씨 + 아래쪽 밝은 테
+	title.add_theme_color_override("font_color", Color(0.2, 0.1, 0.04))
+	title.add_theme_color_override("font_shadow_color", Color(1.0, 0.85, 0.6, 0.35))
+	title.add_theme_constant_override("shadow_offset_x", 0)
+	title.add_theme_constant_override("shadow_offset_y", 3)
 	sh.add_child(title)
 
+	var lamps := []
+	for lx in [24.0, 1116.0]:
+		var glow := _tex_rect(SHOP_TEX["glow"], Vector2(lx - 130, 230), Vector2(360, 360))
+		var add_mat := CanvasItemMaterial.new()
+		add_mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+		glow.material = add_mat
+		glow.modulate = Color(1, 1, 1, 0.0)
+		stall.add_child(glow)
+		var lamp := _tex_rect(SHOP_TEX["lantern"], Vector2(lx, -200), Vector2(100, 173))
+		lamp.pivot_offset = Vector2(50, 0)
+		stall.add_child(lamp)
+		lamps.append([lamp, glow])
 	_shop_panel = dim
 	_shop_close = close
 	_shop_open = true
@@ -1409,12 +1432,27 @@ func _open_shop(p: Dictionary) -> void:
 	var t := create_tween()
 	t.tween_property(awn, "position:y", 150.0, 0.5).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
 	t.parallel().tween_property(board_sign, "position:y", 0.0, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT).set_delay(0.12)
+	t.parallel().tween_property(awn_shadow, "modulate:a", 1.0, 0.4).set_delay(0.2)
+	for lg in lamps:
+		t.parallel().tween_property(lg[0], "position:y", 300.0, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT).set_delay(0.2)
+		t.parallel().tween_property(lg[1], "modulate:a", 0.55, 0.5).set_delay(0.35)
 	t.tween_callback(func() -> void: Audio.play("tab"))
 	t.tween_property(left, "position:x", -560.0, 0.55).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
 	t.parallel().tween_property(right, "position:x", 1110.0, 0.55).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
 	var swing := board_sign.create_tween().set_loops(3)
 	swing.tween_property(board_sign, "rotation", 0.05, 0.35).set_trans(Tween.TRANS_SINE)
 	swing.tween_property(board_sign, "rotation", -0.04, 0.35).set_trans(Tween.TRANS_SINE)
+	# 등불: 살랑 흔들리고 불빛이 깜빡임
+	for lg in lamps:
+		var lamp: Control = lg[0]
+		var glow: Control = lg[1]
+		var sway := lamp.create_tween().set_loops()
+		sway.tween_property(lamp, "rotation", 0.06, 0.9).set_trans(Tween.TRANS_SINE)
+		sway.tween_property(lamp, "rotation", -0.06, 0.9).set_trans(Tween.TRANS_SINE)
+		var flick := glow.create_tween().set_loops()
+		flick.tween_property(glow, "modulate:a", 0.45, 0.13).set_delay(0.9)
+		flick.tween_property(glow, "modulate:a", 0.6, 0.18)
+		flick.tween_property(glow, "modulate:a", 0.5, 0.25)
 	await t.finished
 	shot_hint = "45_shop_trophy" if has_trophy else "45_shop"
 	if _is_auto(p):
