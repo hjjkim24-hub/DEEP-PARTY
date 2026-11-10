@@ -824,7 +824,7 @@ func _build_settings_page(parent: Control) -> Control:
 		tb.set_meta("hover_scale", 1.03)
 		tb.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		tb.pressed.connect(_select_settings_tab.bind(i))
-		tb.set_meta("sfx", "tab")
+		tb.set_meta("sfx", "tick")
 		tabs.add_child(tb)
 		_tab_buttons.append(tb)
 	_settings_first = _tab_buttons[0]
