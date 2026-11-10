@@ -7,6 +7,8 @@ extends Node
 const KO := {
 	# 메인 메뉴
 	"PLAY": "플레이",
+	"TUTORIAL": "튜토리얼",
+	"The tutorial is on its way!": "튜토리얼을 준비하고 있어요!",
 	"ONLINE": "온라인",
 	"MINIGAMES": "미니게임",
 	"SETTINGS": "설정",

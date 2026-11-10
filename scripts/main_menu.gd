@@ -65,6 +65,7 @@ const TEXT_DIM := Color(0.75, 0.95, 0.9, 0.78)
 
 const MENU_ITEMS := [
 	{"id": "play", "text": "PLAY"},
+	{"id": "tutorial", "text": "TUTORIAL"},
 	{"id": "collection", "text": "MINIGAMES"},
 	{"id": "settings", "text": "SETTINGS"},
 	{"id": "quit", "text": "QUIT"},
@@ -1707,6 +1708,8 @@ func _on_menu_pressed(id: String, b: Button) -> void:
 	match id:
 		"play":
 			_show_page("mode")
+		"tutorial":
+			_toast(tr("The tutorial is on its way!"))
 		"collection":
 			_toast(tr("Minigames will show up here once they're made!"))
 		"settings":

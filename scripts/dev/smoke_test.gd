@@ -35,6 +35,10 @@ func _run() -> void:
 	for n in Audio.SFX_NAMES:
 		Audio.play(n)
 
+	_step("tutorial button")
+	m._on_menu_pressed("tutorial", m._main_buttons[1])
+	await _sec(0.3)
+
 	_step("settings")
 	m._show_page("settings")
 	await _sec(0.8)
