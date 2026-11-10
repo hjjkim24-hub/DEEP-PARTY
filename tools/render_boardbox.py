@@ -1,10 +1,10 @@
 """보드게임 상자 그림 만들기 (보드 고르기 화면용).
 
     python render_boardbox.py
-    → ../textures/boards/sunken_isles_box.png   (상자 3/4 시점, 투명 배경)
+    → ../textures/boards/sunken_island_box.png   (상자 3/4 시점, 투명 배경)
        ../textures/boards/locked_box.png         (아직 없는 보드: 물음표 상자)
        ../textures/boards/box_shadow.png         (상자 밑 그림자, 따로 움직이도록)
-       out/sunken_isles_lid.png                  (뚜껑 그림 원본)
+       out/sunken_island_lid.png                  (뚜껑 그림 원본)
 
 먼저 make_board_print.py 로 out/board_print.png 가 있어야 해요.
 """
@@ -263,7 +263,7 @@ def lid_art():
     # 제목
     pill(img, "DEEP PARTY", (1024, 205), 62, spacing=10)
     text_block(img, "SUNKEN", (1024, 420), 250, spacing=10)
-    text_block(img, "ISLES", (1024, 655), 250, spacing=10)
+    text_block(img, "ISLAND", (1024, 655), 250, spacing=10)
     pill(img, "BOARD 01", (300, 1905), 46, spacing=6)
     pill(img, "1-4 PLAYERS", (1700, 1905), 46, spacing=6)
 
@@ -427,10 +427,10 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     os.makedirs(os.path.join(HERE, "out"), exist_ok=True)
     lid = lid_art()
-    lid.convert("RGB").save(os.path.join(HERE, "out", "sunken_isles_lid.png"))
+    lid.convert("RGB").save(os.path.join(HERE, "out", "sunken_island_lid.png"))
     side_w, side_h = 2048, int(2048 * BOX_H)
-    box = render_box(lid, side_band(side_w, side_h, "SUNKEN ISLES", "BOARD 01"),
-                     side_band(side_w, side_h, "DEEP PARTY", "1-4 PLAYERS", dark=True), "sunken_isles_box.png")
+    box = render_box(lid, side_band(side_w, side_h, "SUNKEN ISLAND", "BOARD 01"),
+                     side_band(side_w, side_h, "DEEP PARTY", "1-4 PLAYERS", dark=True), "sunken_island_box.png")
     locked = render_box(locked_lid(), side_band(side_w, side_h, "", "", dark=True),
                         side_band(side_w, side_h, "", "", dark=True), "locked_box.png")
     shadow = render_shadow()
@@ -439,7 +439,7 @@ def main():
     for im in (box, shadow):
         union.alpha_composite(im)
     bb = union.getbbox()
-    box.crop(bb).save(os.path.join(OUT, "sunken_isles_box.png"))
+    box.crop(bb).save(os.path.join(OUT, "sunken_island_box.png"))
     locked.crop(bb).save(os.path.join(OUT, "locked_box.png"))
     shadow.crop(bb).save(os.path.join(OUT, "box_shadow.png"))
     print("saved to", OUT)

@@ -24,11 +24,11 @@ const GAME_SCENE := "res://scenes/board.tscn"  ## 아직 없음 - 만들면 보�
 ## 보드 고르기 화면에 나오는 보드게임 상자들 (상자 그림은 tools/render_boardbox.py)
 const BOARDS := [
 	{
-		"id": "sunken_isles",
-		"name": "SUNKEN ISLES",
+		"id": "sunken_island",
+		"name": "SUNKEN ISLAND",
 		"desc": "Islands scattered across the seabed. Roll the dice, hop from island to island and win minigames to come out on top!",
 		"tags": ["1-4 PLAYERS", "ALL MODES"],
-		"box": preload("res://textures/boards/sunken_isles_box.png"),
+		"box": preload("res://textures/boards/sunken_island_box.png"),
 		"locked": false,
 	},
 	{

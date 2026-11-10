@@ -125,7 +125,7 @@ const KO := {
 	"CHOOSE A BOARD": "보드 고르기",
 	"%d PLAYERS": "%d명",
 	"BOARDS": "보드 목록",
-	"SUNKEN ISLES": "가라앉은 섬",
+	"SUNKEN ISLAND": "가라앉은 섬",
 	"Islands scattered across the seabed. Roll the dice, hop from island to island and win minigames to come out on top!": "바다 밑에 흩어진 섬들. 주사위를 굴려 섬에서 섬으로 건너가고, 미니게임에서 이겨 1등을 차지하세요!",
 	"1-4 PLAYERS": "1~4인",
 	"ALL MODES": "모든 모드",
