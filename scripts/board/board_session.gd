@@ -1337,10 +1337,10 @@ func _open_shop(p: Dictionary) -> void:
 	create_tween().tween_property(dim, "color:a", 0.55, 0.25)
 	var stall := Control.new()
 	stall.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	stall.size = Vector2(1240, 830)
+	stall.size = Vector2(1240, 960)
 	dim.add_child(stall)
 	var vp := get_viewport().get_visible_rect().size
-	var sc := minf(vp.x / 1320.0, vp.y / 900.0)
+	var sc := minf(vp.x / 1320.0, vp.y / 1020.0)
 	stall.scale = Vector2.ONE * sc
 	stall.position = (vp - stall.size * sc) * 0.5
 
@@ -1348,35 +1348,36 @@ func _open_shop(p: Dictionary) -> void:
 	var wall_box := Control.new()
 	wall_box.clip_contents = true
 	wall_box.position = Vector2(70, 230)
-	wall_box.size = Vector2(1100, 560)
+	wall_box.size = Vector2(1100, 690)
 	wall_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stall.add_child(wall_box)
-	wall_box.add_child(_tex_rect(SHOP_TEX["wall"], Vector2.ZERO, Vector2(1100, 560)))
+	wall_box.add_child(_tex_rect(SHOP_TEX["wall"], Vector2.ZERO, Vector2(1100, 690)))
 	_shop_buy = null
-	for k in 3:
-		var x := 105.0 + k * 315.0
-		wall_box.add_child(_tex_rect(SHOP_TEX["slot"], Vector2(x, 26), Vector2(230, 236)))
+	# 진열칸 4개 (차양 아래로 다 보이게)
+	for k in 4:
+		var x := 60.0 + k * 260.0
+		wall_box.add_child(_tex_rect(SHOP_TEX["slot"], Vector2(x, 150), Vector2(200, 205)))
 		var trophy_slot := k == 0 and has_trophy
 		if trophy_slot:
 			var ic := _icon(TROPHY_TEX, 150)
-			ic.position = Vector2(x + 45, 66)
-			ic.size = Vector2(140, 140)
+			ic.position = Vector2(x + 38, 180)
+			ic.size = Vector2(124, 124)
 			wall_box.add_child(ic)
 		else:
-			var q := _outlined_label("?", 96)
+			var q := _outlined_label("?", 84)
 			q.add_theme_color_override("font_color", Color(1.0, 0.86, 0.62, 0.22))
 			q.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0))
-			q.size = Vector2(230, 236)
-			q.position = Vector2(x, 26)
+			q.size = Vector2(200, 205)
+			q.position = Vector2(x, 150)
 			q.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			wall_box.add_child(q)
 		# 가격표
-		var tag := _tex_rect(SHOP_TEX["tag"], Vector2(x + 40, 272), Vector2(150, 60))
+		var tag := _tex_rect(SHOP_TEX["tag"], Vector2(x + 25, 364), Vector2(150, 60))
 		wall_box.add_child(tag)
 		var price := HBoxContainer.new()
 		price.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		price.alignment = BoxContainer.ALIGNMENT_CENTER
-		price.position = Vector2(x + 82, 272)
+		price.position = Vector2(x + 67, 364)
 		price.size = Vector2(100, 60)
 		price.add_theme_constant_override("separation", 6)
 		wall_box.add_child(price)
@@ -1390,8 +1391,8 @@ func _open_shop(p: Dictionary) -> void:
 		pl.add_theme_color_override("font_color", Color(0.28, 0.16, 0.08))
 		price.add_child(pl)
 		if trophy_slot:
-			var buy := _wood_button("BUY", Vector2(190, 62))
-			buy.position = Vector2(x + 20, 344)
+			var buy := _wood_button("BUY", Vector2(180, 60))
+			buy.position = Vector2(x + 10, 438)
 			buy.disabled = int(p["coins"]) < Rules.SHOP_TROPHY_PRICE
 			wall_box.add_child(buy)
 			_shop_buy = buy
@@ -1403,8 +1404,8 @@ func _open_shop(p: Dictionary) -> void:
 				_add_coins(p, -Rules.SHOP_TROPHY_PRICE)
 				_add_trophy(p, 1))
 	# 덧문 두 짝
-	var left := _tex_rect(SHOP_TEX["shutter"], Vector2.ZERO, Vector2(550, 560))
-	var right := _tex_rect(SHOP_TEX["shutter"], Vector2(550, 0), Vector2(550, 560))
+	var left := _tex_rect(SHOP_TEX["shutter"], Vector2.ZERO, Vector2(550, 690))
+	var right := _tex_rect(SHOP_TEX["shutter"], Vector2(550, 0), Vector2(550, 690))
 	right.flip_h = true
 	left.flip_h = false
 	wall_box.add_child(left)
@@ -1414,15 +1415,15 @@ func _open_shop(p: Dictionary) -> void:
 	wall_box.add_child(awn_shadow)
 
 	# 계산대 + 안내 + 닫기
-	stall.add_child(_tex_rect(SHOP_TEX["counter"], Vector2(30, 650), Vector2(1180, 180)))
+	stall.add_child(_tex_rect(SHOP_TEX["counter"], Vector2(30, 780), Vector2(1180, 180)))
 	var msg := _outlined_label("More items are coming soon!", 26)
 	msg.add_theme_color_override("font_color", Color(1.0, 0.95, 0.85))
 	msg.add_theme_color_override("font_outline_color", Color(0.25, 0.12, 0.05))
-	msg.position = Vector2(30, 690)
+	msg.position = Vector2(30, 818)
 	msg.size = Vector2(1180, 40)
 	stall.add_child(msg)
 	var close := _wood_button("CLOSE", Vector2(250, 74))
-	close.position = Vector2(495, 740)
+	close.position = Vector2(495, 870)
 	close.set_meta("sfx", "back")
 	stall.add_child(close)
 	# 차양 · 간판

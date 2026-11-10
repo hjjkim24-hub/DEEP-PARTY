@@ -175,16 +175,17 @@ def vignette(img, strength=0.45, top_shadow=0.0, top_px=0):
 
 
 # ── 부품 ─────────────────────────────────────────────────────
-def wall(w=1650, h=840):
+def wall(w=1650, h=1035):
     img = plank_wall(w, h, 140, 100, True, 0.95)
     # 가로 받침목 (진열칸 아래)
-    beam = to_img(bevel(wood(54, w, 77, False, 0.8, 1), 8, 0.3))
-    img.paste(beam, (0, int(h * 0.62)))
+    by = int(h * 0.515)   # 진열칸 바로 아래 받침목 (가격표가 여기 걸림)
+    beam = to_img(bevel(wood(78, w, 77, False, 0.8, 1), 8, 0.3))
+    img.paste(beam, (0, by))
     d = ImageDraw.Draw(img, "RGBA")
-    d.rectangle([0, int(h * 0.62) + 54, w, int(h * 0.62) + 66], fill=(0, 0, 0, 70))
+    d.rectangle([0, by + 78, w, by + 92], fill=(0, 0, 0, 70))
     for x in range(70, w, 140):
         nail(img, x, 34, 6)
-        nail(img, x, int(h * 0.62) + 27, 6)
+        nail(img, x, by + 39, 6)
     return vignette(img, 0.5, 0.55, 150)
 
 
@@ -358,7 +359,7 @@ def tag(w=225, h=96):
     return img
 
 
-def shutter(w=825, h=840):
+def shutter(w=825, h=1035):
     img = plank_wall(w, h, 78, 800, False, 0.78)
     img = vignette(img, 0.3)
     d = ImageDraw.Draw(img, "RGBA")
