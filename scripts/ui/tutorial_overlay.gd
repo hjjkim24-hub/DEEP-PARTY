@@ -70,6 +70,14 @@ func _ready() -> void:
 	_quad_rect.visible = false
 	add_child(_quad_rect)
 	_build_bubble()
+	# 건너뛰기: 튜토리얼 동안 늘 오른쪽 위 구석에
+	_skip = _small_button("SKIP TUTORIAL", false)
+	_skip.pressed.connect(_on_skip)
+	_skip.set_meta("sfx", "back")
+	_skip.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_skip)
+	_skip.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 28)
+	_skip.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 
 
 func _build_bubble() -> void:
@@ -115,10 +123,6 @@ func _build_bubble() -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	v.add_child(row)
-	_skip = _small_button("SKIP TUTORIAL", false)
-	_skip.pressed.connect(_on_skip)
-	_skip.set_meta("sfx", "back")
-	row.add_child(_skip)
 	var sp2 := Control.new()
 	sp2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(sp2)

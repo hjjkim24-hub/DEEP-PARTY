@@ -16,11 +16,16 @@ static func ids() -> Array:
 	return LIST.keys()
 
 
-## id 가 "" 면 랜덤
-static func create(id: String, rng: RandomNumberGenerator) -> Control:
+## id 가 "" 이거나 없는 이름이면 랜덤으로 하나
+static func pick(id: String, rng: RandomNumberGenerator) -> String:
 	if id == "" or not LIST.has(id):
 		var keys := LIST.keys()
-		id = keys[rng.randi() % keys.size()]
+		return keys[rng.randi() % keys.size()]
+	return id
+
+
+static func create(id: String, rng: RandomNumberGenerator) -> Control:
+	id = pick(id, rng)
 	var mg: Control = (LIST[id] as GDScript).new()
 	mg.name = NAMES[id]
 	return mg

@@ -29,6 +29,7 @@ var _done := false
 
 
 func _init() -> void:
+	goal = "Most correct picks wins!"
 	title = "SHELL SHUFFLE"
 	how_to = "Watch which shell hides the pearl. After the shells shuffle, click the one with the pearl! It gets faster every round."
 	controls = "MOUSE"
@@ -87,7 +88,7 @@ func _tick(delta: float) -> void:
 			for s in _shells:
 				s["lift"] = lift
 			if _t > 2.25:
-					Audio.play("tick")
+					sfx("tick")
 					_phase = "shuffle"
 					_t = 0.0
 					_start_swap()
@@ -145,7 +146,7 @@ func _start_swap() -> void:
 		if int(_shells[k]["pos"]) == pb:
 			ib = k
 	_swap = [ia, ib, float(_shells[ia]["x"]), float(_shells[ib]["x"])]
-	Audio.play("tick", 0.05)
+	sfx("tick", 0.05)
 
 
 func _plan_cpu_picks() -> void:
@@ -172,7 +173,7 @@ func _pick(slot: int, shell: int) -> void:
 	_picks[slot] = shell
 	_pick_time[slot] = float(_pick_time[slot]) + _t
 	if is_human(player_by_slot(slot)):
-		Audio.play("click")
+		sfx("click")
 
 
 func _reveal() -> void:
@@ -184,7 +185,7 @@ func _reveal() -> void:
 	for p in players:
 		if not _picks.has(int(p["slot"])):
 			_pick_time[int(p["slot"])] = float(_pick_time[int(p["slot"])]) + PICK_TIME
-	Audio.play("start" if any else "remove")
+	sfx("start" if any else "remove")
 	var s: Dictionary = _shells[_pearl]
 	float_text(Vector2(float(s["x"]), BASE_Y - 260), tr("HERE!"), GOLD, 46)
 	_tip.text = ""

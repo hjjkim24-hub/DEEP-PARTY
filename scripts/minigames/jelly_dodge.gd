@@ -16,6 +16,7 @@ var _field: Control
 
 
 func _init() -> void:
+	goal = "Last fish swimming wins!"
 	title = "JELLY DODGE"
 	how_to = "Swim with WASD or the arrow keys and dodge the jellyfish! You have 3 hearts. Survive for 30 seconds!"
 	controls = "KEYBOARD"
@@ -95,7 +96,7 @@ func _hit(slot: int) -> void:
 	f["inv"] = 1.4
 	var human := is_human(player_by_slot(slot))
 	if human or int(f["hearts"]) <= 0:
-		Audio.play("remove", 0.05)
+		sfx("remove", 0.05)
 	if int(f["hearts"]) <= 0:
 		f["out_at"] = _t
 		float_text(f["pos"], tr("OUT!"), Color("ff6b6b"), 46)

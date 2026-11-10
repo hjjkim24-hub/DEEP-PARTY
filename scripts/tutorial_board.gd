@@ -95,7 +95,7 @@ func _run_tutorial() -> void:
 	var trophy_at := _tile_near(0.0, 12.0)
 	_follow = null
 	_move_camera(world.spaces[trophy_at]["pos"], 1.6, 1.0)
-	await get_tree().create_timer(1.05).timeout
+	await get_tree().create_timer(1.05, false).timeout
 	world.show_trophy(trophy_at)
 	Audio.play("start")
 	await _say({"text": "Look, a trophy appeared! In a real game, a trophy pops up on a random space after round 3. Buy it for 20 coins!",
@@ -107,7 +107,7 @@ func _run_tutorial() -> void:
 	await _say({"text": "Keep rolling!", "target": func() -> Control: return _dice_btn, "pad": 6.0,
 		"until": func() -> bool: return _dice_hit, "auto": _hit_dice})
 	await _wait_for(func() -> bool: return _dialog_open)
-	await get_tree().create_timer(0.35).timeout
+	await get_tree().create_timer(0.35, false).timeout
 	await _say({"text": "You only have to pass the trophy, not stop on it! You stop to decide, then move the rest of the way. Click BUY!",
 		"target": func() -> Control: return _dialog_panel if _dialog_open else null, "pad": 8.0,
 		"until": func() -> bool: return not _dialog_open, "auto": func() -> void: _press_dialog(0), "shot": "27c_trophy_buy"})
@@ -119,7 +119,7 @@ func _run_tutorial() -> void:
 	force_shop_trophy = 1
 	_open_shop(me)
 	await _wait_for(func() -> bool: return _shop_open)
-	await get_tree().create_timer(0.4).timeout
+	await get_tree().create_timer(0.4, false).timeout
 	await _say({"text": "Sometimes the shop sells a trophy for 40 coins! Other items will be added later. Click CLOSE to leave the shop.",
 		"target": func() -> Control: return _shop_close, "pad": 8.0,
 		"until": func() -> bool: return not _shop_open, "auto": _close_shop, "shot": "29_shop_window"})

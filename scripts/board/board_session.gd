@@ -13,6 +13,8 @@ const Pawn3D := preload("res://scripts/world3d/pawn3d.gd")
 const Dice3D := preload("res://scripts/world3d/dice3d.gd")
 const TutorialOverlay := preload("res://scripts/ui/tutorial_overlay.gd")
 const PathArrow := preload("res://scripts/ui/path_arrow.gd")
+const PauseMenu := preload("res://scripts/ui/pause_menu.gd")
+const MinigameIntro := preload("res://scripts/minigames/minigame_intro.gd")
 const UIFont := preload("res://fonts/Poppins-Bold.ttf")
 const CARD_TEX := preload("res://textures/tiles/card_chance.png")
 const COIN_TEX := preload("res://textures/ui/coin.png")
@@ -60,6 +62,7 @@ var _start_marker: Control
 var _screen_marker: Control
 var _legend: PanelContainer
 var _overlay
+var _pause: Control
 var _fade: ColorRect
 var _title: Label
 var _intro_done := false
@@ -167,7 +170,7 @@ func _setup_pawns() -> void:
 		node.visible = false
 		add_child(node)
 		node.position = spots[i]
-		node.rotation.y = PI   # 카메라 쪽(남쪽)을 보게
+		node.rotation.y = 0.0   # 말 앞쪽(+Z)이 카메라(남쪽)를 보게
 		d["node"] = node
 		d["spot"] = spots[i]
 		d["tile"] = world.start_index
@@ -188,26 +191,6 @@ func _is_auto(p: Dictionary) -> bool:
 ## 왼쪽 위 나가기 버튼 글씨 (상속해서 바꿈)
 func exit_label() -> String:
 	return "EXIT TUTORIAL"
-
-
-## 진짜 게임은 실수로 누르지 않게 한 번 더 눌러야 나감
-var _exit_armed := false
-
-
-func _on_exit_pressed(btn: Button) -> void:
-	if not confirm_exit() or _exit_armed:
-		_exit_to_menu()
-		return
-	_exit_armed = true
-	btn.text = "CLICK AGAIN TO LEAVE"
-	await get_tree().create_timer(3.0).timeout
-	_exit_armed = false
-	if is_instance_valid(btn):
-		btn.text = exit_label()
-
-
-func confirm_exit() -> bool:
-	return false
 
 
 ## 보드 제목 (상속해서 바꿈)
@@ -278,7 +261,16 @@ func _focus_my_pawn() -> void:
 	_focused = true
 
 
+func _open_pause() -> void:
+	if _pause and not _pause.is_open():
+		_pause.open()
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		get_viewport().set_input_as_handled()
+		_open_pause()
+		return
 	if not _intro_done:
 		return
 	var mb := event as InputEventMouseButton
@@ -359,11 +351,20 @@ func _build_ui() -> void:
 		p["chip"] = chip
 		_chips.add_child(chip)
 
-	var exit := _glass_button(exit_label())
-	exit.set_meta("sfx", "back")
-	exit.pressed.connect(_on_exit_pressed.bind(exit))
-	root.add_child(exit)
-	exit.position = Vector2(30, 30)
+	# 왼쪽 위: 메뉴 (ESC 와 같음)
+	var menu_btn := _glass_button("MENU")
+	menu_btn.custom_minimum_size = Vector2(130, 0)
+	menu_btn.pressed.connect(_open_pause)
+	root.add_child(menu_btn)
+	menu_btn.position = Vector2(30, 30)
+	var pl := CanvasLayer.new()
+	pl.layer = 50
+	pl.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(pl)
+	_pause = PauseMenu.new()
+	pl.add_child(_pause)
+	_pause.set_leave_text(exit_label())
+	_pause.leave_requested.connect(_exit_to_menu)
 	_round_label = _outlined_label("", 26)
 	_round_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_round_label.position = Vector2(34, 92)
@@ -608,10 +609,10 @@ func _play_turn(p: Dictionary, rig: int = 0, forced: Dictionary = {}) -> void:
 	# 말과 머리 위 주사위가 같이 잘 보이게
 	_follow = null
 	_move_camera(node.position + Vector3(0, 1.3, 0), 1.25, 0.8)
-	await get_tree().create_timer(0.85).timeout
+	await get_tree().create_timer(0.85, false).timeout
 	_dice.show_at(node.position + Vector3(0, DICE_H, 0))
 	if _is_auto(p):
-		await get_tree().create_timer(1.0).timeout
+		await get_tree().create_timer(1.0, false).timeout
 		_dice_hit = true
 	else:
 		_awaiting_roll = true
@@ -628,7 +629,7 @@ func _play_turn(p: Dictionary, rig: int = 0, forced: Dictionary = {}) -> void:
 	_steps_label.text = str(n)
 	_steps_label.visible = true
 	_pop(_steps_label)
-	await get_tree().create_timer(0.45).timeout
+	await get_tree().create_timer(0.45, false).timeout
 	_dice.hide_dice()
 	_follow = node
 	while _steps_left > 0 and not _game_over:
@@ -636,7 +637,7 @@ func _play_turn(p: Dictionary, rig: int = 0, forced: Dictionary = {}) -> void:
 		var nxt: int = opts[0]
 		if opts.size() > 1:
 			if _is_auto(p):
-				await get_tree().create_timer(0.5).timeout
+				await get_tree().create_timer(0.5, false).timeout
 				nxt = _cpu_pick_path(p, opts)
 			else:
 				nxt = await _choose(p, opts, int(forced.get(int(p["tile"]), -1)))
@@ -653,7 +654,7 @@ func _play_turn(p: Dictionary, rig: int = 0, forced: Dictionary = {}) -> void:
 			if _steps_left > 0 and not _game_over:
 				_steps_label.visible = true
 				_follow = node
-	await get_tree().create_timer(0.2).timeout
+	await get_tree().create_timer(0.2, false).timeout
 	_steps_label.visible = false
 	Audio.play("add")
 	world.bubbles_at(node.position + Vector3(0, 0.2, 0), 12, 0.5, true)
@@ -908,7 +909,7 @@ func _offer_trophy(p: Dictionary) -> void:
 	var node: Node3D = p["node"]
 	_follow = null
 	_move_camera(node.position + Vector3(0, 1.0, 0), 1.15, 0.5)
-	await get_tree().create_timer(0.55).timeout
+	await get_tree().create_timer(0.55, false).timeout
 	if int(p["coins"]) < Rules.TROPHY_PRICE:
 		shot_hint = "41_trophy_poor"
 		await _banner(tr("A TROPHY!"), tr("You need %d coins to buy it.") % Rules.TROPHY_PRICE, 1.1)
@@ -941,7 +942,7 @@ func _spawn_trophy() -> void:
 	var t: int = pool[_rng.randi() % pool.size()]
 	_follow = null
 	_move_camera(world.spaces[t]["pos"], 1.6, 1.1)
-	await get_tree().create_timer(1.15).timeout
+	await get_tree().create_timer(1.15, false).timeout
 	world.show_trophy(t)
 	Audio.play("start")
 	shot_hint = "40_trophy_spawn"
@@ -991,12 +992,12 @@ func _warp_to(p: Dictionary, b: int) -> void:
 	node.visible = false
 	_follow = null
 	_move_camera(world.spaces[b]["pos"], 1.0, 1.0)
-	await get_tree().create_timer(1.0).timeout
+	await get_tree().create_timer(1.0, false).timeout
 	p["prev"] = -1
 	p["tile"] = b
 	var spot := _spot_on(b, p)
 	node.position = spot + Vector3(0, 1.3, 0)
-	node.rotation.y = PI
+	node.rotation.y = 0.0
 	node.visible = true
 	world.portal_burst(world.spaces[b]["pos"])
 	Audio.play("add")
@@ -1048,7 +1049,7 @@ func _run_minigame(lander: Dictionary, trophy: bool) -> void:
 		v.add_child(note)
 	await _show_modal(panel)
 	shot_hint = "43_minigame_results"
-	await get_tree().create_timer(2.4).timeout
+	await get_tree().create_timer(2.4, false).timeout
 	dim.queue_free()
 	for k in order.size():
 		var q: Dictionary = order[k]
@@ -1060,40 +1061,65 @@ func _run_minigame(lander: Dictionary, trophy: bool) -> void:
 			if q == lander:
 				reward += Rules.MINIGAME_LANDER_BONUS
 			_add_coins(q, reward)
-	await get_tree().create_timer(0.8).timeout
+	await get_tree().create_timer(0.8, false).timeout
 
 
-## 미니게임 화면을 보드 위에 띄워서 한 판 → 순위
+## 미니게임 한 판: 검은 화면 → 소개 화면(전용 음악, 미리보기, 준비) → 검은 화면 → 게임(게임별 음악) → 보드로
 func _play_minigame(id: String) -> Array:
+	id = Minigames.pick(id, _rng)
+	var auto := GameState.debug_autoplay or GameState.debug_auto_minigames
+	var hint_cb := func(h: String) -> void: shot_hint = h
 	var layer := CanvasLayer.new()
 	layer.layer = 30
 	add_child(layer)
 	var black := ColorRect.new()
 	black.color = Color(0, 0, 0, 0)
-	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	black.mouse_filter = Control.MOUSE_FILTER_STOP
 	black.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	layer.add_child(black)
-	var t := create_tween()
-	t.tween_property(black, "color:a", 1.0, 0.35)
-	await t.finished
+	Audio.stop_music(0.5)
+	await _fade_black(black, 1.0, 0.5)
+	await get_tree().create_timer(0.7, false).timeout
+	# 소개 화면
+	var intro := MinigameIntro.new()
+	intro.setup(id, _pawns, auto, hint_cb)
+	layer.add_child(intro)
+	layer.move_child(black, -1)
+	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	Audio.play_music(0.0, "mg_intro")
+	await _fade_black(black, 0.0, 0.45)
+	await intro.run()
+	black.mouse_filter = Control.MOUSE_FILTER_STOP
+	Audio.stop_music(0.5)
+	await _fade_black(black, 1.0, 0.45)
+	intro.queue_free()
+	await get_tree().create_timer(1.0, false).timeout
+	# 게임
 	var mg := Minigames.create(id, _rng)
-	mg.setup(_pawns, GameState.debug_autoplay or GameState.debug_auto_minigames, func(h: String) -> void: shot_hint = h)
+	mg.setup(_pawns, auto, hint_cb)
 	if GameState.debug_autoplay and mg.duration < 100.0:
 		mg.duration *= 0.4   # 자동 점검은 짧게
 	layer.add_child(mg)
 	layer.move_child(black, -1)
-	var t2 := create_tween()
-	t2.tween_property(black, "color:a", 0.0, 0.35)
+	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	Audio.play_music(0.0, id)
+	await _fade_black(black, 0.0, 0.4)
 	var order: Array = await mg.run()
-	var t3 := create_tween()
-	t3.tween_property(black, "color:a", 1.0, 0.35)
-	await t3.finished
+	black.mouse_filter = Control.MOUSE_FILTER_STOP
+	Audio.stop_music(0.4)
+	await _fade_black(black, 1.0, 0.4)
 	mg.queue_free()
-	var t4 := create_tween()
-	t4.tween_property(black, "color:a", 0.0, 0.35)
-	await t4.finished
+	await get_tree().create_timer(0.4, false).timeout
+	Audio.play_music(0.0, "board")
+	await _fade_black(black, 0.0, 0.4)
 	layer.queue_free()
 	return order
+
+
+func _fade_black(black: ColorRect, to: float, time: float) -> void:
+	var t := create_tween()
+	t.tween_property(black, "color:a", to, time)
+	await t.finished
 
 
 func _result_row(rank: int, q: Dictionary, reward: int, trophy: bool) -> HBoxContainer:
@@ -1235,7 +1261,7 @@ func _card_popup(c: Dictionary) -> void:
 	t.tween_property(front, "scale:x", 1.0, 0.2).set_trans(Tween.TRANS_BACK)
 	await t.finished
 	shot_hint = "42_card_" + id
-	await get_tree().create_timer(1.9).timeout
+	await get_tree().create_timer(1.9, false).timeout
 	var t3 := create_tween()
 	t3.tween_property(holder, "modulate:a", 0.0, 0.3)
 	await t3.finished
@@ -1254,10 +1280,10 @@ func _apply_card(p: Dictionary, id: String) -> void:
 	match id:
 		"coins5":
 			_add_coins(p, 5)
-			await get_tree().create_timer(0.8).timeout
+			await get_tree().create_timer(0.8, false).timeout
 		"coins10":
 			_add_coins(p, 10)
-			await get_tree().create_timer(0.8).timeout
+			await get_tree().create_timer(0.8, false).timeout
 		"roll_again":
 			await _play_turn(p)
 			if not _game_over:
@@ -1273,9 +1299,9 @@ func _apply_card(p: Dictionary, id: String) -> void:
 			var target: Dictionary = await _pick_player(p, cands, tr("Who do you take %d coins from?") % Rules.STEAL_COINS, "coins")
 			var amount := mini(Rules.STEAL_COINS, int(target["coins"]))
 			_add_coins(target, -amount)
-			await get_tree().create_timer(0.3).timeout
+			await get_tree().create_timer(0.3, false).timeout
 			_add_coins(p, amount)
-			await get_tree().create_timer(0.8).timeout
+			await get_tree().create_timer(0.8, false).timeout
 		"warp":
 			var t: int = await _pick_tile(p)
 			if t >= 0 and t != int(p["tile"]):
@@ -1294,9 +1320,9 @@ func _apply_card(p: Dictionary, id: String) -> void:
 				return
 			var target: Dictionary = await _pick_player(p, cands, tr("Whose trophy do you steal?"), "trophies")
 			_add_trophy(target, -1)
-			await get_tree().create_timer(0.3).timeout
+			await get_tree().create_timer(0.3, false).timeout
 			_add_trophy(p, 1)
-			await get_tree().create_timer(0.8).timeout
+			await get_tree().create_timer(0.8, false).timeout
 
 
 ## 찬스 카드: 보드 곳곳에 +5 / -5 동전 칸이 생김
@@ -1308,18 +1334,18 @@ func _spawn_coin_spaces(p: Dictionary, kind: String) -> void:
 	pool.shuffle()
 	_follow = null
 	_move_camera(Vector3(0, 0, 1.5), 3.4, 1.0)
-	await get_tree().create_timer(1.05).timeout
+	await get_tree().create_timer(1.05, false).timeout
 	_legend_add(kind)
 	for k in mini(Rules.COIN_SPACES_PER_CARD, pool.size()):
 		var i: int = pool[k]
 		_tile_mods[i] = kind
 		world.set_tile_look(i, kind)
 		Audio.play("toast")
-		await get_tree().create_timer(0.35).timeout
+		await get_tree().create_timer(0.35, false).timeout
 	shot_hint = "44_" + kind
-	await get_tree().create_timer(1.0).timeout
+	await get_tree().create_timer(1.0, false).timeout
 	focus_on(p, 0.8)
-	await get_tree().create_timer(0.8).timeout
+	await get_tree().create_timer(0.8, false).timeout
 	_follow = p["node"]
 
 
@@ -1494,10 +1520,10 @@ func _open_shop(p: Dictionary) -> void:
 	await t.finished
 	shot_hint = "45_shop_trophy" if has_trophy else "45_shop"
 	if _is_auto(p):
-		await get_tree().create_timer(1.4).timeout
+		await get_tree().create_timer(1.4, false).timeout
 		if _shop_buy and not _shop_buy.disabled:
 			_shop_buy.pressed.emit()
-			await get_tree().create_timer(0.8).timeout
+			await get_tree().create_timer(0.8, false).timeout
 		_close_shop()
 	while _shop_open:
 		await get_tree().process_frame
@@ -1654,7 +1680,7 @@ func _ask(p: Dictionary, title: String, body: String, options: Array, auto_choic
 	_dialog_open = true
 	await _show_modal(panel)
 	if _is_auto(p):
-		await get_tree().create_timer(1.5).timeout
+		await get_tree().create_timer(1.5, false).timeout
 		_dialog_choice = auto_choice
 	while _dialog_choice < 0:
 		await get_tree().process_frame
@@ -1721,7 +1747,7 @@ func _pick_player(p: Dictionary, cands: Array, prompt: String, by: String) -> Di
 	await _show_modal(panel)
 	shot_hint = "46_pick_player"
 	if _is_auto(p):
-		await get_tree().create_timer(1.5).timeout
+		await get_tree().create_timer(1.5, false).timeout
 		var best := 0
 		for k in cands.size():
 			if int(cands[k][by]) > int(cands[best][by]):
@@ -1739,7 +1765,7 @@ func _pick_player(p: Dictionary, cands: Array, prompt: String, by: String) -> Di
 func _pick_tile(p: Dictionary) -> int:
 	_follow = null
 	_move_camera(Vector3(0, 0, 1.5), 3.6, 1.0)
-	await get_tree().create_timer(1.0).timeout
+	await get_tree().create_timer(1.0, false).timeout
 	var prompt := _outlined_label(tr("Click the space you want to warp to!"), 34)
 	prompt.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	prompt.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
@@ -1762,13 +1788,13 @@ func _pick_tile(p: Dictionary) -> int:
 	_hover_tile = -1
 	shot_hint = "47_pick_tile"
 	if _is_auto(p):
-		await get_tree().create_timer(1.2).timeout
+		await get_tree().create_timer(1.2, false).timeout
 		var t := world.trophy_tile
 		if t < 0 or t == int(p["tile"]):
 			var pool: Array = world.regular_tiles()
 			t = pool[_rng.randi() % pool.size()]
 		_show_pick_marker(t)
-		await get_tree().create_timer(0.6).timeout
+		await get_tree().create_timer(0.6, false).timeout
 		_picked_tile = t
 	else:
 		_tile_catcher = Control.new()
@@ -1836,11 +1862,11 @@ func _show_results() -> void:
 	var w := _winner
 	_follow = null
 	_move_camera((w["node"] as Node3D).position, 1.1, 1.2)
-	await get_tree().create_timer(1.2).timeout
+	await get_tree().create_timer(1.2, false).timeout
 	for k in 3:
 		world.bubbles_at((w["node"] as Node3D).position + Vector3(0, 0.5, 0), 30, 0.8, true)
 		world.portal_burst((w["node"] as Node3D).position)
-		await get_tree().create_timer(0.25).timeout
+		await get_tree().create_timer(0.25, false).timeout
 	var head: String = tr("%s WINS!") % w["name"]
 	if String(w["team"]) != "":
 		head = tr("TEAM %s WINS!") % w["team"]
@@ -1894,7 +1920,7 @@ func _show_results() -> void:
 	shot_hint = "48_results"
 	Audio.play("start")
 	if GameState.debug_autoplay:
-		await get_tree().create_timer(3.0).timeout
+		await get_tree().create_timer(3.0, false).timeout
 		_exit_to_menu()
 
 
@@ -1919,7 +1945,7 @@ func _explain_tile(p: Dictionary, text: String, shot: String) -> void:
 	var i: int = p["tile"]
 	_follow = null
 	_move_camera(world.spaces[i]["pos"], TILE_ZOOM, 0.7)
-	await get_tree().create_timer(0.75).timeout
+	await get_tree().create_timer(0.75, false).timeout
 	await _say({"text": text, "quad": func() -> PackedVector2Array: return _tile_quad(i), "shot": shot})
 
 
@@ -1988,11 +2014,11 @@ func _intro() -> void:
 	_apply_camera()
 	await get_tree().process_frame
 	await get_tree().process_frame
-	Audio.play_music()   # 보드가 나타나는 순간 처음부터
+	Audio.play_music(0.0, "board")   # 보드가 나타나는 순간 처음부터 (긴박한 보드 음악)
 	var t := create_tween()
 	t.tween_property(_fade, "color:a", 0.0, 0.7)
 	t.parallel().tween_property(_title, "modulate:a", 1.0, 0.7)
-	await get_tree().create_timer(1.8).timeout
+	await get_tree().create_timer(1.8, false).timeout
 	# 2) 판 속으로 쑥
 	Audio.play("bubbles")
 	create_tween().tween_property(_title, "modulate:a", 0.0, 0.5)
@@ -2002,8 +2028,8 @@ func _intro() -> void:
 	# 3) 말들이 위에서 퐁퐁
 	for i in _pawns.size():
 		_drop_pawn(_pawns[i])
-		await get_tree().create_timer(0.3).timeout
-	await get_tree().create_timer(1.0).timeout
+		await get_tree().create_timer(0.3, false).timeout
+	await get_tree().create_timer(1.0, false).timeout
 	_intro_done = true
 	_my_pawn_btn.visible = true
 	_legend.visible = true
@@ -2017,7 +2043,7 @@ func _drop_pawn(p: Dictionary) -> void:
 	node.position = spot + Vector3(0, 9.0, 0)
 	var t := create_tween()
 	t.tween_property(node, "position", spot, 0.8).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
-	await get_tree().create_timer(0.45).timeout
+	await get_tree().create_timer(0.45, false).timeout
 	Audio.play("add")
 	world.bubbles_at(spot + Vector3(0, 0.2, 0), 18, 0.5, true)
 
@@ -2028,6 +2054,7 @@ func _after_intro() -> void:
 
 
 func _exit_to_menu() -> void:
+	get_tree().paused = false
 	if _fade.color.a > 0.5 and not _intro_done:
 		return
 	GameState.tutorial_active = false

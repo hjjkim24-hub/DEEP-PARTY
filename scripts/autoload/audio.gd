@@ -7,6 +7,16 @@ extends Node
 ## 음악은 "Music" 버스, 효과음은 "SFX" 버스 → 설정의 음량 슬라이더가 그대로 적용돼요.
 
 const MUSIC_PATH := "res://audio/music/menu_theme.ogg"
+## 배경음악 목록 (tools/make_audio.py · tools/make_music.py 로 만듦)
+const TRACKS := {
+	"menu": "res://audio/music/menu_theme.ogg",
+	"board": "res://audio/music/board_theme.ogg",
+	"mg_intro": "res://audio/music/mg_intro.ogg",
+	"pearl_pop": "res://audio/music/mg_pearl_pop.ogg",
+	"timing_stop": "res://audio/music/mg_timing_stop.ogg",
+	"shell_game": "res://audio/music/mg_shell_game.ogg",
+	"jelly_dodge": "res://audio/music/mg_jelly_dodge.ogg",
+}
 const SFX_DIR := "res://audio/sfx/"
 const SFX_NAMES := [
 	"hover", "click", "back", "toggle_on", "toggle_off", "tick", "tab", "color",
@@ -23,6 +33,7 @@ const MIN_INTERVAL_MS := 40
 const VOICES := 10
 const MUSIC_DB := -4.0
 var _stopping := false
+var _track := ""
 
 var _streams := {}
 var _players: Array[AudioStreamPlayer] = []
@@ -73,13 +84,14 @@ func play(sfx_name: String, min_interval_ms: int = MIN_INTERVAL_MS) -> void:
 
 
 ## 배경음악: 화면이 나타나는 순간 불러서 첫 박부터 들리게 (fade_time 0 = 바로 제 소리)
-func play_music(fade_time: float = 0.0) -> void:
-	if _music.playing and not _stopping:
+func play_music(fade_time: float = 0.0, track: String = "menu") -> void:
+	if _music.playing and not _stopping and track == _track:
 		return
 	_stopping = false
+	_track = track
 	if _music_tween:
 		_music_tween.kill()
-	var stream := load(MUSIC_PATH) as AudioStreamOggVorbis
+	var stream := load(TRACKS.get(track, MUSIC_PATH)) as AudioStreamOggVorbis
 	if stream == null:
 		return
 	stream.loop = true

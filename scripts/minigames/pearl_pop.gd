@@ -16,6 +16,7 @@ var _t := 0.0
 
 
 func _init() -> void:
+	goal = "Most points wins!"
 	title = "PEARL POP"
 	how_to = "Click the pearls as they float up! White pearls are 1 point, gold pearls are 3. Watch out for sea urchins: -2!"
 	controls = "MOUSE"
@@ -109,7 +110,7 @@ func _pop(it: Dictionary, slot: int) -> void:
 	float_text(it["pos"], ("+%d" % pts) if pts > 0 else str(pts), col, 44)
 	var human := is_human(player_by_slot(slot))
 	if human or rng.randf() < 0.35:
-		Audio.play("remove" if pts < 0 else ("add" if pts > 1 else "click"), 0.03)
+		sfx("remove" if pts < 0 else ("add" if pts > 1 else "click"), 0.03)
 	_burst(it["pos"], col)
 
 

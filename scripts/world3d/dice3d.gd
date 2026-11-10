@@ -74,7 +74,7 @@ func roll_to(n: int) -> void:
 	var t0 := create_tween()
 	t0.tween_property(self, "_anchor", _anchor + Vector3(0, 0.7, 0), 0.25).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
 	t0.tween_property(self, "_anchor", _anchor, 0.3).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
-	await get_tree().create_timer(0.55).timeout
+	await get_tree().create_timer(0.55, false).timeout
 	spinning = false
 	# 위로 온 면이 카메라 쪽(남쪽)으로 살짝 기울어 보이게
 	var target := Basis(Vector3(1, 0, 0), 0.42) * Basis(Vector3.UP, 0.35) * face_up(clampi(n, 1, 6))

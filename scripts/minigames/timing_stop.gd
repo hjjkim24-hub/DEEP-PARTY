@@ -17,6 +17,7 @@ var _done := false
 
 
 func _init() -> void:
+	goal = "Highest total score wins!"
 	title = "PERFECT STOP"
 	how_to = "Click when the shrinking ring lines up with the target ring! 5 rounds, and it gets faster every time."
 	controls = "MOUSE"
@@ -137,9 +138,9 @@ func _stop(slot: int) -> void:
 	l.text = "%s  +%d" % [tr(word), pts]
 	l.add_theme_color_override("font_color", col)
 	if is_human(player_by_slot(slot)):
-		Audio.play("start" if err < 4.0 else ("add" if err < 25.0 else "remove"))
+		sfx("start" if err < 4.0 else ("add" if err < 25.0 else "remove"))
 	else:
-		Audio.play("tick", 0.05)
+		sfx("tick", 0.05)
 
 
 func _on_input(event: InputEvent) -> void:

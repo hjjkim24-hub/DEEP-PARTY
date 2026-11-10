@@ -479,9 +479,8 @@ func _tiles() -> void:
 				_mi(stud, gold, base + b * Vector3(cx * (size * 0.5 + 0.1), 0.17, cz * (size * 0.5 + 0.1)))
 		var plane := PlaneMesh.new()
 		plane.size = Vector2(size - 0.3, size - 0.3)
-		# 그림은 카메라(남쪽)에서 똑바로 읽히게: 네모라서 90°씩 돌려도 칸과 딱 맞음
-		var yaw_top: float = float(sp["yaw"]) - roundf(float(sp["yaw"]) / (PI / 2.0)) * (PI / 2.0)
-		sp["top_mi"] = _mi(plane, _tile_top_mat(kind), base + Vector3(0, TILE_H + 0.004, 0), Basis(Vector3.UP, yaw_top))
+		# 윗면은 칸과 같은 방향 (그림은 셰이더가 늘 똑바로 세워 줌)
+		sp["top_mi"] = _mi(plane, _tile_top_mat(kind), base + Vector3(0, TILE_H + 0.004, 0), b)
 		# 협곡 위 칸은 돌기둥이 받침
 		if _in_chasm(base.x, base.z):
 			var depth := base.y - natural_height(base.x, base.z) + 0.5

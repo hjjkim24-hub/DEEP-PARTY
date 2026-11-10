@@ -11,6 +11,7 @@ extends Control
 ##   _score_text(p)      이름표에 보일 점수 글씨
 
 signal finished(ranking: Array)
+signal demo_done
 
 const UIFont := preload("res://fonts/Poppins-Bold.ttf")
 const BackgroundScene := preload("res://scenes/underwater_background.tscn")
@@ -22,11 +23,13 @@ const GOLD := Color("ffcf4a")
 
 var title := "MINIGAME"
 var how_to := ""
+var goal := "Highest score wins!"   ## 소개 화면에 보일 목표 한 줄
 var controls := "MOUSE"          ## "MOUSE" 또는 "KEYBOARD"
 var duration := 20.0
 var show_timer := true           ## 시간 제한이 없는 게임은 false
 var players: Array = []          ## 보드의 말 정보 (name, color, cpu, slot)
 var auto_human := false          ## 자동 점검: 사람도 CPU처럼
+var demo := false                ## 소개 화면의 미리보기 (모두 자동, 소리 없음)
 var scores := {}                 ## slot → 점수
 var time_left := 0.0
 var playing := false
@@ -53,7 +56,7 @@ func is_human(p: Dictionary) -> bool:
 
 
 func hint(name_: String) -> void:
-	if _hint_cb.is_valid():
+	if not demo and _hint_cb.is_valid():
 		_hint_cb.call(name_)
 
 
@@ -91,10 +94,30 @@ func _fit_arena() -> void:
 	arena.position = (v - ARENA * s) * 0.5
 
 
-## 처음부터 끝까지 (await 하면 순위가 나옴)
+## 효과음 (미리보기에선 조용히)
+func sfx(name_: String, min_interval: float = 0.0) -> void:
+	if not demo:
+		Audio.play(name_, min_interval)
+
+
+## 미리보기: 소개 없이 바로 플레이, 끝나면 demo_done
+func run_demo() -> void:
+	demo = true
+	auto_human = true
+	if duration < 100.0:
+		duration = minf(duration, 12.0)
+	time_left = duration
+	playing = true
+	_start_game()
+	while not _is_done():
+		await get_tree().process_frame
+	playing = false
+	await get_tree().create_timer(1.2, false).timeout
+	demo_done.emit()
+
+
+## 처음부터 끝까지 (await 하면 순위가 나옴). 소개는 미니게임 소개 화면이 따로 해요
 func run() -> Array:
-	hint("50_mg_%s_intro" % name.to_snake_case())
-	await _intro()
 	await _countdown()
 	time_left = duration
 	playing = true
@@ -102,7 +125,7 @@ func run() -> Array:
 	while not _is_done():
 		await get_tree().process_frame
 	playing = false
-	Audio.play("start")
+	sfx("start")
 	await _big_text("FINISH!", 1.2)
 	var r := _ranking()
 	finished.emit(r)
@@ -240,82 +263,6 @@ func _big_text(text: String, hold: float, col: Color = PEARL) -> void:
 	t.tween_property(l, "modulate:a", 0.0, 0.2)
 	await t.finished
 	l.queue_free()
-
-
-## 소개 카드: 제목 · 설명 · 조작법 · READY
-func _intro() -> void:
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0.04, 0.05, 0.55)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_STOP
-	_overlay.add_child(dim)
-	var panel := PanelContainer.new()
-	var st := _glass(Color(0.03, 0.17, 0.16, 0.96), Color(AQUA, 0.7), 3, 28)
-	st.set_content_margin_all(40)
-	panel.add_theme_stylebox_override("panel", st)
-	panel.custom_minimum_size = Vector2(760, 0)
-	dim.add_child(panel)
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 22)
-	panel.add_child(v)
-	var head := Label.new()
-	head.text = "MINIGAME!"
-	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	head.add_theme_font_size_override("font_size", 20)
-	head.add_theme_color_override("font_color", AQUA)
-	v.add_child(head)
-	var t := Label.new()
-	t.text = title
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	t.add_theme_font_size_override("font_size", 56)
-	t.add_theme_color_override("font_color", GOLD)
-	v.add_child(t)
-	var d := Label.new()
-	d.text = how_to
-	d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	d.custom_minimum_size = Vector2(680, 0)
-	d.add_theme_font_size_override("font_size", 25)
-	v.add_child(d)
-	var c := Label.new()
-	c.text = "Controls: Mouse" if controls == "MOUSE" else "Controls: WASD / Arrow keys"
-	c.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	c.add_theme_font_size_override("font_size", 20)
-	c.add_theme_color_override("font_color", Color(PEARL, 0.7))
-	v.add_child(c)
-	var ready_btn := Button.new()
-	ready_btn.text = "READY!"
-	ready_btn.focus_mode = Control.FOCUS_NONE
-	ready_btn.custom_minimum_size = Vector2(240, 66)
-	ready_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	ready_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	ready_btn.add_theme_font_size_override("font_size", 26)
-	var n := _glass(Color(AQUA, 0.95), Color(AQUA), 0, 18)
-	var hv := _glass(Color("a6f7e8"), Color(AQUA), 0, 18)
-	ready_btn.add_theme_stylebox_override("normal", n)
-	ready_btn.add_theme_stylebox_override("hover", hv)
-	ready_btn.add_theme_stylebox_override("pressed", n)
-	ready_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	for k in ["font_color", "font_hover_color", "font_pressed_color"]:
-		ready_btn.add_theme_color_override(k, DEEP)
-	v.add_child(ready_btn)
-	await get_tree().process_frame
-	panel.position = (get_viewport().get_visible_rect().size - panel.size) * 0.5
-	panel.pivot_offset = panel.size * 0.5
-	panel.scale = Vector2.ONE * 0.6
-	create_tween().tween_property(panel, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	var human := false
-	for p in players:
-		if is_human(p):
-			human = true
-	if human:
-		await ready_btn.pressed
-	else:
-		await get_tree().create_timer(2.2).timeout
-	var out := create_tween()
-	out.tween_property(dim, "modulate:a", 0.0, 0.2)
-	await out.finished
-	dim.queue_free()
 
 
 func _countdown() -> void:

@@ -25,7 +25,11 @@ void fragment() {
 	c += vec3(0.04) * glow;
 	float b = texture(border_tex, uv).a;
 	c = mix(c, border_color.rgb, b);
-	vec2 iuv = (uv - 0.5) / icon_scale + 0.5;
+	// 그림은 칸이 돌아가 있어도 늘 똑바로 (월드 기준으로 펴서 읽음) — 테두리는 칸을 따라감
+	vec2 d = uv - 0.5;
+	vec3 w = (MODEL_MATRIX * vec4(d.x, 0.0, d.y, 0.0)).xyz;
+	float sc = max(length(MODEL_MATRIX[0].xyz), 0.0001);
+	vec2 iuv = vec2(w.x, w.z) / sc / icon_scale + 0.5;
 	float ic = 0.0;
 	if (iuv.x > 0.0 && iuv.x < 1.0 && iuv.y > 0.0 && iuv.y < 1.0) {
 		ic = texture(icon_tex, iuv).a;

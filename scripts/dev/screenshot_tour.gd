@@ -178,6 +178,16 @@ func _run() -> void:
 	while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
 		await get_tree().process_frame
 
+	# 꾸미기 아이템 모아 보기 (앞 · 뒤)
+	get_tree().change_scene_to_file("res://scenes/dev/cosmetic_gallery.tscn")
+	while get_tree().current_scene == null or get_tree().current_scene.name != "CosmeticGallery":
+		await get_tree().process_frame
+	await get_tree().create_timer(1.5).timeout
+	await _shot("60_cosmetics_front")
+	get_tree().current_scene.turn_around()
+	await get_tree().create_timer(0.8).timeout
+	await _shot("61_cosmetics_back")
+
 	# 진짜 보드 게임 (자동 진행, 모든 카드 시연)
 	GameState.debug_autoplay = true
 	GameState.debug_showcase = true

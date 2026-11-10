@@ -11,10 +11,6 @@ func exit_label() -> String:
 	return "LEAVE GAME"
 
 
-func confirm_exit() -> bool:
-	return true
-
-
 func board_title() -> String:
 	return BOARD_TITLES.get(GameState.selected_board, "DEEP PARTY")
 
@@ -53,6 +49,14 @@ func _game_loop() -> void:
 ## 자동 점검용: 트로피 사기 · 모든 찬스 카드 · 상점 트로피 · 미니게임 결과를 한 번씩
 func _debug_showcase() -> void:
 	var me := _my_pawn()
+	# 일시정지 메뉴 (ESC)
+	_open_pause()
+	shot_hint = "38_pause"
+	await get_tree().create_timer(1.6, true).timeout
+	_pause._show_settings()
+	shot_hint = "38b_pause_settings"
+	await get_tree().create_timer(1.6, true).timeout
+	_pause.close()
 	_round = 1
 	_add_coins(me, 60)
 	await _spawn_trophy()
