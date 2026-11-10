@@ -29,7 +29,7 @@ const BOARDS := [
 		# 튜토리얼 중에만 보여요
 		"id": "tutorial",
 		"name": "TUTORIAL BOARD",
-		"desc": "A small practice board for learning how DEEP PARTY works. Perfect for your first game!",
+		"desc": "A small practice world for learning how DEEP PARTY works. Jump in with your pawn and look around!",
 		"tags": ["PRACTICE", "1-4 PLAYERS"],
 		"box": preload("res://textures/boards/tutorial_box.png"),
 		"locked": false,
@@ -910,7 +910,7 @@ func _tutorial_steps() -> Array:
 			"target": func() -> Control: return _tut("board_thumbs"),
 		},
 		{
-			"text": "This is the Tutorial Board, a small practice board. Let's open it and learn how a board game works!",
+			"text": "This is the Tutorial Board. Open the box and your pawn will jump right into the world inside!",
 			"target": func() -> Control: return _board_big,
 			"pad": -40.0,
 		},

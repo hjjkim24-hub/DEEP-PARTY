@@ -277,27 +277,29 @@ def lid_art():
 
 
 def tutorial_lid():
-    img = water(L, sand_from=0.6)
-    kelp(img, 140, 2048, 900, 0.8, 30, (16, 92, 70, 200))
-    kelp(img, 1900, 2048, 1000, 2.0, 30, (16, 92, 70, 200))
-    prn = Image.open(os.path.join(HERE, "out", "tutorial_board_print.png")).convert("RGBA")
-    quad = [(470, 1040), (1580, 1040), (1800, 1760), (250, 1760)]
-    thick = 60
+    """튜토리얼 월드 지도를 비스듬히 깔고, 말 하나가 그 안으로 뛰어드는 그림."""
+    img = water(L, sand_from=0.5)
+    world = Image.open(os.path.join(HERE, "out", "tutorial_map_small.png")).convert("RGBA")
+    quad = [(330, 900), (1720, 900), (1960, 1820), (90, 1820)]
     sh = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(sh).polygon([(x + 20, y + thick + 30) for x, y in quad], fill=(0, 20, 18, 160))
+    ImageDraw.Draw(sh).polygon([(x + 16, y + 50) for x, y in quad], fill=(0, 20, 18, 170))
     img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(36)))
     side = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(side).polygon([quad[3], quad[2], (quad[2][0], quad[2][1] + thick), (quad[3][0], quad[3][1] + thick)],
+    ImageDraw.Draw(side).polygon([quad[3], quad[2], (quad[2][0], quad[2][1] + 40), (quad[3][0], quad[3][1] + 40)],
                                  fill=(10, 52, 60, 255))
     img.alpha_composite(side)
-    img.alpha_composite(warp_onto(img.size, prn, quad))
-    place_pawn(img, PALETTE["coral"], (560, 1640), 420)
-    place_pawn(img, PALETTE["mint"], (1500, 1380), 330)
-    die(img, 1160, 1480, 66)
-    bubbles(img, [(1640, 900, 40), (1700, 790, 26), (1660, 700, 17), (420, 980, 26), (380, 900, 16)])
+    img.alpha_composite(warp_onto(img.size, world, quad))
+    # 지도 위로 뛰어드는 말 + 물방울 꼬리
+    bubbles(img, [(1040, 1180, 34), (1080, 1080, 24), (1010, 990, 18), (1060, 910, 13), (1030, 850, 9)])
+    sh = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(sh).ellipse([900, 1560, 1180, 1640], fill=(0, 18, 24, 140))
+    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(18)))
+    p = pawn(PALETTE["coral"], 430)
+    img.alpha_composite(p, (int(1040 - p.width / 2), 1050))
+    bubbles(img, [(1600, 980, 40), (1680, 870, 26), (1630, 780, 17), (420, 1040, 26), (380, 950, 16)])
     pill(img, "DEEP PARTY", (1024, 205), 62, spacing=10)
     text_block(img, "TUTORIAL", (1024, 470), 250, spacing=10)
-    pill(img, "PRACTICE BOARD", (1024, 720), 54, spacing=8)
+    pill(img, "JUMP INTO THE BOARD", (1024, 720), 54, spacing=8)
     pill(img, "LEARN THE BASICS", (1024, 1915), 46, spacing=6)
     frame = Image.new("RGBA", img.size, (0, 0, 0, 0))
     d = ImageDraw.Draw(frame)
@@ -464,7 +466,7 @@ def main():
                      side_band(side_w, side_h, "DEEP PARTY", "1-4 PLAYERS", dark=True), "sunken_island_box.png")
     locked = render_box(locked_lid(), side_band(side_w, side_h, "", "", dark=True),
                         side_band(side_w, side_h, "", "", dark=True), "locked_box.png")
-    tut = render_box(tutorial_lid(), side_band(side_w, side_h, "TUTORIAL", "PRACTICE BOARD"),
+    tut = render_box(tutorial_lid(), side_band(side_w, side_h, "TUTORIAL", "PRACTICE WORLD"),
                      side_band(side_w, side_h, "DEEP PARTY", "LEARN THE BASICS", dark=True), "tutorial_box.png")
     shadow = render_shadow()
     # 셋 다 같은 영역으로 잘라서 Godot 에서 같은 자리에 겹쳐 그리면 딱 맞게

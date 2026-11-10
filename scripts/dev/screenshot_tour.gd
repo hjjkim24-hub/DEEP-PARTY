@@ -141,11 +141,15 @@ func _run() -> void:
 	while get_tree().current_scene == null or get_tree().current_scene.name != "TutorialBoard":
 		await get_tree().process_frame
 	var tb: Node = get_tree().current_scene
+	await _sec(1.2)
+	await _shot("15_world_board_view")
+	await _sec(2.6)
+	await _shot("16_world_diving_in")
 	while tb._overlay == null:
 		await get_tree().process_frame
-	await _drive(tb._overlay, {0: "15_board_start", 1: "16_board_rules_soon"})
+	await _drive(tb._overlay, {0: "17_world_start", 1: "18_world_overview", 3: "19_world_my_pawn"})
 	await _sec(0.6)
-	await _shot("19_tutorial_complete")
+	await _shot("20_tutorial_complete")
 	while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
 		await get_tree().process_frame
 
