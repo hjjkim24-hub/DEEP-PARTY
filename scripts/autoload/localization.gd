@@ -164,6 +164,7 @@ const KO := {
 	"A small practice world for learning how DEEP PARTY works. Jump in with your pawn and look around!": "DEEP PARTY의 진행 방법을 배우는 작은 연습 세상이에요. 내 말과 함께 뛰어들어 둘러보세요!",
 	"This is the Tutorial Board. Open the box and your pawn will jump right into the world inside!": "이건 튜토리얼 보드예요. 상자를 열면 내 말이 그 안의 세상으로 쏙 뛰어들어요!",
 	"MY PAWN": "내 말",
+	"Climb the stairs up the coral hill, cross the bridge, hop across the stone pillars and go through the rock tunnel!": "산호 언덕 계단을 올라가고, 다리를 건너고, 돌기둥을 폴짝폴짝 건너뛰고, 바위 터널도 지나가 봐요!",
 	"You've jumped into the board! In DEEP PARTY, your pawn walks around inside the board world.": "보드 속으로 뛰어들었어요! DEEP PARTY에서는 내 말이 보드 속 세상을 직접 돌아다녀요.",
 	"Paths split off at the arrow spaces and loop back around, so there's no finish line. Take any road you like!": "화살표 칸에서 길이 갈라졌다가 다시 이어져서, 골인 지점이 따로 없어요. 원하는 길로 가면 돼요!",
 	"Drag with the mouse to look around, and roll the mouse wheel to zoom in and out.": "마우스로 끌면 주변을 둘러볼 수 있고, 마우스 휠로 확대·축소할 수 있어요.",

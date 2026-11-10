@@ -1,35 +1,29 @@
-extends Node2D
-## 튜토리얼 월드 — 말이 보드게임 속 세상으로 직접 뛰어들어요.
-## 1) 처음엔 보드판처럼 멀리서 내려다보다가  2) 카메라가 판 속으로 쑥 들어가고
-## 3) 말들이 위에서 START 광장으로 퐁 떨어져요.
-## 세상은 넓고, 길이 여러 갈래로 갈라졌다 다시 만나요 (골인 지점 없음).
-## 지도·칸 위치는 tools/render_world.py 가 만들어요. 규칙은 나중에 정해지면 _steps() 에 추가.
+extends Node3D
+## 튜토리얼 보드 (3D). 보드 고르기에서 튜토리얼 상자를 열면 여기로 와요.
+## 1) 보드판을 위에서 내려다보다가  2) 카메라가 판 속으로 쑥 들어가 내 말 가까이 가고
+## 3) 말들이 위에서 START 광장으로 떨어져요.  이후 튜토리얼 안내 (규칙은 나중에 추가).
+## 카메라는 '지금 보는 말'을 가까이 따라가요 (나중에 차례마다 그 사람 말로 바꾸면 됨: focus_on()).
 
-const BackgroundScene := preload("res://scenes/underwater_background.tscn")
+const BoardWorld := preload("res://scripts/world3d/board_world.gd")
+const Pawn3D := preload("res://scripts/world3d/pawn3d.gd")
 const TutorialOverlay := preload("res://scripts/ui/tutorial_overlay.gd")
-const PieceDraw := preload("res://scripts/background/piece_draw.gd")
-const Bubbles := preload("res://scripts/background/bubbles.gd")
-const CausticShader := preload("res://shaders/world_caustics.gdshader")
 const UIFont := preload("res://fonts/Poppins-Bold.ttf")
-const MAP_TEX := preload("res://textures/worlds/tutorial_map.png")
-const WORLD_JSON := "res://textures/worlds/tutorial_world.json"
 const MAIN_MENU := "res://scenes/main_menu.tscn"
 
 const PEARL := Color("eafffa")
 const AQUA := Color("7ff0db")
 const DEEP := Color("05302c")
-const PAWN_H := 140.0          ## 세상 안에서 말 키 (월드 좌표)
-const ZOOM_IN := 1.0
-const ZOOM_MAX := 1.4
+const PAWN_SCALE := 1.7            ## 말 키 (미터)
+const CLOSE := Vector3(0, 3.4, 6.2)   ## 말 가까이 볼 때 카메라 위치 (말 기준)
+const ZOOM_MIN := 0.55
+const ZOOM_MAX := 4.5
 
-var world := {}                ## JSON: size, spaces, kelp, vents ...
-var map_size := Vector2(4800, 3200)
-var _pawns: Array = []         ## {slot, name, color, look, pos, drop}
-var _kelp: Array = []
-
-var _camera: Camera2D
-var _actors: Node2D
-var _vents: Node2D
+var world: BoardWorld
+var _pawns: Array = []        ## {slot, name, color, node: Node3D, spot: Vector3}
+var _camera: Camera3D
+var _focus := Vector3.ZERO    ## 카메라가 바라보는 점
+var _zoom := 1.0              ## 1 = 가까이, 클수록 멀리
+var _cam_tween: Tween
 var _ui: CanvasLayer
 var _chips: HBoxContainer
 var _my_pawn_btn: Button
@@ -38,102 +32,27 @@ var _screen_marker: Control
 var _overlay
 var _fade: ColorRect
 var _title: Label
-
 var _intro_done := false
-var _focused := false          ## MY PAWN 을 눌러 내 말로 돌아왔는지 (튜토리얼 확인용)
+var _focused := false
 var _dragging := false
-var _cam_tween: Tween
-
-
-# ── 말·다시마를 앞뒤 순서대로 그리는 층 ───────────────────────
-class Actors extends Node2D:
-	var w   # 바깥 스크립트
-
-	func _process(_d: float) -> void:
-		queue_redraw()
-
-	func _draw() -> void:
-		var t := Time.get_ticks_msec() / 1000.0
-		var items: Array = []
-		for k in w._kelp:
-			items.append([float(k[1]), 0, k])
-		for p in w._pawns:
-			items.append([(p["pos"] as Vector2).y, 1, p])
-		items.sort_custom(func(a, b) -> bool: return a[0] < b[0])
-		for it in items:
-			if it[1] == 0:
-				_draw_kelp(it[2], t)
-			else:
-				_draw_pawn(it[2])
-
-	func _draw_kelp(k: Array, t: float) -> void:
-		var base := Vector2(k[0], k[1])
-		var hgt: float = k[2]
-		var ph: float = k[3]
-		var n := 14
-		var left := PackedVector2Array()
-		var right := PackedVector2Array()
-		var prev := base
-		var spine: Array[Vector2] = []
-		for i in n + 1:
-			var f := float(i) / n
-			var sway := sin(t * 1.1 + ph + f * 2.2) * 34.0 * f * f + sin(t * 2.3 + ph * 2.0) * 6.0 * f
-			var p := base + Vector2(sway, -hgt * f)
-			spine.append(p)
-		for i in spine.size():
-			var f := float(i) / n
-			var dir := (spine[mini(i + 1, n)] - spine[maxi(i - 1, 0)]).normalized()
-			var nrm := Vector2(-dir.y, dir.x)
-			var wd := lerpf(9.0, 3.0, f)
-			left.append(spine[i] + nrm * wd)
-			right.append(spine[i] - nrm * wd)
-		right.reverse()
-		var poly := left + right
-		# 그림자
-		PieceDraw.poly(self, PieceDraw.ellipse(base + Vector2(10, 2), 26.0, 8.0, 14), Color(0, 0.1, 0.08, 0.3))
-		draw_colored_polygon(poly, Color(0.12, 0.42, 0.24, 0.95))
-		# 잎
-		for i in range(2, n, 2):
-			var p: Vector2 = spine[i]
-			var side := 1.0 if i % 4 == 0 else -1.0
-			var lf := sin(t * 1.6 + ph + i) * 0.25
-			var tip := p + Vector2(side * 38.0, -16.0).rotated(lf * side)
-			draw_colored_polygon(PackedVector2Array([p, p + (tip - p) * 0.5 + Vector2(0, -10), tip, p + (tip - p) * 0.5 + Vector2(0, 8)]),
-				Color(0.2, 0.55, 0.3, 0.92))
-
-	func _draw_pawn(p: Dictionary) -> void:
-		var pos: Vector2 = p["pos"]
-		var drop: float = p["drop"]
-		if drop > 2000.0:
-			return
-		# 땅 그림자: 높이 있을수록 작고 연하게
-		var k := clampf(1.0 - drop / 900.0, 0.2, 1.0)
-		PieceDraw.poly(self, PieceDraw.ellipse(pos + Vector2(8, 4), PAWN_H * 0.3 * k, PAWN_H * 0.1 * k, 24), Color(0, 0.08, 0.07, 0.4 * k))
-		PieceDraw.draw_pawn_real(self, pos + Vector2(0, -drop), PAWN_H, p["color"], 1.0, p["look"])
 
 
 func _ready() -> void:
-	_load_world()
+	world = BoardWorld.new()
+	add_child(world)
 	_setup_pawns()
-	_build_world()
+	_camera = Camera3D.new()
+	_camera.fov = 50.0
+	_camera.far = 400.0
+	add_child(_camera)
+	_camera.make_current()
 	_build_ui()
 	Audio.play_music()
 	_intro()
 
 
-func _load_world() -> void:
-	var f := FileAccess.open(WORLD_JSON, FileAccess.READ)
-	world = JSON.parse_string(f.get_as_text())
-	map_size = Vector2(world["size"][0], world["size"][1])
-	_kelp = world["kelp"]
-
-
-func _start_pos() -> Vector2:
-	var s: Dictionary = world["spaces"][int(world["start"])]
-	return Vector2(s["x"], s["y"])
-
-
 func _setup_pawns() -> void:
+	var list := []
 	var cpu_no := 0
 	for slot in 4:
 		var p: Dictionary = GameState.players[slot]
@@ -143,63 +62,103 @@ func _setup_pawns() -> void:
 		if p.get("kind", "") == "cpu":
 			cpu_no += 1
 			pname = tr("CPU %d") % cpu_no
-		_pawns.append({"slot": slot, "name": pname, "color": GameState.player_color(slot),
-			"look": GameState.look(slot), "pos": Vector2.ZERO, "drop": 99999.0})
-	if _pawns.is_empty():
-		_pawns.append({"slot": 0, "name": "You", "color": GameState.PALETTE[0], "look": {}, "pos": Vector2.ZERO, "drop": 99999.0})
-	# START 광장 위에 나란히
-	var offs := [Vector2(-58, -22), Vector2(58, -22), Vector2(-58, 40), Vector2(58, 40)]
-	if _pawns.size() == 1:
-		offs = [Vector2(0, 0)]
-	for i in _pawns.size():
-		_pawns[i]["pos"] = _start_pos() + offs[i % 4]
+		list.append({"slot": slot, "name": pname, "color": GameState.player_color(slot), "look": GameState.look(slot)})
+	if list.is_empty():
+		list.append({"slot": 0, "name": "You", "color": GameState.PALETTE[0], "look": {}})
+	var spots: Array = world.start_spots(list.size())
+	for i in list.size():
+		var d: Dictionary = list[i]
+		var node := Pawn3D.new()
+		node.color = d["color"]
+		node.look = d["look"]
+		node.scale = Vector3.ONE * PAWN_SCALE
+		node.visible = false
+		add_child(node)
+		node.position = spots[i]
+		node.rotation.y = PI   # 카메라 쪽(남쪽)을 보게
+		d["node"] = node
+		d["spot"] = spots[i]
+		_pawns.append(d)
 
 
-func _build_world() -> void:
-	# 맨 뒤: 물 (화면에 고정)
-	var back := CanvasLayer.new()
-	back.layer = -10
-	add_child(back)
-	var bg = BackgroundScene.instantiate()
-	bg.show_seabed = false
-	back.add_child(bg)
-
-	var map := Sprite2D.new()
-	map.texture = MAP_TEX
-	map.centered = false
-	var m := ShaderMaterial.new()
-	m.shader = CausticShader
-	m.set_shader_parameter("map_size", map_size)
-	map.material = m
-	add_child(map)
-
-	_vents = Bubbles.new()
-	_vents.ambient_rate = 0.0
-	_vents.snow_count = 0
-	_vents.area_size = map_size
-	var vents: Array[Vector2] = []
-	for v in world["vents"]:
-		vents.append(Vector2(v[0], v[1]))
-	_vents.vents = vents
-	_vents.vent_rate = 3.0
-	add_child(_vents)
-
-	_actors = Actors.new()
-	_actors.w = self
-	add_child(_actors)
-
-	# 떠다니는 알갱이·물방울 (세상 전체)
-	var snow := Bubbles.new()
-	snow.area_size = map_size
-	snow.ambient_rate = 14.0
-	snow.snow_count = 260
-	add_child(snow)
-
-	_camera = Camera2D.new()
-	add_child(_camera)
-	_camera.make_current()
+func _my_pawn() -> Dictionary:
+	for p in _pawns:
+		if int(p["slot"]) == 0:
+			return p
+	return _pawns[0]
 
 
+# ── 카메라 ───────────────────────────────────────────────────
+func _apply_camera() -> void:
+	# 멀어질수록 더 위에서 내려다보게 (아주 멀면 보드판 전체가 보임)
+	var off := Vector3(0, CLOSE.y * _zoom * (1.0 + 0.35 * maxf(_zoom - 1.0, 0.0)), CLOSE.z * _zoom)
+	_camera.position = _focus + off
+	_camera.look_at(_focus + Vector3(0, 0.9, 0), Vector3.UP)
+
+
+func _process(_delta: float) -> void:
+	_apply_camera()
+	# 튜토리얼이 가리킬 START 광장 화면 위치
+	var top: Vector3 = world.spaces[world.start_index]["pos"]
+	var r := Rect2()
+	var first := true
+	for c in [Vector3(-3.6, 0, -3.6), Vector3(3.6, 0, -3.6), Vector3(-3.6, 0, 3.6), Vector3(3.6, 0, 3.6), Vector3(0, 2.4, 0)]:
+		var wp: Vector3 = top + c
+		if _camera.is_position_behind(wp):
+			continue
+		var sp := _camera.unproject_position(wp)
+		if first:
+			r = Rect2(sp, Vector2.ZERO)
+			first = false
+		else:
+			r = r.expand(sp)
+	_start_marker.position = r.position
+	_start_marker.size = r.size
+	var v := get_viewport().get_visible_rect().size
+	_screen_marker.position = Vector2(60, 110)
+	_screen_marker.size = v - Vector2(120, 220)
+
+
+func _move_camera(focus: Vector3, zoom: float, time: float) -> void:
+	if _cam_tween:
+		_cam_tween.kill()
+	_cam_tween = create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+	_cam_tween.tween_property(self, "_focus", focus, time)
+	_cam_tween.tween_property(self, "_zoom", zoom, time)
+
+
+## 이 말을 가까이 보기 (차례가 생기면 차례마다 부르면 됨)
+func focus_on(p: Dictionary, time: float = 0.9) -> void:
+	_move_camera((p["node"] as Node3D).position, 1.0, time)
+
+
+func _focus_my_pawn() -> void:
+	focus_on(_my_pawn())
+	_focused = true
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not _intro_done:
+		return
+	var mb := event as InputEventMouseButton
+	if mb:
+		if mb.button_index == MOUSE_BUTTON_LEFT:
+			_dragging = mb.pressed
+		elif mb.pressed and (mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+			if _cam_tween:
+				_cam_tween.kill()
+			_zoom = clampf(_zoom * (0.88 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 0.88), ZOOM_MIN, ZOOM_MAX)
+	var mm := event as InputEventMouseMotion
+	if mm and _dragging:
+		if _cam_tween:
+			_cam_tween.kill()
+		var k := 0.02 * _zoom
+		_focus += Vector3(-mm.relative.x * k, 0, -mm.relative.y * k)
+		_focus.x = clampf(_focus.x, -BoardWorld.HALF_W, BoardWorld.HALF_W)
+		_focus.z = clampf(_focus.z, -BoardWorld.HALF_D, BoardWorld.HALF_D)
+
+
+# ── 화면 UI ──────────────────────────────────────────────────
 func _build_ui() -> void:
 	_ui = CanvasLayer.new()
 	_ui.layer = 10
@@ -221,7 +180,6 @@ func _build_ui() -> void:
 	_screen_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_screen_marker)
 
-	# 위: 참가자
 	_chips = HBoxContainer.new()
 	_chips.add_theme_constant_override("separation", 10)
 	_chips.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -239,9 +197,9 @@ func _build_ui() -> void:
 	exit.position = Vector2(30, 30)
 
 	_my_pawn_btn = _glass_button("MY PAWN")
+	_my_pawn_btn.custom_minimum_size = Vector2(180, 60)
 	_my_pawn_btn.pressed.connect(_focus_my_pawn)
 	root.add_child(_my_pawn_btn)
-	_my_pawn_btn.custom_minimum_size = Vector2(180, 60)
 	_my_pawn_btn.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 40)
 	_my_pawn_btn.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_my_pawn_btn.grow_vertical = Control.GROW_DIRECTION_BEGIN
@@ -314,111 +272,42 @@ func _make_chip(p: Dictionary) -> PanelContainer:
 	return chip
 
 
-# ── 카메라 ───────────────────────────────────────────────────
-func _view_size() -> Vector2:
-	return get_viewport_rect().size
-
-
-func _fit_zoom() -> float:
-	var v := _view_size()
-	return minf(v.x / map_size.x, v.y / map_size.y) * 0.92
-
-
-func _clamp_camera() -> void:
-	var view := _view_size() / _camera.zoom
-	var pos := _camera.position
-	for axis in 2:
-		var half := view[axis] * 0.5
-		var lo := half - 60.0
-		var hi := map_size[axis] - half + 60.0
-		pos[axis] = map_size[axis] * 0.5 if lo > hi else clampf(pos[axis], lo, hi)
-	_camera.position = pos
-
-
-func _move_camera(target: Vector2, zoom: float, time: float) -> void:
-	if _cam_tween:
-		_cam_tween.kill()
-	_cam_tween = create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
-	_cam_tween.tween_property(_camera, "position", target, time)
-	_cam_tween.tween_property(_camera, "zoom", Vector2.ONE * zoom, time)
-
-
-func _focus_my_pawn() -> void:
-	for p in _pawns:
-		if int(p["slot"]) == 0:
-			_move_camera(p["pos"] + Vector2(0, -PAWN_H * 0.4), ZOOM_IN, 0.8)
-			break
-	_focused = true
-
-
-func _unhandled_input(event: InputEvent) -> void:
-	if not _intro_done:
-		return
-	var mb := event as InputEventMouseButton
-	if mb:
-		if mb.button_index == MOUSE_BUTTON_LEFT:
-			_dragging = mb.pressed
-		elif mb.pressed and (mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN):
-			if _cam_tween:
-				_cam_tween.kill()
-			var before := get_global_mouse_position()
-			var z := _camera.zoom.x * (1.12 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 1.12)
-			_camera.zoom = Vector2.ONE * clampf(z, _fit_zoom(), ZOOM_MAX)
-			_camera.position += before - get_global_mouse_position()
-			_clamp_camera()
-	var mm := event as InputEventMouseMotion
-	if mm and _dragging:
-		if _cam_tween:
-			_cam_tween.kill()
-		_camera.position -= mm.relative / _camera.zoom
-		_clamp_camera()
-
-
-func _process(_delta: float) -> void:
-	# 튜토리얼이 가리킬 수 있게 START 광장의 화면 위치를 따라감
-	var xf := get_viewport().get_canvas_transform()
-	var r := Rect2(_start_pos() - Vector2(260, 230), Vector2(520, 360))
-	var a := xf * r.position
-	var b := xf * r.end
-	_start_marker.position = a
-	_start_marker.size = b - a
-	var v := _view_size()
-	_screen_marker.position = Vector2(60, 110)
-	_screen_marker.size = v - Vector2(120, 220)
-
-
 # ── 들어가기 연출 ────────────────────────────────────────────
 func _intro() -> void:
-	_camera.position = map_size * 0.5
-	_camera.zoom = Vector2.ONE * _fit_zoom()
+	# 1) 보드판처럼 위에서 내려다보기
+	_focus = Vector3(0, 0, 2.0)
+	_zoom = ZOOM_MAX * 1.1
+	_apply_camera()
 	var t := create_tween()
-	t.tween_property(_fade, "color:a", 0.0, 0.6)
-	t.parallel().tween_property(_title, "modulate:a", 1.0, 0.6)
-	await get_tree().create_timer(1.6).timeout
-	# 판 속으로 쑥
+	t.tween_property(_fade, "color:a", 0.0, 0.7)
+	t.parallel().tween_property(_title, "modulate:a", 1.0, 0.7)
+	await get_tree().create_timer(1.8).timeout
+	# 2) 판 속으로 쑥
 	Audio.play("bubbles")
-	var tt := create_tween()
-	tt.tween_property(_title, "modulate:a", 0.0, 0.4)
-	_move_camera(_start_pos() + Vector2(0, -PAWN_H * 0.4), ZOOM_IN, 2.4)
+	create_tween().tween_property(_title, "modulate:a", 0.0, 0.5)
+	var me: Dictionary = _my_pawn()
+	_move_camera(me["spot"], 1.0, 2.6)
 	await _cam_tween.finished
-	# 말들이 퐁퐁 떨어짐
+	# 3) 말들이 위에서 퐁퐁
 	for i in _pawns.size():
-		_drop_pawn(i)
-		await get_tree().create_timer(0.28).timeout
+		_drop_pawn(_pawns[i])
+		await get_tree().create_timer(0.3).timeout
 	await get_tree().create_timer(1.0).timeout
 	_intro_done = true
 	_my_pawn_btn.visible = true
 	_start_tutorial()
 
 
-func _drop_pawn(i: int) -> void:
-	var p: Dictionary = _pawns[i]
-	p["drop"] = 900.0
+func _drop_pawn(p: Dictionary) -> void:
+	var node: Node3D = p["node"]
+	var spot: Vector3 = p["spot"]
+	node.visible = true
+	node.position = spot + Vector3(0, 9.0, 0)
 	var t := create_tween()
-	t.tween_method(func(v: float) -> void: p["drop"] = v, 900.0, 0.0, 0.75).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
-	await get_tree().create_timer(0.42).timeout
+	t.tween_property(node, "position", spot, 0.8).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
+	await get_tree().create_timer(0.45).timeout
 	Audio.play("add")
-	_vents.burst(p["pos"], 12)
+	world.bubbles_at(spot + Vector3(0, 0.2, 0), 18, 0.5, true)
 
 
 # ── 튜토리얼 안내 ────────────────────────────────────────────
@@ -439,7 +328,12 @@ func _steps() -> Array:
 		},
 		{
 			"text": "Paths split off at the arrow spaces and loop back around, so there's no finish line. Take any road you like!",
-			"enter": func() -> void: _move_camera(map_size * 0.5, _fit_zoom() * 1.05, 1.6),
+			"enter": func() -> void: _move_camera(Vector3(0, 0, 0), 3.2, 1.8),
+			"dim": false,
+		},
+		{
+			"text": "Climb the stairs up the coral hill, cross the bridge, hop across the stone pillars and go through the rock tunnel!",
+			"enter": func() -> void: _move_camera(Vector3(-13, 3.5, -11), 1.7, 1.6),
 			"dim": false,
 		},
 		{
@@ -481,7 +375,7 @@ func _on_tutorial_finished() -> void:
 
 
 func _exit_to_menu() -> void:
-	if _fade.color.a > 0.5 and _fade.visible and not _intro_done:
+	if _fade.color.a > 0.5 and not _intro_done:
 		return
 	GameState.tutorial_active = false
 	_fade.get_parent().move_child(_fade, -1)
