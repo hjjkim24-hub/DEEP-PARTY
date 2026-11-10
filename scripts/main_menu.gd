@@ -594,7 +594,7 @@ func _build_customize_page(parent: Control) -> Control:
 			box.content_margin_right = 8
 			tb.add_theme_stylebox_override(st, box)
 		tb.pressed.connect(_select_cz_tab.bind(i))
-		tb.set_meta("sfx", "tab")
+		tb.set_meta("sfx", "tick")
 		tabs.add_child(tb)
 		_cz_tab_buttons.append(tb)
 
