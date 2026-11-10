@@ -42,6 +42,8 @@ const ICONS := {
 	"shop": preload("res://textures/tiles/icon_shop.png"),
 	"junction": preload("res://textures/tiles/icon_arrows.png"),
 	"start": preload("res://textures/tiles/icon_start.png"),
+	"coin_plus": preload("res://textures/tiles/icon_coin_plus.png"),
+	"coin_minus": preload("res://textures/tiles/icon_coin_minus.png"),
 }
 const BORDER_TEX := preload("res://textures/tiles/icon_border.png")
 const CHANCE_CARD_TEX := preload("res://textures/tiles/card_chance.png")
@@ -49,16 +51,19 @@ const TILE_COLORS := {
 	"plain": Color(0.84, 0.82, 0.72), "chance": Color(0.98, 0.72, 0.2), "minigame": Color(0.26, 0.58, 0.9),
 	"portal": Color(0.58, 0.38, 0.92), "shop": Color(0.94, 0.43, 0.56),
 	"junction": Color(0.8, 0.82, 0.77), "start": Color(0.5, 0.64, 0.62),
+	"coin_plus": Color(0.3, 0.76, 0.4), "coin_minus": Color(0.86, 0.3, 0.32),
 }
 const INK_COLORS := {
 	"plain": Color(1, 1, 1), "chance": Color(1.0, 0.98, 0.9), "minigame": Color(0.95, 0.98, 1.0),
 	"portal": Color(1, 1, 1), "shop": Color(1.0, 0.96, 0.97),
 	"junction": Color(0.84, 0.63, 0.2), "start": Color(0.84, 0.63, 0.2),
+	"coin_plus": Color(1, 1, 1), "coin_minus": Color(1, 1, 1),
 }
 ## 범례 순서 + 화면에 보일 이름 (번역 키)
 const KIND_ORDER := ["plain", "chance", "minigame", "portal", "shop"]
 const KIND_NAMES := {
 	"plain": "Plain", "chance": "Chance", "minigame": "Minigame", "portal": "Portal", "shop": "Shop",
+	"coin_plus": "Lucky +5", "coin_minus": "Trap -5",
 }
 
 const HALF_W := 28.0          ## 판 가로 반
@@ -110,6 +115,8 @@ var _blocked: Array = []      ## 장식을 놓지 않을 자리 [Vector2 중심,
 var _spinners: Array = []     ## 빙글빙글 도는 찬스 카드 {node, base_y, phase}
 var _portal_fx: Array = []    ## 포탈 고리 {node, mat, light, phase}
 var _jellies: Array = []      ## 해파리 {node, base, phase}
+var trophy_tile := -1         ## 트로피가 떠 있는 칸 (-1 = 없음)
+var _trophy_node: Node3D
 var _meshes := {}
 var _time := 0.0
 
@@ -465,7 +472,7 @@ func _tiles() -> void:
 		var size := TILE + (0.2 if kind == "junction" else 0.0)
 		var body_c: Color = Color(0.93, 0.93, 0.88) if kind == "junction" else (TILE_COLORS[kind] as Color).darkened(0.2)
 		# 유약 바른 도자기 같은 칸 몸통 + 크림색 받침 + 금 장식
-		_mi(_rbox(Vector3(size, TILE_H, size), 0.15), _mat(body_c, 0.25), base + Vector3(0, TILE_H * 0.5, 0), b)
+		sp["body_mi"] = _mi(_rbox(Vector3(size, TILE_H, size), 0.15), _mat(body_c, 0.25), base + Vector3(0, TILE_H * 0.5, 0), b)
 		_mi(_rbox(Vector3(size + 0.36, 0.16, size + 0.36), 0.07), foot_m, base + Vector3(0, 0.08, 0), b)
 		for cx in [-1.0, 1.0]:
 			for cz in [-1.0, 1.0]:
@@ -474,7 +481,7 @@ func _tiles() -> void:
 		plane.size = Vector2(size - 0.3, size - 0.3)
 		# 그림은 카메라(남쪽)에서 똑바로 읽히게: 네모라서 90°씩 돌려도 칸과 딱 맞음
 		var yaw_top: float = float(sp["yaw"]) - roundf(float(sp["yaw"]) / (PI / 2.0)) * (PI / 2.0)
-		_mi(plane, _tile_top_mat(kind), base + Vector3(0, TILE_H + 0.004, 0), Basis(Vector3.UP, yaw_top))
+		sp["top_mi"] = _mi(plane, _tile_top_mat(kind), base + Vector3(0, TILE_H + 0.004, 0), Basis(Vector3.UP, yaw_top))
 		# 협곡 위 칸은 돌기둥이 받침
 		if _in_chasm(base.x, base.z):
 			var depth := base.y - natural_height(base.x, base.z) + 0.5
@@ -1429,6 +1436,10 @@ func _process(delta: float) -> void:
 		var n: Node3D = s["node"]
 		n.rotation.y += delta * 1.3
 		n.position.y = float(s["base_y"]) + sin(_time * 2.0 + float(s["phase"])) * 0.15
+	if _trophy_node:
+		_trophy_node.rotation.y += delta * 1.2
+		var cup := _trophy_node.get_child(0) as Node3D
+		cup.position.y = 2.6 + sin(_time * 2.2) * 0.18
 	for j in _jellies:
 		var jn: Node3D = j["node"]
 		var ph: float = j["phase"]
@@ -1442,6 +1453,107 @@ func _process(delta: float) -> void:
 
 
 # ── 다른 스크립트가 쓰는 것들 ─────────────────────────────────
+## 트로피 칸이 될 수 있는 평범한 칸들 (갈림길·START·포탈·상점 제외)
+func regular_tiles() -> Array:
+	var out := []
+	for i in spaces.size():
+		if String(spaces[i]["kind"]) in ["plain", "minigame", "chance"]:
+			out.append(i)
+	return out
+
+
+## 칸 모양 바꾸기 (찬스 카드로 생기는 +5 / -5 동전 칸)
+func set_tile_look(i: int, kind: String) -> void:
+	var sp: Dictionary = spaces[i]
+	if not sp.has("top_mi"):
+		return
+	(sp["top_mi"] as MeshInstance3D).material_override = _tile_top_mat(kind)
+	(sp["body_mi"] as MeshInstance3D).material_override = _mat((TILE_COLORS[kind] as Color).darkened(0.2), 0.25)
+	var body := sp["body_mi"] as Node3D
+	var top := sp["top_mi"] as Node3D
+	for n in [body, top]:
+		var t := create_tween()
+		t.tween_property(n, "scale", Vector3(1.15, 1.6, 1.15), 0.12)
+		t.tween_property(n, "scale", Vector3.ONE, 0.25).set_trans(Tween.TRANS_BACK)
+	bubbles_at(sp["pos"], 14, 0.6, true)
+
+
+## 트로피를 칸 위에 띄우기 (금빛 기둥이 멀리서도 보임)
+func show_trophy(i: int) -> void:
+	hide_trophy(false)
+	trophy_tile = i
+	var top: Vector3 = spaces[i]["pos"]
+	var root := Node3D.new()
+	root.position = top
+	add_child(root)
+	var cup := Node3D.new()
+	cup.position.y = 2.6
+	root.add_child(cup)
+	var gold := _mat(Color(1.0, 0.78, 0.25), 0.18, 0.95)
+	# 컵 (돌림판 모양)
+	var prof := [Vector2(0.0, -0.55), Vector2(0.3, -0.55), Vector2(0.3, -0.45), Vector2(0.08, -0.38), Vector2(0.07, -0.12),
+		Vector2(0.18, -0.02), Vector2(0.36, 0.1), Vector2(0.44, 0.35), Vector2(0.46, 0.55), Vector2(0.4, 0.56), Vector2(0.0, 0.5)]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var n := 24
+	for k in prof.size() - 1:
+		var a: Vector2 = prof[k]
+		var b: Vector2 = prof[k + 1]
+		for j in n:
+			var t0 := TAU * j / n
+			var t1 := TAU * (j + 1) / n
+			var v := [Vector3(cos(t0) * a.x, a.y, sin(t0) * a.x), Vector3(cos(t1) * a.x, a.y, sin(t1) * a.x),
+				Vector3(cos(t1) * b.x, b.y, sin(t1) * b.x), Vector3(cos(t0) * b.x, b.y, sin(t0) * b.x)]
+			var out := Vector3(cos((t0 + t1) * 0.5), 0, sin((t0 + t1) * 0.5))
+			for tri in [[0, 1, 2], [0, 2, 3]]:
+				var A: Vector3 = v[tri[0]]
+				var B: Vector3 = v[tri[1]]
+				var C: Vector3 = v[tri[2]]
+				if (B - A).cross(C - A).dot(out) > 0.0:
+					var tmp := B
+					B = C
+					C = tmp
+				st.add_vertex(A)
+				st.add_vertex(B)
+				st.add_vertex(C)
+	st.index()
+	st.generate_normals()
+	_mi(st.commit(), gold, Vector3.ZERO, Basis(), cup)
+	for sx in [-1.0, 1.0]:
+		var h := TorusMesh.new()
+		h.inner_radius = 0.1
+		h.outer_radius = 0.17
+		_mi(h, gold, Vector3(sx * 0.46, 0.28, 0), Basis(Vector3(1, 0, 0), PI / 2), cup)
+	# 금빛 기둥 + 불빛 + 반짝이
+	var beam_m := StandardMaterial3D.new()
+	beam_m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	beam_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	beam_m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	beam_m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	beam_m.albedo_color = Color(1.0, 0.8, 0.35, 0.16)
+	var beam := _mi(_cyl(0.9, 1.1, 16.0, 24), beam_m, Vector3(0, 8.0, 0), Basis(), root)
+	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.8, 0.4)
+	l.light_energy = 2.0
+	l.omni_range = 5.0
+	l.position = Vector3(0, 2.4, 0)
+	root.add_child(l)
+	_trophy_node = root
+	root.scale = Vector3.ONE * 0.01
+	var t := create_tween()
+	t.tween_property(root, "scale", Vector3.ONE, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	portal_burst(top)
+
+
+func hide_trophy(burst: bool = true) -> void:
+	if _trophy_node:
+		if burst:
+			portal_burst(_trophy_node.position)
+		_trophy_node.queue_free()
+		_trophy_node = null
+	trophy_tile = -1
+
 func spaces_of_kind(kind: String) -> Array:
 	var out := []
 	for i in spaces.size():

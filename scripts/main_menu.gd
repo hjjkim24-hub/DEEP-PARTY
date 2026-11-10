@@ -21,7 +21,7 @@ const VERSION_TEXT := "v0.1.0  •  Dev Build"
 ## 한글 등 Poppins 에 없는 글자를 그릴 시스템 폰트 (출시 전에는 한글 폰트 파일을 넣어 교체하세요)
 const FALLBACK_FONTS := ["Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK KR", "Noto Sans KR", "NanumGothic"]
 const SETTINGS_TABS := ["AUDIO", "VIDEO", "LANGUAGE"]
-const GAME_SCENE := "res://scenes/board.tscn"  ## 아직 없음 - 만들면 보드 고르기에서 PLAY 를 누를 때 넘어가요
+const GAME_SCENE := "res://scenes/board.tscn"  ## 진짜 보드 게임 (scripts/board_game.gd)
 
 ## 보드 고르기 화면에 나오는 보드게임 상자들 (상자 그림은 tools/render_boardbox.py)
 const BOARDS := [
@@ -771,6 +771,10 @@ func _on_board_play() -> void:
 	var data: Dictionary = BOARDS[_board_index]
 	if data["locked"]:
 		Audio.play("back")
+		return
+	if not data.get("tutorial", false) and GameState.selected_mode == GameState.Mode.COOP:
+		Audio.play("back")
+		_toast(tr("Co-op rules are coming soon!"))
 		return
 	Audio.play("start")
 	GameState.selected_board = data["id"]

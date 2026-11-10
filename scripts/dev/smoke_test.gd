@@ -158,8 +158,9 @@ func _run() -> void:
 		m._on_board_play()   # 잠긴 보드 → 아무 일 없음
 		m._select_board(1)
 		await _sec(0.3)
-		m._on_board_play()   # 아직 보드판 장면이 없으니 안내 메시지
-		await _sec(0.5)
+		if mode == GameState.Mode.COOP:
+			m._on_board_play()   # 협동 규칙은 아직 → 안내 메시지만
+			await _sec(0.5)
 		m._go_back()   # → 로비
 		await _sec(0.8)
 		m._go_back()   # → 모드 선택
@@ -167,7 +168,43 @@ func _run() -> void:
 		m._go_back()   # → 메인
 		await _sec(0.8)
 
+	# 진짜 보드 게임: 내 말도 자동으로, 모든 카드를 한 번씩 써 보고 2라운드
+	await _play_board_game(GameState.Mode.FREE_FOR_ALL, true, 2, [{"kind": "cpu", "level": 1, "color": 2}, {"kind": "cpu", "level": 1, "color": 5}, {}])
+	# 2대2 한 라운드
+	await _play_board_game(GameState.Mode.TEAM_2V2, false, 1, [{"kind": "cpu", "level": 1, "color": 2}, {"kind": "cpu", "level": 1, "color": 5}, {"kind": "cpu", "level": 1, "color": 8}])
+
 	print("SMOKE TEST DONE")
 	await Audio.stop_music(0.1)
 	await _sec(0.3)
 	get_tree().quit(0)
+
+
+func _play_board_game(mode: int, showcase: bool, rounds: int, others: Array) -> void:
+	_step("board game (mode %d, showcase %s, %d rounds)" % [mode, showcase, rounds])
+	GameState.debug_autoplay = true
+	GameState.debug_showcase = showcase
+	GameState.debug_round_limit = rounds
+	GameState.selected_mode = mode
+	GameState.selected_board = "sunken_island"
+	for i in 3:
+		GameState.players[i + 1] = others[i]
+	get_tree().change_scene_to_file("res://scenes/board.tscn")
+	var waited := 0.0
+	while (get_tree().current_scene == null or get_tree().current_scene.name != "BoardGame") and waited < 15.0:
+		await get_tree().process_frame
+		waited += get_process_delta_time()
+	var last_hint := ""
+	waited = 0.0
+	while (get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu") and waited < 300.0:
+		await _sec(0.5)
+		waited += 0.5
+		var sc := get_tree().current_scene
+		if sc and sc.name == "BoardGame" and String(sc.shot_hint) != last_hint:
+			last_hint = String(sc.shot_hint)
+			_step("  game: " + last_hint)
+	if get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
+		push_error("Board game did not finish")
+	GameState.debug_autoplay = false
+	GameState.debug_showcase = false
+	GameState.debug_round_limit = 0
+	await _sec(1.0)

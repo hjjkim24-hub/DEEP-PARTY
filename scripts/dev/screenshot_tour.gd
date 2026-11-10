@@ -177,6 +177,31 @@ func _run() -> void:
 	while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
 		await get_tree().process_frame
 
+	# 진짜 보드 게임 (자동 진행, 모든 카드 시연)
+	GameState.debug_autoplay = true
+	GameState.debug_showcase = true
+	GameState.debug_round_limit = 2
+	GameState.selected_mode = GameState.Mode.FREE_FOR_ALL
+	GameState.selected_board = "sunken_island"
+	GameState.players[1] = {"kind": "cpu", "level": 1, "color": 2}
+	GameState.players[2] = {"kind": "cpu", "level": 1, "color": 5}
+	get_tree().change_scene_to_file("res://scenes/board.tscn")
+	var taken := {}
+	var waited := 0.0
+	while waited < 400.0:
+		await get_tree().create_timer(0.3).timeout
+		waited += 0.3
+		var sc := get_tree().current_scene
+		if sc == null:
+			continue
+		if sc.name == "MainMenu" and waited > 5.0:
+			break
+		if sc.name == "BoardGame":
+			var h := String(sc.shot_hint)
+			if h != "" and not taken.has(h):
+				taken[h] = true
+				await get_tree().create_timer(0.7).timeout
+				await _shot(h)
 	print("TOUR DONE")
 	await Audio.stop_music(0.1)
 	get_tree().quit(0)
