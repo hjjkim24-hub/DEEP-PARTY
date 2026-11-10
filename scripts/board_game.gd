@@ -7,6 +7,14 @@ extends "res://scripts/board/board_session.gd"
 const BOARD_TITLES := {"sunken_island": "SUNKEN ISLAND"}
 
 
+func exit_label() -> String:
+	return "LEAVE GAME"
+
+
+func confirm_exit() -> bool:
+	return true
+
+
 func board_title() -> String:
 	return BOARD_TITLES.get(GameState.selected_board, "DEEP PARTY")
 

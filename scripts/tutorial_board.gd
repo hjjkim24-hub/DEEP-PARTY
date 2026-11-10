@@ -107,7 +107,7 @@ func _run_tutorial() -> void:
 	await _wait_for(func() -> bool: return _dialog_open)
 	await get_tree().create_timer(0.35).timeout
 	await _say({"text": "You only have to pass the trophy, not stop on it! You stop to decide, then move the rest of the way. Click BUY!",
-		"target": func() -> Control: return _dialog_button(0), "pad": 8.0,
+		"target": func() -> Control: return _dialog_panel if _dialog_open else null, "pad": 8.0,
 		"until": func() -> bool: return not _dialog_open, "auto": func() -> void: _press_dialog(0), "shot": "27c_trophy_buy"})
 	force_trophy_buy = false
 	await _wait_for(func() -> bool: return _landed)

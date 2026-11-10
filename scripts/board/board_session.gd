@@ -84,6 +84,7 @@ var _tile_mods := {}          ## 칸 → "coin_plus" / "coin_minus" (찬스 카�
 var _legend_box: VBoxContainer
 var _dialog_open := false
 var _dialog_buttons: Array = []
+var _dialog_panel: Control
 var _dialog_choice := -1
 var _picking_tile := false
 var _picked_tile := -1
@@ -168,6 +169,31 @@ func _team_mode() -> bool:
 ## 사람 대신 알아서 하는 말인지 (CPU, 또는 자동 점검 중인 내 말)
 func _is_auto(p: Dictionary) -> bool:
 	return bool(p["cpu"]) or GameState.debug_autoplay
+
+
+## 왼쪽 위 나가기 버튼 글씨 (상속해서 바꿈)
+func exit_label() -> String:
+	return "EXIT TUTORIAL"
+
+
+## 진짜 게임은 실수로 누르지 않게 한 번 더 눌러야 나감
+var _exit_armed := false
+
+
+func _on_exit_pressed(btn: Button) -> void:
+	if not confirm_exit() or _exit_armed:
+		_exit_to_menu()
+		return
+	_exit_armed = true
+	btn.text = "CLICK AGAIN TO LEAVE"
+	await get_tree().create_timer(3.0).timeout
+	_exit_armed = false
+	if is_instance_valid(btn):
+		btn.text = exit_label()
+
+
+func confirm_exit() -> bool:
+	return false
 
 
 ## 보드 제목 (상속해서 바꿈)
@@ -319,9 +345,9 @@ func _build_ui() -> void:
 		p["chip"] = chip
 		_chips.add_child(chip)
 
-	var exit := _glass_button("EXIT TUTORIAL")
+	var exit := _glass_button(exit_label())
 	exit.set_meta("sfx", "back")
-	exit.pressed.connect(_exit_to_menu)
+	exit.pressed.connect(_on_exit_pressed.bind(exit))
 	root.add_child(exit)
 	exit.position = Vector2(30, 30)
 	_round_label = _outlined_label("", 26)
@@ -848,10 +874,14 @@ func _float_text(p: Dictionary, text: String, col: Color, icon: Texture2D) -> vo
 	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	l.add_theme_color_override("font_color", col)
 	box.add_child(l)
+	box.visible = false
 	_popup_root.add_child(box)
 	await get_tree().process_frame
+	if not is_instance_valid(box):
+		return
 	var sp := _camera.unproject_position(wp)
 	box.position = sp - box.size * 0.5
+	box.visible = true
 	var t := create_tween()
 	t.tween_property(box, "position:y", box.position.y - 70.0, 1.1).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
 	t.parallel().tween_property(box, "modulate:a", 0.0, 0.5).set_delay(0.6)
@@ -1399,6 +1429,7 @@ func _dot(c: Color, px: int) -> Panel:
 func _ask(p: Dictionary, title: String, body: String, options: Array, auto_choice: int, icon: Texture2D = null, locked: Array = []) -> int:
 	var dim := _modal_dim()
 	var panel := _modal_panel(dim, Color(GOLD, 0.8))
+	_dialog_panel = panel
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 18)
 	panel.add_child(v)
@@ -1623,7 +1654,11 @@ func _show_results() -> void:
 		world.bubbles_at((w["node"] as Node3D).position + Vector3(0, 0.5, 0), 30, 0.8, true)
 		world.portal_burst((w["node"] as Node3D).position)
 		await get_tree().create_timer(0.25).timeout
-	var head: String = (tr("TEAM %s WINS!") % w["team"]) if String(w["team"]) != "" else (tr("%s WINS!") % w["name"])
+	var head: String = tr("%s WINS!") % w["name"]
+	if String(w["team"]) != "":
+		head = tr("TEAM %s WINS!") % w["team"]
+	elif int(w["slot"]) == 0 and not w["cpu"]:
+		head = tr("YOU WIN!")
 	await _banner(head, "", 1.6)
 	var dim := _modal_dim()
 	var panel := _modal_panel(dim, Color(GOLD, 0.9))
