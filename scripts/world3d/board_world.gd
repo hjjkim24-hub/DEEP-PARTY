@@ -26,7 +26,7 @@ const ICONS := {
 const BORDER_TEX := preload("res://textures/tiles/icon_border.png")
 const TILE_COLORS := {
 	"blue": Color(0.27, 0.59, 0.9), "red": Color(0.89, 0.32, 0.31), "event": Color(0.35, 0.77, 0.43),
-	"star": Color(0.95, 0.75, 0.24), "junction": Color(0.93, 0.94, 0.9), "start": Color(0.95, 0.96, 0.92),
+	"star": Color(0.95, 0.75, 0.24), "junction": Color(0.86, 0.88, 0.83), "start": Color(0.84, 0.86, 0.8),
 }
 const INK_COLORS := {
 	"blue": Color(0.92, 0.96, 1.0), "red": Color(1.0, 0.92, 0.89), "event": Color(0.95, 1.0, 0.93),
@@ -258,22 +258,22 @@ func _environment() -> void:
 	var we := WorldEnvironment.new()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.02, 0.17, 0.18)
+	env.background_color = Color(0.01, 0.11, 0.12)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.32, 0.62, 0.6)
-	env.ambient_light_energy = 0.75
+	env.ambient_light_color = Color(0.26, 0.52, 0.52)
+	env.ambient_light_energy = 0.42
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.05
+	env.tonemap_exposure = 0.85
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.06, 0.32, 0.32)
-	env.fog_density = 0.013
+	env.fog_light_color = Color(0.03, 0.22, 0.23)
+	env.fog_density = 0.016
 	env.glow_enabled = true
-	env.glow_intensity = 0.5
+	env.glow_intensity = 0.3
 	we.environment = env
 	add_child(we)
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-58, -32, 0)
-	sun.light_energy = 1.35
+	sun.light_energy = 1.0
 	sun.light_color = Color(1.0, 0.97, 0.88)
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 70.0
@@ -354,8 +354,8 @@ func _tile_top_mat(kind: String) -> ShaderMaterial:
 
 
 func _tiles() -> void:
-	var stone := _mat(Color(0.84, 0.85, 0.81), 0.7)
-	var dark := _mat(Color(0.5, 0.53, 0.5), 0.9)
+	var stone := _mat(Color(0.7, 0.72, 0.68), 0.7)
+	var dark := _mat(Color(0.42, 0.45, 0.42), 0.9)
 	for sp in spaces:
 		var base: Vector3 = sp["base"]
 		var kind: String = sp["kind"]
@@ -384,7 +384,7 @@ func _tiles() -> void:
 # ── 길 (돌길 / 계단 / 다리 / 징검다리) ────────────────────────
 func _connectors() -> void:
 	var cobble := _mat(Color(0.62, 0.63, 0.58), 0.95)
-	var step_m := _mat(Color(0.78, 0.78, 0.74), 0.85)
+	var step_m := _mat(Color(0.64, 0.65, 0.61), 0.85)
 	var wood := _mat(Color(0.48, 0.33, 0.2), 0.8)
 	var rope := _mat(Color(0.78, 0.68, 0.48), 0.9)
 	var done := {}
@@ -456,7 +456,7 @@ func _bridge(p0: Vector3, p1: Vector3, bas: Basis, glen: float, wood: Material, 
 
 # ── 볼거리 ───────────────────────────────────────────────────
 func _landmarks() -> void:
-	var stone := _mat(Color(0.86, 0.85, 0.8), 0.8)
+	var stone := _mat(Color(0.7, 0.69, 0.64), 0.8)
 	var moss := _mat(Color(0.36, 0.55, 0.36), 0.95)
 	# START 광장 둘레 부서진 기둥
 	var corners := [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]
@@ -739,7 +739,7 @@ func _effects() -> void:
 		var m := ShaderMaterial.new()
 		m.shader = RayShader
 		m.set_shader_parameter("phase", _rng.randf() * TAU)
-		m.set_shader_parameter("strength", _rng.randf_range(0.06, 0.14))
+		m.set_shader_parameter("strength", _rng.randf_range(0.025, 0.06))
 		var p := Vector3(_rng.randf_range(-HALF_W, HALF_W), 14.0, _rng.randf_range(-HALF_D, HALF_D))
 		var b := Basis(Vector3.UP, _rng.randf() * TAU) * Basis(Vector3(0, 0, 1), deg_to_rad(18))
 		_mi(q, m, p, b)

@@ -1,9 +1,9 @@
 shader_type spatial;
 // 바다 밑 모래 바닥: 모래 결, 물결무늬, 비탈은 바위, 깊은 곳은 어둡게, 일렁이는 물빛
-uniform vec3 sand_a : source_color = vec3(0.80, 0.74, 0.58);
-uniform vec3 sand_b : source_color = vec3(0.62, 0.66, 0.53);
+uniform vec3 sand_a : source_color = vec3(0.62, 0.59, 0.47);
+uniform vec3 sand_b : source_color = vec3(0.44, 0.5, 0.41);
 uniform vec3 rock_c : source_color = vec3(0.46, 0.47, 0.44);
-uniform float caustic_strength = 0.35;
+uniform float caustic_strength = 0.28;
 varying vec3 wpos;
 varying vec3 wnorm;
 

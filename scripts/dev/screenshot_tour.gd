@@ -55,7 +55,7 @@ func _drive(overlay: Node, shots: Dictionary) -> void:
 			last = idx
 			stuck = 0.0
 			if shots.has(idx):
-				await _sec(1.8)
+				await _sec(4.0)
 				await _shot(shots[idx])
 			if not is_instance_valid(overlay):
 				break

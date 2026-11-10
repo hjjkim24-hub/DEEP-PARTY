@@ -22,7 +22,7 @@ void fragment() {
 	vec2 uv = UV;
 	vec3 c = tile_color.rgb;
 	float glow = 1.0 - length(uv - 0.5) * 1.2;
-	c += vec3(0.07) * glow;
+	c += vec3(0.04) * glow;
 	float b = texture(border_tex, uv).a;
 	c = mix(c, border_color.rgb, b);
 	vec2 iuv = (uv - 0.5) / icon_scale + 0.5;
