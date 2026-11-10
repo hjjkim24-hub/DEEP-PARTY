@@ -7,6 +7,9 @@ var _dir := "user://shots"
 
 
 func _ready() -> void:
+	# 가상 화면은 아주 느려서(초당 몇 장) 게임 시계가 실제 시간보다 느리게 감 → 물리 단계 제한을 풀어 맞춤
+	Engine.physics_ticks_per_second = 20
+	Engine.max_physics_steps_per_frame = 1000
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shots-dir="):
 			_dir = a.substr("--shots-dir=".length())
@@ -55,7 +58,12 @@ func _drive(overlay: Node, shots: Dictionary, scene_time: bool = false) -> void:
 		if idx != last:
 			last = idx
 			stuck = 0.0
-			if shots.has(idx):
+			var cur: Dictionary = overlay.current()
+			var named := String(cur.get("shot", ""))
+			if named != "":
+				await get_tree().create_timer(3.0).timeout
+				await _shot(named)
+			elif shots.has(idx):
 				if scene_time:
 					await get_tree().create_timer(4.0).timeout
 				else:
@@ -71,6 +79,8 @@ func _drive(overlay: Node, shots: Dictionary, scene_time: bool = false) -> void:
 				overlay.next()
 		else:
 			stuck += 0.8
+			if overlay.has_method("is_idle") and overlay.is_idle():
+				stuck = 0.0
 			if stuck > 40.0:
 				print("TOUR: tutorial stuck at ", idx)
 				return
@@ -151,7 +161,7 @@ func _run() -> void:
 	await _shot("16_world_diving_in")
 	while tb._overlay == null:
 		await get_tree().process_frame
-	await _drive(tb._overlay, {0: "17_world_start", 1: "18_world_overview", 2: "19_world_plateau", 3: "22_tile_plain", 4: "23_tile_chance", 5: "24_tile_minigame", 6: "25_tile_portal", 7: "26_tile_shop", 8: "27_legend", 10: "20_world_my_pawn"}, true)
+	await _drive(tb._overlay, {}, true)
 	await _sec(0.6)
 	await _shot("21_tutorial_complete")
 	while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":

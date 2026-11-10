@@ -4,7 +4,7 @@ extends Node
 ## 시작 로고 → 메인화면 → 설정/모드/로비/꾸미기 화면을 자동으로 한 바퀴 돌고 종료합니다.
 ## GitHub 자동 빌드에서 스크립트 오류를 미리 잡는 데 씁니다.
 
-const TIMEOUT_SEC := 300.0
+const TIMEOUT_SEC := 600.0
 
 
 func _ready() -> void:
@@ -26,6 +26,7 @@ func _step(msg: String) -> void:
 func _drive(overlay: Node, on_step: Callable = Callable()) -> void:
 	var last := -2
 	var stuck := 0.0
+	var idle := 0.0
 	while is_instance_valid(overlay) and overlay.is_inside_tree():
 		await _sec(0.6)
 		if not is_instance_valid(overlay):
@@ -34,6 +35,7 @@ func _drive(overlay: Node, on_step: Callable = Callable()) -> void:
 		if idx != last:
 			last = idx
 			stuck = 0.0
+			idle = 0.0
 			if on_step.is_valid():
 				await on_step.call(idx)
 			if not is_instance_valid(overlay):
@@ -45,6 +47,12 @@ func _drive(overlay: Node, on_step: Callable = Callable()) -> void:
 					(st["auto"] as Callable).call()
 			else:
 				overlay.next()
+		elif overlay.has_method("is_idle") and overlay.is_idle():
+			# 보드 튜토리얼은 단계 사이에 게임이 진행됨 (쉬는 중) — 너무 오래면 멈춘 것
+			idle += 0.6
+			if idle > 90.0:
+				push_error("Tutorial board stuck between steps (after step %d)" % idx)
+				return
 		else:
 			stuck += 0.6
 			if stuck > 25.0:

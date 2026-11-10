@@ -25,6 +25,15 @@ const TileShader := preload("res://shaders/tile_top.gdshader")
 const KelpShader := preload("res://shaders/kelp3d.gdshader")
 const RayShader := preload("res://shaders/light_ray.gdshader")
 const PortalShader := preload("res://shaders/portal_top.gdshader")
+const MeshKit := preload("res://scripts/world3d/mesh_kit.gd")
+const ReefKit := preload("res://scripts/world3d/reef_kit.gd")
+const SeagrassShader := preload("res://shaders/seagrass3d.gdshader")
+const FishShader := preload("res://shaders/fish3d.gdshader")
+const AnemoneShader := preload("res://shaders/anemone3d.gdshader")
+const RockShader := preload("res://shaders/reef_rock.gdshader")
+const BrainShader := preload("res://shaders/brain_coral.gdshader")
+const SkyShader := preload("res://shaders/underwater_sky.gdshader")
+const FAN_TEX := preload("res://textures/decor/sea_fan.png")
 const ICONS := {
 	"plain": preload("res://textures/tiles/icon_plain.png"),
 	"chance": preload("res://textures/tiles/icon_chance.png"),
@@ -100,6 +109,8 @@ var _mats := {}
 var _blocked: Array = []      ## 장식을 놓지 않을 자리 [Vector2 중심, 반지름]
 var _spinners: Array = []     ## 빙글빙글 도는 찬스 카드 {node, base_y, phase}
 var _portal_fx: Array = []    ## 포탈 고리 {node, mat, light, phase}
+var _jellies: Array = []      ## 해파리 {node, base, phase}
+var _meshes := {}
 var _time := 0.0
 
 
@@ -294,27 +305,46 @@ func _cyl(r_top: float, r_bot: float, h: float, segs: int = 24) -> CylinderMesh:
 func _environment() -> void:
 	var we := WorldEnvironment.new()
 	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.01, 0.11, 0.12)
+	env.background_mode = Environment.BG_SKY
+	var sky := Sky.new()
+	var sm := ShaderMaterial.new()
+	sm.shader = SkyShader
+	sky.sky_material = sm
+	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.26, 0.52, 0.52)
-	env.ambient_light_energy = 0.42
+	env.ambient_light_color = Color(0.3, 0.6, 0.6)
+	env.ambient_light_energy = 0.5
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 0.85
+	env.tonemap_exposure = 0.95
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.03, 0.22, 0.23)
-	env.fog_density = 0.016
+	env.fog_light_color = Color(0.05, 0.3, 0.33)
+	env.fog_density = 0.012
+	env.fog_sky_affect = 0.3
 	env.glow_enabled = true
-	env.glow_intensity = 0.3
+	env.glow_intensity = 0.4
+	env.glow_bloom = 0.04
+	env.ssao_enabled = true
+	env.ssao_radius = 1.2
+	env.ssao_intensity = 1.6
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 1.18
+	env.adjustment_contrast = 1.05
 	we.environment = env
 	add_child(we)
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-58, -32, 0)
-	sun.light_energy = 1.0
-	sun.light_color = Color(1.0, 0.97, 0.88)
+	sun.light_energy = 1.15
+	sun.light_color = Color(1.0, 0.96, 0.86)
+	sun.light_angular_distance = 1.5
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 70.0
 	add_child(sun)
+	# 그림자 쪽을 살짝 밝혀 주는 물빛 반사광
+	var fill := DirectionalLight3D.new()
+	fill.rotation_degrees = Vector3(-25, 150, 0)
+	fill.light_energy = 0.28
+	fill.light_color = Color(0.45, 0.85, 0.85)
+	add_child(fill)
 
 
 # ── 바닥 ─────────────────────────────────────────────────────
@@ -359,17 +389,24 @@ func _floor() -> void:
 
 
 func _board_rim() -> void:
-	var lacquer := _mat(Color(0.05, 0.29, 0.3), 0.3)
-	var pearl := _mat(Color(0.9, 0.97, 0.94), 0.25)
+	var lacquer := _mat(Color(0.04, 0.2, 0.26), 0.22)
+	var gold := _mat(Color(0.95, 0.76, 0.34), 0.25, 0.85)
 	var t := 1.2
 	for side in [[Vector3(0, 0.2, -HALF_D - t / 2), Vector3(HALF_W * 2 + t * 2, 1.6, t)],
 			[Vector3(0, 0.2, HALF_D + t / 2), Vector3(HALF_W * 2 + t * 2, 1.6, t)],
 			[Vector3(-HALF_W - t / 2, 0.2, 0), Vector3(t, 1.6, HALF_D * 2)],
 			[Vector3(HALF_W + t / 2, 0.2, 0), Vector3(t, 1.6, HALF_D * 2)]]:
-		_mi(_box(side[1]), lacquer, side[0])
+		_mi(_rbox(side[1], 0.18), lacquer, side[0])
 		var inlay: Vector3 = side[1]
-		inlay = Vector3(maxf(inlay.x - 0.6, 0.15) if inlay.x > 2 else 0.15, 0.03, maxf(inlay.z - 0.6, 0.15) if inlay.z > 2 else 0.15)
-		_mi(_box(inlay), pearl, (side[0] as Vector3) + Vector3(0, 0.81, 0))
+		inlay = Vector3(maxf(inlay.x - 0.6, 0.15) if inlay.x > 2 else 0.15, 0.05, maxf(inlay.z - 0.6, 0.15) if inlay.z > 2 else 0.15)
+		_mi(_box(inlay), gold, (side[0] as Vector3) + Vector3(0, 0.81, 0))
+	# 모서리 장식 구슬
+	for cx in [-1.0, 1.0]:
+		for cz in [-1.0, 1.0]:
+			var sp := SphereMesh.new()
+			sp.radius = 0.55
+			sp.height = 1.1
+			_mi(sp, gold, Vector3(cx * (HALF_W + t / 2), 1.3, cz * (HALF_D + t / 2)))
 	# 판 아래 받침
 	_mi(_box(Vector3(HALF_W * 2 + t * 2, 2.0, HALF_D * 2 + t * 2)), lacquer, Vector3(0, -8.0, 0))
 
@@ -395,40 +432,66 @@ func _tile_top_mat(kind: String) -> ShaderMaterial:
 	return m
 
 
+## 둥근 상자 (같은 크기는 한 번만 만들어 씀)
+func _rbox(size: Vector3, r: float) -> ArrayMesh:
+	var key := "rb_%s_%.2f" % [size, r]
+	if not _meshes.has(key):
+		_meshes[key] = MeshKit.rounded_box(size, r, false, 3)
+	return _meshes[key]
+
+
 func _tiles() -> void:
-	var stone := _mat(Color(0.7, 0.72, 0.68), 0.7)
-	var dark := _mat(Color(0.42, 0.45, 0.42), 0.9)
+	var foot_m := _mat(Color(0.88, 0.84, 0.72), 0.55)
+	var gold := _mat(Color(0.95, 0.76, 0.34), 0.25, 0.85)
+	var stud := SphereMesh.new()
+	stud.radius = 0.08
+	stud.height = 0.12
+	stud.radial_segments = 10
+	stud.rings = 5
 	for sp in spaces:
 		var base: Vector3 = sp["base"]
 		var kind: String = sp["kind"]
 		var b := Basis(Vector3.UP, sp["yaw"])
 		if kind == "start":
-			_mi(_box(Vector3(PLAZA, 0.5, PLAZA)), stone, base + Vector3(0, 0.25, 0), b)
-			_mi(_box(Vector3(PLAZA + 0.4, 0.18, PLAZA + 0.4)), dark, base + Vector3(0, 0.09, 0), b)
+			_mi(_rbox(Vector3(PLAZA, 0.5, PLAZA), 0.22), _mat(Color(0.93, 0.91, 0.84), 0.3), base + Vector3(0, 0.25, 0), b)
+			_mi(_rbox(Vector3(PLAZA + 0.6, 0.2, PLAZA + 0.6), 0.08), foot_m, base + Vector3(0, 0.1, 0), b)
 			var top := PlaneMesh.new()
-			top.size = Vector2(PLAZA - 0.3, PLAZA - 0.3)
+			top.size = Vector2(PLAZA - 0.5, PLAZA - 0.5)
 			_mi(top, _tile_top_mat("start"), base + Vector3(0, 0.505, 0), b)
+			for cx in [-1.0, 1.0]:
+				for cz in [-1.0, 1.0]:
+					_mi(stud, gold, base + b * Vector3(cx * (PLAZA * 0.5 + 0.15), 0.21, cz * (PLAZA * 0.5 + 0.15)))
 			continue
 		var size := TILE + (0.2 if kind == "junction" else 0.0)
-		_mi(_box(Vector3(size, TILE_H, size)), stone, base + Vector3(0, TILE_H * 0.5, 0), b)
-		# 아래 굽 (살짝 넓은 받침)
-		_mi(_box(Vector3(size + 0.25, 0.12, size + 0.25)), dark, base + Vector3(0, 0.06, 0), b)
+		var body_c: Color = Color(0.93, 0.93, 0.88) if kind == "junction" else (TILE_COLORS[kind] as Color).darkened(0.2)
+		# 유약 바른 도자기 같은 칸 몸통 + 크림색 받침 + 금 장식
+		_mi(_rbox(Vector3(size, TILE_H, size), 0.15), _mat(body_c, 0.25), base + Vector3(0, TILE_H * 0.5, 0), b)
+		_mi(_rbox(Vector3(size + 0.36, 0.16, size + 0.36), 0.07), foot_m, base + Vector3(0, 0.08, 0), b)
+		for cx in [-1.0, 1.0]:
+			for cz in [-1.0, 1.0]:
+				_mi(stud, gold, base + b * Vector3(cx * (size * 0.5 + 0.1), 0.17, cz * (size * 0.5 + 0.1)))
 		var plane := PlaneMesh.new()
-		plane.size = Vector2(size - 0.12, size - 0.12)
+		plane.size = Vector2(size - 0.3, size - 0.3)
 		# 그림은 카메라(남쪽)에서 똑바로 읽히게: 네모라서 90°씩 돌려도 칸과 딱 맞음
 		var yaw_top: float = float(sp["yaw"]) - roundf(float(sp["yaw"]) / (PI / 2.0)) * (PI / 2.0)
 		_mi(plane, _tile_top_mat(kind), base + Vector3(0, TILE_H + 0.004, 0), Basis(Vector3.UP, yaw_top))
 		# 협곡 위 칸은 돌기둥이 받침
 		if _in_chasm(base.x, base.z):
 			var depth := base.y - natural_height(base.x, base.z) + 0.5
-			_mi(_cyl(0.85, 1.05, depth, 16), _mat(Color(0.58, 0.6, 0.57), 0.9), base - Vector3(0, depth * 0.5, 0))
-			_mi(_cyl(1.2, 0.9, 0.35, 16), _mat(Color(0.66, 0.68, 0.64), 0.85), base + Vector3(0, -0.15, 0))
+			_mi(_cyl(0.85, 1.05, depth, 16), _rock_mat(0), base - Vector3(0, depth * 0.5, 0))
+			_mi(_cyl(1.25, 0.9, 0.35, 16), _rock_mat(1), base + Vector3(0, -0.15, 0))
 
 
 # ── 길 (돌길 / 계단 / 다리 / 징검다리) ────────────────────────
 func _connectors() -> void:
-	var cobble := _mat(Color(0.62, 0.63, 0.58), 0.95)
-	var step_m := _mat(Color(0.64, 0.65, 0.61), 0.85)
+	var cobble := _mat(Color(0.84, 0.8, 0.67), 0.85)
+	var step_m := _mat(Color(0.88, 0.85, 0.74), 0.6)
+	var pebble_cols := [Color(0.98, 0.95, 0.88), Color(0.98, 0.8, 0.74), Color(0.74, 0.92, 0.9), Color(0.85, 0.8, 0.95)]
+	var pebble := SphereMesh.new()
+	pebble.radius = 0.17
+	pebble.height = 0.16
+	pebble.radial_segments = 12
+	pebble.rings = 6
 	var wood := _mat(Color(0.48, 0.33, 0.2), 0.8)
 	var rope := _mat(Color(0.78, 0.68, 0.48), 0.9)
 	var done := {}
@@ -469,18 +532,20 @@ func _connectors() -> void:
 					var top := lerpf(a.y + TILE_H, b.y + TILE_H, (float(s) + 1.0) / n) if dy > 0 else lerpf(a.y + TILE_H, b.y + TILE_H, float(s) / n)
 					var low := minf(a.y, b.y) - 0.3
 					var hgt := top - low
-					_mi(_box(Vector3(1.6, hgt, glen / n + 0.02)), step_m, Vector3(pos.x, low + hgt * 0.5, pos.z), bas)
+					_mi(_rbox(Vector3(1.6, hgt, glen / n + 0.02), 0.05), step_m, Vector3(pos.x, low + hgt * 0.5, pos.z), bas)
 				continue
 			# 평범한 자갈길
 			var y := (a.y + b.y) * 0.5 + 0.08
-			_mi(_box(Vector3(1.3, 0.16, glen + 0.1)), cobble, Vector3(mid.x, y, mid.z), bas)
-			for s in int(glen / 0.55):
-				var f := (float(s) + 0.5) / int(glen / 0.55)
+			_mi(_rbox(Vector3(1.2, 0.14, glen + 0.1), 0.06), cobble, Vector3(mid.x, y, mid.z), bas)
+			# 길 양옆 동글동글 조약돌
+			for s in int(glen / 0.42):
+				var f := (float(s) + 0.5) / int(glen / 0.42)
 				var pp := p0.lerp(p1, f)
-				for side in [-0.32, 0.32]:
-					var off: Vector3 = bas.x * side
-					_mi(_box(Vector3(0.5, 0.06, 0.45)), _mat(Color(0.7, 0.71, 0.66).darkened(_rng.randf() * 0.15), 0.9),
-						Vector3(pp.x + off.x, y + 0.1, pp.z + off.z), Basis(Vector3.UP, yaw + _rng.randf_range(-0.2, 0.2)))
+				for side in [-0.66, 0.66]:
+					var off: Vector3 = bas.x * (side + _rng.randf_range(-0.04, 0.04))
+					var pm := _mat(pebble_cols[_rng.randi() % pebble_cols.size()], 0.35)
+					var mi := _mi(pebble, pm, Vector3(pp.x + off.x, y + 0.04, pp.z + off.z))
+					mi.scale = Vector3.ONE * _rng.randf_range(0.8, 1.15)
 
 
 func _bridge(p0: Vector3, p1: Vector3, bas: Basis, glen: float, wood: Material, rope: Material) -> void:
@@ -500,8 +565,8 @@ func _bridge(p0: Vector3, p1: Vector3, bas: Basis, glen: float, wood: Material, 
 
 # ── 볼거리 ───────────────────────────────────────────────────
 func _landmarks() -> void:
-	var stone := _mat(Color(0.7, 0.69, 0.64), 0.8)
-	var moss := _mat(Color(0.36, 0.55, 0.36), 0.95)
+	var stone := _mat(Color(0.9, 0.88, 0.8), 0.45)
+	var moss := _mat(Color(0.36, 0.6, 0.38), 0.9)
 	# START 광장 둘레 부서진 기둥
 	var corners := [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]
 	for k in corners.size():
@@ -515,7 +580,7 @@ func _landmarks() -> void:
 	_mi(_cyl(0.45, 0.45, 3.2, 16), stone, Vector3(-PLAZA * 0.5 - 2.6, 0.4, PLAZA * 0.5 - 0.6), Basis(Vector3(0, 0, 1), PI / 2).rotated(Vector3.UP, 0.4))
 
 	# 바위 아치 터널 (서→남 길 위)
-	var rock := _mat(Color(0.5, 0.5, 0.46), 0.95)
+	var rock := _rock_mat(2)
 	var dir := Vector2(-6.5 - (-16.5), 12.5 - 5.0).normalized()
 	var yaw := atan2(dir.x, dir.y)
 	for k in 3:
@@ -594,8 +659,7 @@ func _rock(p: Vector3, r: float) -> void:
 	arr[Mesh.ARRAY_NORMAL] = norms
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
-	var c := Color(0.5, 0.5, 0.46).lerp(Color(0.42, 0.48, 0.44), _rng.randf())
-	var mi := _mi(mesh, _mat(c, 0.95), p)
+	var mi := _mi(mesh, _rock_mat(_rng.randi() % 3), p)
 	mi.scale = Vector3(r * _rng.randf_range(0.9, 1.3), r * _rng.randf_range(0.55, 0.8), r * _rng.randf_range(0.9, 1.2))
 	mi.rotation.y = _rng.randf() * TAU
 
@@ -640,37 +704,338 @@ func _sponge(p: Vector3, c: Color) -> void:
 		_mi(_cyl(r * 0.75, r * 0.75, 0.02, 12), inner, p + off + Vector3(0, h + 0.005, 0))
 
 
+func _rock_mat(k: int) -> ShaderMaterial:
+	var key := "rock_%d" % k
+	if not _mats.has(key):
+		var m := ShaderMaterial.new()
+		m.shader = RockShader
+		m.set_shader_parameter("rock_color", [Color(0.52, 0.52, 0.48), Color(0.47, 0.5, 0.47), Color(0.56, 0.52, 0.47)][k % 3])
+		_mats[key] = m
+	return _mats[key]
+
+
 func _kelp(p: Vector3, h: float) -> void:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var n := 16
-	for i in n:
-		var y0 := h * i / n
-		var y1 := h * (i + 1) / n
-		var w0 := lerpf(0.28, 0.08, float(i) / n)
-		var w1 := lerpf(0.28, 0.08, float(i + 1) / n)
-		var v := [Vector3(-w0, y0, 0), Vector3(w0, y0, 0), Vector3(w1, y1, 0), Vector3(-w1, y1, 0)]
-		for idx in [0, 1, 2, 0, 2, 3]:
-			st.set_normal(Vector3(0, 0, 1))
-			st.add_vertex(v[idx])
-		if i % 2 == 0 and i > 1:
-			var side := 1.0 if i % 4 == 0 else -1.0
-			var lv := [Vector3(side * w0, y0, 0), Vector3(side * (w0 + 0.7), y0 + 0.35, 0.1), Vector3(side * w0, y0 + 0.55, 0)]
-			for idx in [0, 1, 2]:
-				st.set_normal(Vector3(0, 0, 1))
-				st.add_vertex(lv[idx])
 	var m := ShaderMaterial.new()
 	m.shader = KelpShader
 	m.set_shader_parameter("phase", _rng.randf() * TAU)
-	m.set_shader_parameter("color", Color(0.14, 0.46, 0.26).lerp(Color(0.3, 0.55, 0.22), _rng.randf()))
-	_mi(st.commit(), m, p, Basis(Vector3.UP, _rng.randf() * TAU))
+	m.set_shader_parameter("height", h)
+	m.set_shader_parameter("tip_color", Color(0.62, 0.68, 0.22).lerp(Color(0.42, 0.66, 0.3), _rng.randf()))
+	_mi(ReefKit.kelp_mesh(_rng, h), m, p, Basis(Vector3.UP, _rng.randf() * TAU))
+	# 공기주머니
+	var bl := SphereMesh.new()
+	bl.radius = 0.09
+	bl.height = 0.18
+	bl.radial_segments = 8
+	bl.rings = 4
+	for k in 2:
+		_mi(bl, _mat(Color(0.66, 0.6, 0.22), 0.3), p + Vector3(_rng.randf_range(-0.2, 0.2), h * _rng.randf_range(0.2, 0.5), _rng.randf_range(-0.2, 0.2)))
+
+
+## 뇌산호
+func _brain(p: Vector3, c: Color, size: float) -> void:
+	var m := ShaderMaterial.new()
+	m.shader = BrainShader
+	m.set_shader_parameter("color", c)
+	var mi := _mi(ReefKit.brain_mesh(_rng), m, p - Vector3(0, 0.05, 0))
+	mi.scale = Vector3(size, size, size) * _rng.randf_range(0.5, 0.8)
+
+
+## 탁자산호 (줄기 위에 넓적한 판)
+func _table_coral(p: Vector3, c: Color, size: float) -> void:
+	var m := _mat(c, 0.55)
+	var h := 0.9 * size
+	_mi(_cyl(0.12 * size, 0.2 * size, h, 10), m, p + Vector3(0, h * 0.5, 0))
+	for k in 2:
+		var r := (1.0 - k * 0.35) * size
+		var plate := _cyl(r, r * 0.92, 0.1, 20)
+		_mi(plate, m if k == 0 else _mat(c.lightened(0.2), 0.5), p + Vector3(_rng.randf_range(-0.2, 0.2), h + k * 0.35, _rng.randf_range(-0.2, 0.2)),
+			Basis(Vector3(1, 0, 0), _rng.randf_range(-0.12, 0.12)))
+
+
+## 부채산호 (그물 무늬 판, 양면)
+func _fan_coral(p: Vector3, c: Color, size: float) -> void:
+	var key := "fan_" + c.to_html()
+	if not _mats.has(key):
+		var m := StandardMaterial3D.new()
+		m.albedo_texture = FAN_TEX
+		m.albedo_color = c
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+		m.alpha_scissor_threshold = 0.35
+		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		m.roughness = 0.6
+		m.emission_enabled = true
+		m.emission = c * 0.15
+		_mats[key] = m
+	var q := QuadMesh.new()
+	q.size = Vector2(2.0, 2.0) * size
+	var mi := _mi(q, _mats[key], p + Vector3(0, size * 0.95, 0), Basis(Vector3.UP, _rng.randf() * TAU))
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+
+
+## 말미잘
+func _anemone(p: Vector3, c: Color) -> void:
+	var m := ShaderMaterial.new()
+	m.shader = AnemoneShader
+	m.set_shader_parameter("base_color", c)
+	m.set_shader_parameter("tip_color", c.lightened(0.55))
+	m.set_shader_parameter("phase", _rng.randf() * TAU)
+	var mi := _mi(ReefKit.anemone_mesh(_rng), m, p)
+	mi.scale = Vector3.ONE * _rng.randf_range(0.9, 1.4)
+
+
+## 항아리 (옛날 배에서 떨어진)
+func _amphora(p: Vector3, tipped: bool) -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var prof := [Vector2(0.0, 0.0), Vector2(0.18, 0.02), Vector2(0.34, 0.25), Vector2(0.38, 0.5), Vector2(0.3, 0.8),
+		Vector2(0.13, 0.98), Vector2(0.12, 1.15), Vector2(0.19, 1.22)]
+	var n := 16
+	for i in prof.size() - 1:
+		var a: Vector2 = prof[i]
+		var b: Vector2 = prof[i + 1]
+		for j in n:
+			var t0 := TAU * j / n
+			var t1 := TAU * (j + 1) / n
+			var v := [Vector3(cos(t0) * a.x, a.y, sin(t0) * a.x), Vector3(cos(t1) * a.x, a.y, sin(t1) * a.x),
+				Vector3(cos(t1) * b.x, b.y, sin(t1) * b.x), Vector3(cos(t0) * b.x, b.y, sin(t0) * b.x)]
+			var out := Vector3(cos((t0 + t1) * 0.5), 0, sin((t0 + t1) * 0.5))
+			for tri in [[0, 1, 2], [0, 2, 3]]:
+				var A: Vector3 = v[tri[0]]
+				var B: Vector3 = v[tri[1]]
+				var C: Vector3 = v[tri[2]]
+				if (B - A).cross(C - A).dot(out) > 0.0:
+					var tmp := B
+					B = C
+					C = tmp
+				st.add_vertex(A)
+				st.add_vertex(B)
+				st.add_vertex(C)
+	st.index()
+	st.generate_normals()
+	var b := Basis(Vector3.UP, _rng.randf() * TAU)
+	if tipped:
+		b = b * Basis(Vector3(0, 0, 1), PI / 2 - 0.15)
+	var mi := _mi(st.commit(), _mat(Color(0.78, 0.45, 0.3), 0.7), p + (Vector3(0, 0.35, 0) if tipped else Vector3.ZERO), b)
+	mi.scale = Vector3.ONE * 1.3
+
+
+## 가라앉은 보물상자 (반짝반짝 금화)
+func _treasure(p: Vector3) -> void:
+	var root := Node3D.new()
+	root.position = p
+	root.rotation.y = _rng.randf_range(-0.6, 0.6)
+	add_child(root)
+	var wood := _mat(Color(0.45, 0.27, 0.15), 0.7)
+	var gold := _mat(Color(1.0, 0.8, 0.3), 0.2, 0.9)
+	_mi(_rbox(Vector3(1.6, 0.9, 1.0), 0.06), wood, Vector3(0, 0.45, 0), Basis(), root)
+	for x in [-0.6, 0.0, 0.6]:
+		_mi(_box(Vector3(0.12, 0.94, 1.04)), gold, Vector3(x, 0.45, 0), Basis(), root)
+	# 열린 뚜껑
+	var lid := _cyl(0.5, 0.5, 1.6, 16)
+	var lid_mi := _mi(lid, wood, Vector3(0, 1.05, -0.55), Basis(Vector3(0, 0, 1), PI / 2), root)
+	lid_mi.scale = Vector3(1, 1, 0.55)
+	# 금화 무더기
+	var coin := _cyl(0.13, 0.13, 0.03, 12)
+	for k in 26:
+		var a := _rng.randf() * TAU
+		var r := _rng.randf() * 0.6
+		var cp := Vector3(cos(a) * r * 0.9, 0.92 + _rng.randf() * 0.15, sin(a) * r * 0.5)
+		if k > 16:
+			cp = Vector3(_rng.randf_range(-1.4, 1.4), 0.03, _rng.randf_range(0.5, 1.3))
+		_mi(coin, gold, cp, Basis(Vector3(1, 0, 0), _rng.randf_range(-0.5, 0.5)), root)
+	var glow := OmniLight3D.new()
+	glow.light_color = Color(1.0, 0.82, 0.4)
+	glow.light_energy = 1.2
+	glow.omni_range = 3.5
+	glow.position = Vector3(0, 1.3, 0.2)
+	root.add_child(glow)
+	_blocked.append([Vector2(p.x, p.z), 2.0])
+
+
+## 여러 개를 한 번에 그리기 (MultiMesh)
+func _multi(mesh: Mesh, mat: Material, xforms: Array, colors: Array = []) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = colors.size() > 0
+	mm.mesh = mesh
+	mm.instance_count = xforms.size()
+	for i in xforms.size():
+		mm.set_instance_transform(i, xforms[i])
+		if colors.size() > 0:
+			mm.set_instance_color(i, colors[i])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = mat
+	add_child(mmi)
+	return mmi
+
+
+## 해초밭 (덤불 수백 개)
+func _seagrass() -> void:
+	var meshes := [ReefKit.grass_clump_mesh(_rng, 6, 0.8), ReefKit.grass_clump_mesh(_rng, 5, 1.1), ReefKit.grass_clump_mesh(_rng, 8, 0.6)]
+	var m := ShaderMaterial.new()
+	m.shader = SeagrassShader
+	var lists := [[], [], []]
+	for patch in 22:
+		var cx := _rng.randf_range(-HALF_W + 3, HALF_W - 3)
+		var cz := _rng.randf_range(-HALF_D + 3, HALF_D - 3)
+		var rad := _rng.randf_range(1.5, 3.2)
+		for k in 55:
+			var x := cx + _rng.randfn(0.0, rad * 0.5)
+			var z := cz + _rng.randfn(0.0, rad * 0.5)
+			if not _free_spot(x, z, 0.1):
+				continue
+			var y := ground_height(x, z)
+			if y < -1.0:
+				continue
+			var sc := _rng.randf_range(0.7, 1.3)
+			var t := Transform3D(Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3.ONE * sc), Vector3(x, y - 0.03, z))
+			lists[_rng.randi() % 3].append(t)
+	for i in 3:
+		if lists[i].size() > 0:
+			_multi(meshes[i], m, lists[i])
+
+
+## 바닥에 흩어진 불가사리·조개·자갈
+func _scatter() -> void:
+	var star_cols := [Color(1.0, 0.5, 0.25), Color(1.0, 0.42, 0.55), Color(0.62, 0.42, 0.95), Color(1.0, 0.78, 0.3)]
+	var shell_cols := [Color(0.99, 0.92, 0.82), Color(1.0, 0.76, 0.66), Color(0.98, 0.7, 0.78)]
+	var pebble_cols := [Color(0.72, 0.7, 0.64), Color(0.86, 0.83, 0.75), Color(0.6, 0.62, 0.6), Color(0.9, 0.78, 0.72)]
+	var vm := StandardMaterial3D.new()
+	vm.vertex_color_use_as_albedo = true
+	vm.roughness = 0.5
+	var sets := {"star": [[], []], "shell": [[], []], "pebble": [[], []]}
+	var want := {"star": 34, "shell": 40, "pebble": 420}
+	for kind in want:
+		var n := 0
+		var tries := 0
+		while n < int(want[kind]) and tries < int(want[kind]) * 8:
+			tries += 1
+			var x := _rng.randf_range(-HALF_W + 1.5, HALF_W - 1.5)
+			var z := _rng.randf_range(-HALF_D + 1.5, HALF_D - 1.5)
+			if not _free_spot(x, z, 0.1):
+				continue
+			var y := ground_height(x, z)
+			var sc := 0.0
+			var col := Color.WHITE
+			var b := Basis(Vector3.UP, _rng.randf() * TAU)
+			match kind:
+				"star":
+					sc = _rng.randf_range(0.22, 0.36)
+					col = star_cols[_rng.randi() % star_cols.size()]
+				"shell":
+					sc = _rng.randf_range(0.18, 0.3)
+					col = shell_cols[_rng.randi() % shell_cols.size()]
+				_:
+					sc = _rng.randf_range(0.06, 0.16)
+					col = pebble_cols[_rng.randi() % pebble_cols.size()]
+					b = b.scaled(Vector3(1.0, 0.55, 1.0))
+			sets[kind][0].append(Transform3D(b.scaled(Vector3.ONE * sc), Vector3(x, y + 0.01, z)))
+			sets[kind][1].append(col)
+			n += 1
+	var pm := SphereMesh.new()
+	pm.radius = 1.0
+	pm.height = 2.0
+	pm.radial_segments = 8
+	pm.rings = 4
+	_multi(ReefKit.starfish_mesh(), vm, sets["star"][0], sets["star"][1])
+	_multi(ReefKit.shell_mesh(), vm, sets["shell"][0], sets["shell"][1])
+	_multi(pm, vm, sets["pebble"][0], sets["pebble"][1])
+
+
+## 물고기 떼 (셰이더가 헤엄치게 함)
+func _fish_school(center: Vector3, radius: float, count: int, speed: float, length: float, col_a: Color, col_b: Color) -> void:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.mesh = ReefKit.fish_mesh(length)
+	mm.instance_count = count
+	for i in count:
+		mm.set_instance_transform(i, Transform3D.IDENTITY)
+		mm.set_instance_custom_data(i, Color(_rng.randfn(0.0, 0.35), _rng.randfn(0.0, 0.9), _rng.randfn(0.0, 0.6), _rng.randf()))
+	var m := ShaderMaterial.new()
+	m.shader = FishShader
+	m.set_shader_parameter("center", center)
+	m.set_shader_parameter("radius", radius)
+	m.set_shader_parameter("speed", speed)
+	m.set_shader_parameter("color_a", col_a)
+	m.set_shader_parameter("color_b", col_b)
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = m
+	mmi.custom_aabb = AABB(Vector3(-60, -20, -60), Vector3(120, 40, 120))
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mmi)
+
+
+## 해파리 (둥실둥실)
+func _jelly(p: Vector3, c: Color) -> void:
+	var root := Node3D.new()
+	root.position = p
+	add_child(root)
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(c, 0.5)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.emission_enabled = true
+	m.emission = c
+	m.emission_energy_multiplier = 0.8
+	m.roughness = 0.2
+	var dome := SphereMesh.new()
+	dome.radius = 0.55
+	dome.height = 0.7
+	dome.is_hemisphere = true
+	dome.radial_segments = 20
+	dome.rings = 8
+	var bell := MeshInstance3D.new()
+	bell.mesh = dome
+	bell.material_override = m
+	bell.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(bell)
+	var tm := StandardMaterial3D.new()
+	tm.albedo_color = Color(c.lightened(0.3), 0.45)
+	tm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	tm.emission_enabled = true
+	tm.emission = c.lightened(0.3)
+	tm.emission_energy_multiplier = 0.6
+	for k in 7:
+		var a := TAU * k / 7.0
+		var ln := _rng.randf_range(0.9, 1.6)
+		var t := MeshInstance3D.new()
+		t.mesh = _cyl(0.025, 0.012, ln, 5)
+		t.material_override = tm
+		t.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		t.position = Vector3(cos(a) * 0.32, -ln * 0.5, sin(a) * 0.32)
+		root.add_child(t)
+	_jellies.append({"node": root, "base": p, "phase": _rng.randf() * TAU})
+
+
+## 빈자리 찾기 (가까운 곳부터)
+func _find_free(x: float, z: float, r: float, spread: float = 3.0) -> Vector3:
+	for t in 60:
+		var xx := x + (_rng.randfn(0.0, spread) if t > 0 else 0.0)
+		var zz := z + (_rng.randfn(0.0, spread) if t > 0 else 0.0)
+		if _free_spot(xx, zz, r):
+			return Vector3(xx, ground_height(xx, zz), zz)
+	return Vector3(INF, 0, 0)
 
 
 func _decor() -> void:
-	var coral_cols := [Color(1.0, 0.42, 0.38), Color(1.0, 0.62, 0.3), Color(0.75, 0.43, 0.95), Color(1.0, 0.4, 0.62), Color(1.0, 0.85, 0.42)]
+	var coral_cols := [Color(1.0, 0.4, 0.38), Color(1.0, 0.6, 0.28), Color(0.76, 0.42, 0.98), Color(1.0, 0.38, 0.64), Color(1.0, 0.84, 0.38),
+		Color(0.35, 0.85, 0.8)]
+	# 보물상자 · 항아리 (먼저 자리 잡기)
+	var tp := _find_free(22.0, 3.0, 1.5)
+	if tp.x != INF:
+		_treasure(tp)
+	for at in [Vector2(-6.0, 5.5), Vector2(5.5, -5.5), Vector2(-21.0, -2.0)]:
+		var ap := _find_free(at.x, at.y, 0.6, 1.5)
+		if ap.x != INF:
+			_amphora(ap, _rng.randf() < 0.5)
+			_blocked.append([Vector2(ap.x, ap.z), 0.9])
 	# 산호 언덕 위·주변
-	var zones := [[PLATEAU_C, 6.0, 16], [Vector2(-22, -18), 4.0, 6], [Vector2(20, 17), 5.0, 8], [Vector2(-6, 18), 4.0, 5],
-		[Vector2(22, 4), 3.0, 4], [Vector2(-4, -20), 4.0, 5], [Vector2(6, 4), 3.0, 3], [Vector2(-7, -5), 3.0, 3]]
+	var zones := [[PLATEAU_C, 6.0, 20], [Vector2(-22, -18), 4.0, 8], [Vector2(20, 17), 5.0, 10], [Vector2(-6, 18), 4.0, 7],
+		[Vector2(22, 4), 3.0, 5], [Vector2(-4, -20), 4.0, 7], [Vector2(6, 4), 3.0, 4], [Vector2(-7, -5), 3.0, 4],
+		[Vector2(8, -18), 3.5, 6], [Vector2(-24, 6), 3.0, 5], [Vector2(24, -10), 3.0, 5]]
 	for z in zones:
 		var c: Vector2 = z[0]
 		for k in z[2]:
@@ -679,35 +1044,59 @@ func _decor() -> void:
 				var zz: float = c.y + _rng.randfn(0.0, z[1])
 				if _free_spot(x, zz, 0.8):
 					var p := Vector3(x, ground_height(x, zz), zz)
-					if _rng.randf() < 0.7:
-						_coral(p, coral_cols[_rng.randi() % coral_cols.size()], _rng.randf_range(0.8, 1.4))
+					var col: Color = coral_cols[_rng.randi() % coral_cols.size()]
+					var roll := _rng.randf()
+					if roll < 0.32:
+						_coral(p, col, _rng.randf_range(0.8, 1.4))
+					elif roll < 0.47:
+						_brain(p, col.lerp(Color(0.95, 0.85, 0.6), 0.4), _rng.randf_range(0.9, 1.4))
+					elif roll < 0.6:
+						_table_coral(p, col, _rng.randf_range(0.7, 1.1))
+					elif roll < 0.74:
+						_fan_coral(p, col, _rng.randf_range(0.8, 1.3))
+					elif roll < 0.87:
+						_anemone(p, col)
 					else:
-						_sponge(p, coral_cols[_rng.randi() % coral_cols.size()])
+						_sponge(p, col)
+					_blocked.append([Vector2(x, zz), 0.6])
 					break
 	# 바위
-	for k in 46:
+	for k in 40:
 		for t in 20:
 			var x := _rng.randf_range(-HALF_W + 2, HALF_W - 2)
 			var zz := _rng.randf_range(-HALF_D + 2, HALF_D - 2)
 			var r := _rng.randf_range(0.5, 1.6) if _rng.randf() < 0.85 else _rng.randf_range(1.8, 2.8)
 			if _free_spot(x, zz, r):
 				_rock(Vector3(x, ground_height(x, zz) - r * 0.25, zz), r)
+				_blocked.append([Vector2(x, zz), r * 0.8])
 				break
-	# 다시마 숲 (남서쪽)
-	for k in 70:
+	# 다시마 숲 (남서쪽) + 판 가장자리 (가운데 길 쪽은 비워서 카메라를 가리지 않게)
+	for k in 46:
 		for t in 10:
-			var x := -21.0 + _rng.randfn(0.0, 4.0)
-			var zz := 12.0 + _rng.randfn(0.0, 5.0)
-			if _free_spot(x, zz, 0.3):
-				_kelp(Vector3(x, ground_height(x, zz), zz), _rng.randf_range(4.0, 8.0))
+			var x := -21.0 + _rng.randfn(0.0, 3.5)
+			var zz := 15.0 + _rng.randfn(0.0, 4.0)
+			if _free_spot(x, zz, 0.4):
+				_kelp(Vector3(x, ground_height(x, zz), zz), _rng.randf_range(4.0, 7.5))
 				break
-	for k in 24:
+	for k in 40:
 		for t in 10:
-			var x := _rng.randf_range(-HALF_W + 2, HALF_W - 2)
-			var zz := _rng.randf_range(-HALF_D + 2, HALF_D - 2)
-			if _free_spot(x, zz, 0.3):
-				_kelp(Vector3(x, ground_height(x, zz), zz), _rng.randf_range(3.0, 6.0))
+			var x := _rng.randf_range(-HALF_W + 1.5, HALF_W - 1.5)
+			var zz := _rng.randf_range(-HALF_D + 1.5, HALF_D - 1.5)
+			if absf(x) < HALF_W - 5.0 and absf(zz) < HALF_D - 4.0:
+				continue
+			if _free_spot(x, zz, 0.4):
+				_kelp(Vector3(x, ground_height(x, zz), zz), _rng.randf_range(3.5, 6.5))
 				break
+	_seagrass()
+	_scatter()
+	# 물고기 떼
+	_fish_school(Vector3(-15.5, 7.5, -12.0), 6.5, 24, 0.22, 0.45, Color(1.0, 0.82, 0.25), Color(0.3, 0.62, 1.0))
+	_fish_school(Vector3(19.0, 3.2, 13.0), 4.5, 16, -0.3, 0.42, Color(1.0, 0.55, 0.2), Color(0.98, 0.96, 0.92))
+	_fish_school(Vector3(-20.0, 3.8, 14.0), 4.5, 18, 0.26, 0.4, Color(0.7, 0.85, 0.95), Color(0.35, 0.85, 0.78))
+	_fish_school(Vector3(0.0, 9.0, 0.0), 19.0, 32, -0.07, 0.6, Color(0.98, 0.5, 0.7), Color(0.6, 0.5, 0.98))
+	# 해파리
+	for jp in [Vector3(-24, 6.5, -10), Vector3(24, 7.5, -4), Vector3(-10, 8.5, 21), Vector3(14, 6.0, 20), Vector3(4, 9.0, -21), Vector3(-25, 7.0, 20)]:
+		_jelly(jp, [Color(1.0, 0.55, 0.8), Color(0.65, 0.6, 1.0), Color(0.5, 0.95, 0.95)][_rng.randi() % 3])
 
 
 # ── 물방울·빛줄기 ────────────────────────────────────────────
@@ -1040,6 +1429,12 @@ func _process(delta: float) -> void:
 		var n: Node3D = s["node"]
 		n.rotation.y += delta * 1.3
 		n.position.y = float(s["base_y"]) + sin(_time * 2.0 + float(s["phase"])) * 0.15
+	for j in _jellies:
+		var jn: Node3D = j["node"]
+		var ph: float = j["phase"]
+		var pulse := 0.5 + 0.5 * sin(_time * 1.6 + ph)
+		jn.position = (j["base"] as Vector3) + Vector3(sin(_time * 0.2 + ph) * 0.8, sin(_time * 0.8 + ph) * 0.6, cos(_time * 0.17 + ph) * 0.8)
+		jn.scale = Vector3(1.0 + pulse * 0.12, 1.0 - pulse * 0.1, 1.0 + pulse * 0.12)
 	for f in _portal_fx:
 		var k := 0.5 + 0.5 * sin(_time * 3.0 + float(f["phase"]))
 		(f["mat"] as StandardMaterial3D).emission_energy_multiplier = 1.6 + k * 1.6

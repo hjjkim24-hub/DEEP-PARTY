@@ -11,10 +11,19 @@ extends Control
 ##   "auto":   func()              자동 점검용: 플레이어 대신 눌러 줄 동작
 ##   "pad":    float               뚫는 영역 여유 (기본 12)
 ##   "dim":    bool                false 면 화면을 어둡게 하지 않음 (전체를 보여줄 때)
+##   "quad":   func() -> PackedVector2Array   화면 위 네 점 — 그 모양 그대로 딱 맞게 뚫음 (3D 칸 강조)
 ## 다 끝나면 finished, 건너뛰면 skipped 신호.
+##
+## 두 가지 쓰는 법:
+##   start(steps)      단계 목록을 한 번에 (메인 메뉴 튜토리얼)
+##   show_step(step)   한 단계씩 (보드 튜토리얼: 사이사이 게임이 진행됨) — 끝나면 step_done,
+##                     그동안은 '쉬는 중'(is_idle) 이라 화면을 가리지 않음. 다 끝나면 finish().
 
 signal finished
 signal skipped
+signal step_done
+
+const QuadShader := preload("res://shaders/spotlight_quad.gdshader")
 
 const UIFont := preload("res://fonts/Poppins-Bold.ttf")
 const PEARL := Color("eafffa")
@@ -39,12 +48,26 @@ var _skip: Button
 var _count: Label
 var _waiting := false
 var _enter_delay := 0.0
+var dynamic := false
+var _idle := false
+var _quad_mode := false
+var _quad := PackedVector2Array()
+var _quad_rect: ColorRect
 
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	z_index = 100
+	_quad_rect = ColorRect.new()
+	_quad_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var qm := ShaderMaterial.new()
+	qm.shader = QuadShader
+	qm.set_shader_parameter("dim_color", DIM)
+	_quad_rect.material = qm
+	_quad_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_quad_rect.visible = false
+	add_child(_quad_rect)
 	_build_bubble()
 
 
@@ -141,6 +164,8 @@ func start(step_list: Array) -> void:
 
 
 func current() -> Dictionary:
+	if _idle:
+		return {}
 	return steps[index] if index >= 0 and index < steps.size() else {}
 
 
@@ -149,12 +174,54 @@ func is_waiting_for_action() -> bool:
 	return _waiting
 
 
+## 한 단계 보여주기 (끝날 때까지 기다리려면: await overlay.step_done)
+func show_step(st: Dictionary) -> void:
+	dynamic = true
+	steps.append(st)
+	index = steps.size() - 1
+	_idle = false
+	_bubble.visible = true
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	_count.visible = false
+	_begin_step()
+
+
+func is_idle() -> bool:
+	return _idle
+
+
+func finish() -> void:
+	finished.emit()
+	queue_free()
+
+
+func _go_idle() -> void:
+	_idle = true
+	_waiting = false
+	_bubble.visible = false
+	_has_hole = false
+	_quad_mode = false
+	_quad_rect.visible = false
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	queue_redraw()
+
+
 func next() -> void:
+	if dynamic:
+		if _idle:
+			return
+		_go_idle()
+		step_done.emit()
+		return
 	index += 1
 	if index >= steps.size():
 		finished.emit()
 		queue_free()
 		return
+	_begin_step()
+
+
+func _begin_step() -> void:
 	var st: Dictionary = steps[index]
 	if st.has("enter"):
 		(st["enter"] as Callable).call()
@@ -174,7 +241,7 @@ func _on_skip() -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
-	if index < 0 or index >= steps.size():
+	if _idle or index < 0 or index >= steps.size():
 		return
 	var st: Dictionary = steps[index]
 	if _enter_delay > 0.0:
@@ -195,6 +262,29 @@ func _process(delta: float) -> void:
 
 func _update_target(snap: bool) -> void:
 	var st: Dictionary = steps[index]
+	_quad_mode = false
+	if st.has("quad"):
+		var q: PackedVector2Array = (st["quad"] as Callable).call()
+		if q.size() == 4:
+			var off := get_global_rect().position
+			for k in 4:
+				q[k] -= off
+			_quad = q
+			_quad_mode = true
+			var r := Rect2(q[0], Vector2.ZERO)
+			for k in range(1, 4):
+				r = r.expand(q[k])
+			_hole_target = r.grow(6.0)
+			_hole = _hole_target
+			_has_hole = true
+			var m := _quad_rect.material as ShaderMaterial
+			m.set_shader_parameter("rect_size", size)
+			for k in 4:
+				m.set_shader_parameter("q%d" % k, q[k])
+			m.set_shader_parameter("ring_color", Color(AQUA, 0.55 + 0.45 * (0.5 + 0.5 * sin(_t * 4.0))))
+			_quad_rect.visible = bool(st.get("dim", true))
+			return
+	_quad_rect.visible = false
 	var target: Control = null
 	if st.has("target"):
 		target = (st["target"] as Callable).call()
@@ -239,6 +329,10 @@ func _place_bubble() -> void:
 
 ## 뚫린 곳에서는 클릭이 아래로 지나가도록
 func _has_point(point: Vector2) -> bool:
+	if _idle:
+		return false
+	if _quad_mode:
+		return not Geometry2D.is_point_in_polygon(point, _quad)
 	if _has_hole and _hole.has_point(point):
 		return false
 	return true
@@ -251,6 +345,8 @@ func _gui_input(event: InputEvent) -> void:
 
 func _draw() -> void:
 	var full := Rect2(Vector2.ZERO, size)
+	if _idle or _quad_mode:
+		return
 	if index >= 0 and index < steps.size() and not bool(steps[index].get("dim", true)):
 		return
 	if not _has_hole or _hole.size.x < 2.0:

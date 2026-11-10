@@ -1,7 +1,7 @@
 shader_type spatial;
 // 바다 밑 모래 바닥: 모래 결, 물결무늬, 비탈은 바위, 깊은 곳은 어둡게, 일렁이는 물빛
-uniform vec3 sand_a : source_color = vec3(0.62, 0.59, 0.47);
-uniform vec3 sand_b : source_color = vec3(0.44, 0.5, 0.41);
+uniform vec3 sand_a : source_color = vec3(0.7, 0.66, 0.52);
+uniform vec3 sand_b : source_color = vec3(0.52, 0.56, 0.44);
 uniform vec3 rock_c : source_color = vec3(0.46, 0.47, 0.44);
 uniform float caustic_strength = 0.28;
 varying vec3 wpos;
@@ -35,6 +35,9 @@ void fragment() {
 	vec2 p = wpos.xz;
 	float n = fbm(p * 0.12);
 	vec3 c = mix(sand_a, sand_b, smoothstep(0.3, 0.7, n));
+	// 밝은 모래 자리, 초록 이끼 얼룩
+	c = mix(c, vec3(0.8, 0.76, 0.62), smoothstep(0.55, 0.75, fbm(p * 0.07 + 4.0)) * 0.6);
+	c = mix(c, vec3(0.32, 0.46, 0.3), smoothstep(0.62, 0.8, fbm(p * 0.1 - 7.0)) * 0.55);
 	float rip = sin(p.y * 2.4 + p.x * 0.7 + fbm(p * 0.25) * 7.0);
 	c *= 0.92 + 0.08 * rip;
 	c *= 0.9 + 0.2 * noise(p * 6.0);
@@ -43,7 +46,10 @@ void fragment() {
 	c *= 1.0 - 0.55 * smoothstep(-0.5, -5.0, wpos.y);
 	ALBEDO = c;
 	ROUGHNESS = 0.95;
+	// 모래알 반짝
+	vec2 cell = floor(p * 14.0);
+	float glint = step(0.993, hash(cell)) * (0.5 + 0.5 * sin(TIME * 3.0 + hash(cell + 3.1) * 40.0));
 	float t = TIME * 0.5;
 	float cs = caustic(p * 0.35, t) + 0.6 * caustic(p * 0.6 + 3.1, t * 1.3);
-	EMISSION = vec3(0.35, 0.62, 0.52) * cs * caustic_strength * clamp(wnorm.y, 0.0, 1.0) * (1.0 - smoothstep(-1.0, -4.0, wpos.y));
+	EMISSION = vec3(0.8, 0.95, 0.9) * glint * 0.35 + vec3(0.35, 0.62, 0.52) * cs * caustic_strength * clamp(wnorm.y, 0.0, 1.0) * (1.0 - smoothstep(-1.0, -4.0, wpos.y));
 }
