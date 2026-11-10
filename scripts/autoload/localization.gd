@@ -121,6 +121,18 @@ const KO := {
 	"Ready to start!": "시작할 준비가 됐어요!",
 	"Friend invites will work once Steam is connected.": "친구 초대는 Steam을 연동하면 쓸 수 있어요.",
 	"Let's go! The board and minigames come next.": "출발! 다음은 보드판과 미니게임이에요.",
+	# 보드 고르기
+	"CHOOSE A BOARD": "보드 고르기",
+	"%d PLAYERS": "%d명",
+	"BOARDS": "보드 목록",
+	"SUNKEN ISLES": "가라앉은 섬",
+	"Islands scattered across the seabed. Roll the dice, hop from island to island and win minigames to come out on top!": "바다 밑에 흩어진 섬들. 주사위를 굴려 섬에서 섬으로 건너가고, 미니게임에서 이겨 1등을 차지하세요!",
+	"1-4 PLAYERS": "1~4인",
+	"ALL MODES": "모든 모드",
+	"COMING SOON": "준비 중",
+	"A new board is on the way. Stay tuned!": "새 보드를 만들고 있어요. 조금만 기다려 주세요!",
+	"This board isn't ready yet.": "아직 준비 중인 보드예요.",
+	"Let's go! The board itself is being built next.": "출발! 보드게임 본편은 다음에 만들어져요.",
 }
 
 

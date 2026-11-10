@@ -10,6 +10,7 @@ const ModeIcon := preload("res://scripts/ui/mode_icon.gd")
 const ToggleSwitch := preload("res://scripts/ui/toggle_switch.gd")
 const LobbyPawn := preload("res://scripts/ui/lobby_pawn.gd")
 const ItemIcon := preload("res://scripts/ui/item_icon.gd")
+const BoardBoxView := preload("res://scripts/ui/board_box_view.gd")
 const UIFont := preload("res://fonts/Poppins-Bold.ttf")
 
 const GAME_TITLE := "DEEP\nPARTY"
@@ -18,7 +19,35 @@ const VERSION_TEXT := "v0.1.0  •  Dev Build"
 ## 한글 등 Poppins 에 없는 글자를 그릴 시스템 폰트 (출시 전에는 한글 폰트 파일을 넣어 교체하세요)
 const FALLBACK_FONTS := ["Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK KR", "Noto Sans KR", "NanumGothic"]
 const SETTINGS_TABS := ["AUDIO", "VIDEO", "LANGUAGE"]
-const GAME_SCENE := "res://scenes/board.tscn"  ## 아직 없음 - 만들면 로비에서 START 를 누를 때 넘어가요
+const GAME_SCENE := "res://scenes/board.tscn"  ## 아직 없음 - 만들면 보드 고르기에서 PLAY 를 누를 때 넘어가요
+
+## 보드 고르기 화면에 나오는 보드게임 상자들 (상자 그림은 tools/render_boardbox.py)
+const BOARDS := [
+	{
+		"id": "sunken_isles",
+		"name": "SUNKEN ISLES",
+		"desc": "Islands scattered across the seabed. Roll the dice, hop from island to island and win minigames to come out on top!",
+		"tags": ["1-4 PLAYERS", "ALL MODES"],
+		"box": preload("res://textures/boards/sunken_isles_box.png"),
+		"locked": false,
+	},
+	{
+		"id": "",
+		"name": "COMING SOON",
+		"desc": "A new board is on the way. Stay tuned!",
+		"tags": [],
+		"box": preload("res://textures/boards/locked_box.png"),
+		"locked": true,
+	},
+	{
+		"id": "",
+		"name": "COMING SOON",
+		"desc": "A new board is on the way. Stay tuned!",
+		"tags": [],
+		"box": preload("res://textures/boards/locked_box.png"),
+		"locked": true,
+	},
+]
 
 
 const LEFT_MARGIN := 120      ## 화면 왼쪽 여백
@@ -81,6 +110,16 @@ var _cz_swatches: Array[Button] = []
 var _cz_tab := 0
 var _cz_tab_buttons: Array[Button] = []
 var _cz_tab_pages: Array[Control] = []
+# 보드 고르기
+var _board_index := 0
+var _board_big: BoardBoxView
+var _board_name: Label
+var _board_desc: Label
+var _board_tags: HBoxContainer
+var _board_thumbs: Array[Button] = []
+var _board_play: Button
+var _board_hint: Label
+var _board_mode_label: Label
 var _cz_tiles := {}     # 종류 -> [아이템 칸 버튼들]
 var _cz_remove := {}    # 종류 -> 제거 버튼
 const CZ_TABS := ["COLOR", "HAT", "PATTERN", "ACCESSORY", "OUTFIT"]
@@ -109,6 +148,7 @@ func _ready() -> void:
 	_pages["settings"] = _build_settings_page(ui)
 	_pages["lobby"] = _build_lobby_page(ui)
 	_pages["customize"] = _build_customize_page(ui)
+	_pages["board"] = _build_board_page(ui)
 	_build_footer(ui)
 	_build_toast(ui)
 
@@ -121,6 +161,7 @@ func _ready() -> void:
 	_pages["settings"].hide()
 	_pages["lobby"].hide()
 	_pages["customize"].hide()
+	_pages["board"].hide()
 	_play_intro()
 
 
@@ -505,16 +546,217 @@ func _on_lobby_start() -> void:
 	if not GameState.can_start():
 		Audio.play("back")
 		return
+	Audio.play("click")
+	_open_board_select()
+
+
+
+# =============================================================== 보드 고르기 (BOARD SELECT)
+## 로비에서 START → 여기. 왼쪽: 보드 이름·설명 + 작은 상자들, 오른쪽: 고른 보드게임 상자를 크게.
+
+func _build_board_page(parent: Control) -> Control:
+	var page := Control.new()
+	parent.add_child(page)
+	_full_rect(page, "BoardPage")
+	var margin := MarginContainer.new()
+	page.add_child(margin)
+	_full_rect(margin, "Margin")
+	margin.add_theme_constant_override("margin_left", LEFT_MARGIN)
+	margin.add_theme_constant_override("margin_right", LEFT_MARGIN)
+	margin.add_theme_constant_override("margin_top", 64)
+	margin.add_theme_constant_override("margin_bottom", 76)
+	var col := VBoxContainer.new()
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_theme_constant_override("separation", 28)
+	margin.add_child(col)
+
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 20)
+	col.add_child(head)
+	head.add_child(_header("CHOOSE A BOARD", 54))
+	var pill := _pill_label("", 20)
+	pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(pill)
+	_board_mode_label = pill.get_child(0) as Label
+	_board_mode_label.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+
+	var body := HBoxContainer.new()
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 40)
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(body)
+
+	# ---- 왼쪽: 이름, 태그, 설명, 상자 고르기
+	var left := VBoxContainer.new()
+	left.custom_minimum_size = Vector2(640, 0)
+	left.add_theme_constant_override("separation", 18)
+	left.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(left)
+	var top_gap := Control.new()
+	top_gap.custom_minimum_size = Vector2(0, 30)
+	left.add_child(top_gap)
+	_board_name = _header("", 64)
+	left.add_child(_board_name)
+	_board_tags = HBoxContainer.new()
+	_board_tags.add_theme_constant_override("separation", 10)
+	_board_tags.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	left.add_child(_board_tags)
+	_board_desc = Label.new()
+	_board_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_board_desc.custom_minimum_size = Vector2(600, 0)
+	_board_desc.add_theme_font_size_override("font_size", 24)
+	_board_desc.add_theme_color_override("font_color", TEXT_DIM)
+	_board_desc.add_theme_constant_override("line_spacing", 6)
+	left.add_child(_board_desc)
+	var fill := Control.new()
+	fill.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	left.add_child(fill)
+	var cap := Label.new()
+	cap.text = "BOARDS"
+	cap.add_theme_font_override("font", _spaced_font)
+	cap.add_theme_font_size_override("font_size", 18)
+	cap.add_theme_color_override("font_color", TEXT_DIM)
+	left.add_child(cap)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	left.add_child(row)
+	for i in BOARDS.size():
+		var tb := _make_board_thumb(i)
+		row.add_child(tb)
+		_board_thumbs.append(tb)
+
+	# ---- 오른쪽: 큰 상자
+	var big := BoardBoxView.new()
+	big.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	big.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	big.mouse_filter = Control.MOUSE_FILTER_PASS
+	big.bob_amount = 0.02
+	body.add_child(big)
+	_board_big = big
+
+	# ---- 아래: BACK / PLAY
+	var bottom := HBoxContainer.new()
+	bottom.add_theme_constant_override("separation", 12)
+	col.add_child(bottom)
+	var back := _make_glass_button("BACK", Vector2(170, 66), 20)
+	back.pressed.connect(_go_back)
+	back.set_meta("sfx", "back")
+	bottom.add_child(back)
+	var sp := Control.new()
+	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bottom.add_child(sp)
+	_board_hint = Label.new()
+	_board_hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_board_hint.add_theme_font_size_override("font_size", 18)
+	_board_hint.add_theme_color_override("font_color", TEXT_DIM)
+	bottom.add_child(_board_hint)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(12, 0)
+	bottom.add_child(gap)
+	_board_play = _make_primary_button("PLAY", Vector2(240, 66))
+	_board_play.pressed.connect(_on_board_play)
+	_board_play.set_meta("sfx", "")   # PLAY 소리는 _on_board_play 에서
+	bottom.add_child(_board_play)
+	return page
+
+
+## 왼쪽 아래 작은 상자 버튼
+func _make_board_thumb(i: int) -> Button:
+	var data: Dictionary = BOARDS[i]
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(196, 188)
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.focus_mode = Control.FOCUS_NONE
+	var normal := _glass_box(Color(0.02, 0.15, 0.14, 0.55), GLASS_BORDER, 1, 18)
+	var hover := _glass_box(Color(0.06, 0.3, 0.27, 0.6), Color(AQUA, 0.45), 1, 18)
+	var sel := _glass_box(Color(0.06, 0.3, 0.27, 0.7), AQUA, 3, 18)
+	for box in [normal, hover, sel]:
+		box.set_content_margin_all(10)
+	b.add_theme_stylebox_override("normal", normal)
+	b.add_theme_stylebox_override("hover", hover)
+	b.add_theme_stylebox_override("pressed", sel)
+	b.add_theme_stylebox_override("hover_pressed", sel)
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	b.toggle_mode = true
+	b.set_meta("sel_box", sel)
+	b.set_meta("normal_box", normal)
+	var v := VBoxContainer.new()
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 10)
+	v.add_theme_constant_override("separation", 2)
+	b.add_child(v)
+	var view := BoardBoxView.new()
+	view.react_to_mouse = false
+	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	view.bob_amount = 0.0
+	view.box = data["box"]
+	view.dim = bool(data["locked"])
+	v.add_child(view)
+	var l := Label.new()
+	l.text = data["name"]
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", 15)
+	l.add_theme_color_override("font_color", PEARL if not data["locked"] else TEXT_DIM)
+	v.add_child(l)
+	b.set_meta("view", view)
+	b.mouse_entered.connect(func() -> void: view.hovered = true)
+	b.mouse_exited.connect(func() -> void: view.hovered = false)
+	b.pressed.connect(_select_board.bind(i))
+	return b
+
+
+func _open_board_select() -> void:
+	var n := GameState.filled_count()
+	_board_mode_label.text = "%s  •  %s" % [tr(GameState.get_mode_name()), tr("%d PLAYERS") % n]
+	_select_board(_board_index, false)
+	_show_page("board")
+
+
+func _select_board(i: int, with_fx: bool = true) -> void:
+	var data: Dictionary = BOARDS[i]
+	var changed := i != _board_index or _board_big.box == null
+	_board_index = i
+	if changed:
+		_board_big.box = data["box"]
+	_board_big.dim = bool(data["locked"])
+	_board_name.text = data["name"]
+	_board_desc.text = data["desc"]
+	for c in _board_tags.get_children():
+		c.queue_free()
+	for tag in data["tags"]:
+		_board_tags.add_child(_pill_label(tag, 16))
+	for k in _board_thumbs.size():
+		var tb := _board_thumbs[k]
+		tb.set_pressed_no_signal(k == i)
+		(tb.get_meta("view") as Control).set("selected", k == i)
+	var locked := bool(data["locked"])
+	_board_play.disabled = locked
+	_board_hint.text = "This board isn't ready yet." if locked else ""
+	if with_fx and changed:
+		var r := _board_big.get_global_rect()
+		_bg.burst_bubbles(r.get_center() + Vector2(0, r.size.y * 0.2), 10)
+
+
+func _on_board_play() -> void:
+	if _busy:
+		return
+	var data: Dictionary = BOARDS[_board_index]
+	if data["locked"]:
+		Audio.play("back")
+		return
 	Audio.play("start")
+	GameState.selected_board = data["id"]
 	if ResourceLoader.exists(GAME_SCENE):
 		_busy = true
+		Audio.stop_music(0.4)
 		var t := create_tween()
 		t.tween_property(_fade, "color:a", 1.0, 0.4)
 		await t.finished
 		get_tree().change_scene_to_file(GAME_SCENE)
 	else:
-		_toast(tr("Let's go! The board and minigames come next."))
-
+		_toast(tr("Let's go! The board itself is being built next."))
 
 # =============================================================== 꾸미기 (CUSTOMIZE)
 ## 왼쪽: 내 말 크게 미리보기 / 오른쪽: 색 고르기 (모자·무늬는 나중에)
@@ -1419,7 +1661,7 @@ func _show_page(id: String) -> void:
 			_mode_buttons[0].grab_focus()
 		"settings":
 			_settings_first.grab_focus()
-		"lobby", "customize":
+		"lobby", "customize", "board":
 			pass
 
 
@@ -1430,6 +1672,8 @@ func _go_back() -> void:
 		_show_page("mode")
 	elif _current == "customize":
 		_refresh_lobby()
+		_show_page("lobby")
+	elif _current == "board":
 		_show_page("lobby")
 	else:
 		_show_page("main")

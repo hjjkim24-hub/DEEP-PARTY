@@ -81,6 +81,21 @@ func _run() -> void:
 		await _sec(0.3)
 		m._go_back()   # → 로비
 		await _sec(0.8)
+
+		_step("board select (mode %d)" % mode)
+		m._on_lobby_start()
+		await _sec(0.8)
+		if m._current != "board":
+			push_error("Board select page did not open")
+		m._select_board(1)
+		await _sec(0.3)
+		m._on_board_play()   # 잠긴 보드 → 아무 일 없음
+		m._select_board(0)
+		await _sec(0.3)
+		m._on_board_play()   # 아직 보드판 장면이 없으니 안내 메시지
+		await _sec(0.5)
+		m._go_back()   # → 로비
+		await _sec(0.8)
 		m._go_back()   # → 모드 선택
 		await _sec(0.8)
 		m._go_back()   # → 메인

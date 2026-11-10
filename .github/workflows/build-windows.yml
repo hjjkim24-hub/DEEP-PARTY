@@ -87,3 +87,35 @@ jobs:
           body: "DeepParty.exe 를 받아서 더블클릭하면 바로 실행됩니다. (설치 필요 없음)"
           make_latest: true
           files: "build/DeepParty.exe"
+
+  # 실제 Godot 화면 스크린샷 (리눅스 가상 화면, 소프트웨어 렌더링)
+  screenshots:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install virtual display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri mesa-utils > /dev/null
+      - name: Download Godot
+        run: |
+          cd /tmp
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q "Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+      - name: Import
+        run: |
+          godot --headless --editor --path . --quit || true
+          godot --headless --editor --path . --quit || true
+      - name: Screenshot tour
+        run: |
+          mkdir -p shots
+          xvfb-run -a -s "-screen 0 1920x1080x24" godot --path . --rendering-method gl_compatibility --rendering-driver opengl3 --resolution 1600x900 -- --screenshot-tour --shots-dir="$PWD/shots" 2>&1 | tee tour.log
+          ls -la shots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: |
+            shots/*.png
+            tour.log
