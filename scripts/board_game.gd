@@ -58,13 +58,13 @@ func _debug_showcase() -> void:
 	_move_camera(world.overview, world.overview_zoom, 1.0)
 	await get_tree().create_timer(1.4, false).timeout
 	shot_hint = "36_map_overview"
-	await get_tree().create_timer(1.6, false).timeout
+	await get_tree().create_timer(3.2, false).timeout
 	for lm in world.cfg.get("landmarks", []):
 		var at: Vector2 = lm["at"]
 		_move_camera(Vector3(at.x, world.ground_height(at.x, at.y), at.y), 2.0, 1.0)
 		await get_tree().create_timer(1.3, false).timeout
-		shot_hint = "37_lm_" + String(lm["type"])
-		await get_tree().create_timer(1.6, false).timeout
+		shot_hint = "37_lm_" + String(lm["type"]) + ("_%d" % int(at.x))
+		await get_tree().create_timer(3.2, false).timeout
 	focus_on(me)
 	# 일시정지 메뉴 (ESC)
 	_open_pause()

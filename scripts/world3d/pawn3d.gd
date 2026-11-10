@@ -197,107 +197,237 @@ func _build() -> void:
 
 # ── 모자 ─────────────────────────────────────────────────────
 func _party_hat() -> void:
-	var base := Vector3(0, 0.905, 0)
-	var cone := _cyl(0.0, 0.118, 0.27)
-	_add(cone, _stripe_mat(Color(0.95, 0.42, 0.40), Color(0.98, 0.94, 0.86), 14.0, 0), base + Vector3(0, 0.135, 0), Vector3(0, 0, 0.12))
-	_add(_sphere(0.042), _mat(Color(0.45, 0.88, 0.80), 0.8), base + Vector3(-0.033, 0.28, 0))
+	var root := Node3D.new()
+	root.position = Vector3(0.0, 0.905, 0.0)
+	root.rotation = Vector3(-0.08, 0, 0.16)
+	add_child(root)
+	var cone := _cyl(0.0, 0.135, 0.34)
+	_add_to(root, cone, _stripe_mat(Color(0.96, 0.36, 0.42), Color(1.0, 0.93, 0.62), 10.0, 0, 0.5), Vector3(0, 0.17, 0))
+	# 아래 주름 테두리 + 꼭대기 방울 (보송보송)
+	for k in 14:
+		var a := TAU * k / 14.0
+		_add_to(root, _sphere(0.026), _mat(Color(0.45, 0.88, 0.80), 0.9), Vector3(sin(a) * 0.132, 0.012, cos(a) * 0.132))
+	for k in 6:
+		var a := TAU * k / 6.0
+		_add_to(root, _sphere(0.03), _mat(Color(1.0, 0.86, 0.35), 0.95), Vector3(sin(a) * 0.022, 0.355 + (k % 2) * 0.012, cos(a) * 0.022))
+	_add_to(root, _sphere(0.032), _mat(Color(1.0, 0.86, 0.35), 0.95), Vector3(0, 0.372, 0))
 
 
 func _top_hat() -> void:
-	var y := 0.915
-	var black := _mat(Color(0.07, 0.07, 0.085), 0.35)
-	_add(_cyl(0.205, 0.205, 0.016), black, Vector3(0, y, 0))
-	_add(_cyl(0.118, 0.118, 0.23), black, Vector3(0, y + 0.115, 0))
-	_add(_cyl(0.121, 0.121, 0.043), _mat(Color(0.8, 0.22, 0.26), 0.4), Vector3(0, y + 0.034, 0))
+	var root := Node3D.new()
+	root.position = Vector3(0, 0.912, 0)
+	root.rotation = Vector3(0, 0, -0.08)
+	add_child(root)
+	var black := _mat(Color(0.06, 0.06, 0.075), 0.3)
+	var silk := _mat(Color(0.09, 0.09, 0.11), 0.18, 0.15)
+	_add_to(root, _cyl(0.215, 0.215, 0.014), black, Vector3(0, 0, 0))
+	_add_to(root, _torus(0.208, 0.016), black, Vector3(0, 0.012, 0))       # 살짝 말린 챙
+	_add_to(root, _cyl(0.132, 0.122, 0.26), silk, Vector3(0, 0.137, 0))
+	_add_to(root, _cyl(0.126, 0.126, 0.05), _mat(Color(0.78, 0.16, 0.22), 0.45), Vector3(0, 0.035, 0))
+	_add_to(root, _box(0.05, 0.05, 0.02), _mat(Color(1.0, 0.8, 0.35), 0.25, 0.9), Vector3(0, 0.035, 0.128))   # 버클
+	_add_to(root, _torus(0.128, 0.008), silk, Vector3(0, 0.268, 0))
 
 
 func _crown() -> void:
-	var y := 0.905
-	var gold := _mat(Color(1.0, 0.76, 0.28), 0.25, 0.9)
-	var ring := _cyl(0.137, 0.137, 0.08)
+	var y := 0.9
+	var gold := _mat(Color(1.0, 0.76, 0.28), 0.22, 0.95)
+	var ring := _cyl(0.15, 0.142, 0.1)
 	ring.cap_top = false
 	ring.cap_bottom = false
 	var rm := gold.duplicate() as StandardMaterial3D
 	rm.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_add(ring, rm, Vector3(0, y + 0.04, 0))
-	_add(_torus(0.137, 0.014), gold, Vector3(0, y + 0.006, 0))
+	_add(ring, rm, Vector3(0, y + 0.05, 0))
+	_add(_torus(0.146, 0.017), gold, Vector3(0, y + 0.004, 0))
+	_add(_torus(0.152, 0.012), gold, Vector3(0, y + 0.1, 0))
+	var velvet := SphereMesh.new()
+	velvet.radius = 0.135
+	velvet.height = 0.17
+	velvet.is_hemisphere = true
+	_add(velvet, _mat(Color(0.62, 0.08, 0.16), 0.9), Vector3(0, y + 0.06, 0))
 	for k in 5:
 		var a := k * TAU / 5.0
-		var p := Vector3(sin(a) * 0.132, y + 0.115, cos(a) * 0.132)
-		_add(_cyl(0.0, 0.034, 0.08, 12), gold, p)
-		_add(_sphere(0.018), gold, p + Vector3(0, 0.045, 0))
-		var gem := _mat(Color(0.85, 0.12, 0.2) if k % 2 == 0 else Color(0.15, 0.35, 0.9), 0.15, 0.2)
-		_add(_sphere(0.017), gem, Vector3(sin(a + PI / 5) * 0.14, y + 0.045, cos(a + PI / 5) * 0.14))
+		var p := Vector3(sin(a) * 0.148, y + 0.15, cos(a) * 0.148)
+		_add(_cyl(0.0, 0.04, 0.1, 12), gold, p)
+		_add(_sphere(0.021), _mat(Color(0.98, 0.96, 0.92), 0.12, 0.1), p + Vector3(0, 0.058, 0))
+		var gem := _mat(Color(0.9, 0.1, 0.2) if k % 2 == 0 else Color(0.15, 0.4, 0.95), 0.08, 0.3)
+		gem.emission_enabled = true
+		gem.emission = gem.albedo_color
+		gem.emission_energy_multiplier = 0.35
+		_add(_sphere(0.022), gem, Vector3(sin(a + PI / 5) * 0.155, y + 0.05, cos(a + PI / 5) * 0.155))
+	_add(_sphere(0.026), gold, Vector3(0, y + 0.2, 0))
 
 
 func _beanie() -> void:
+	var r := HEAD_R + 0.022
 	var cap := SphereMesh.new()
-	cap.radius = HEAD_R + 0.026
-	cap.height = (HEAD_R + 0.026) * 2.0
+	cap.radius = r
+	cap.height = r * 2.0
 	cap.is_hemisphere = true
 	cap.radial_segments = 32
 	cap.rings = 12
-	var orange := _stripe_mat(Color(0.9, 0.62, 0.22), Color(0.8, 0.54, 0.18), 34.0, 1, 0.9)
-	_add(cap, orange, HEAD_C + Vector3(0, 0.03, 0))
-	_add(_torus(HEAD_R * 0.95 + 0.012, 0.03), _mat(Color(0.8, 0.52, 0.16), 0.95), Vector3(0, 0.845, 0))
-	_add(_sphere(0.055), _mat(Color(0.97, 0.93, 0.85), 1.0), Vector3(0, 0.99, 0))
+	var knit := _stripe_mat(Color(0.95, 0.55, 0.22), Color(0.86, 0.46, 0.16), 40.0, 1, 0.95)
+	var mi := _add(cap, knit, HEAD_C + Vector3(0, 0.0, 0))
+	mi.scale = Vector3(1.0, 1.12, 1.0)
+	# 두툼한 접힌 단 (골지)
+	var cuff := _cyl(r + 0.012, r + 0.016, 0.07, 32)
+	_add(cuff, _stripe_mat(Color(0.86, 0.44, 0.15), Color(0.76, 0.38, 0.12), 48.0, 1, 0.95), HEAD_C + Vector3(0, 0.03, 0))
+	# 보송보송 방울
+	var white := _mat(Color(0.98, 0.95, 0.9), 1.0)
+	var top := HEAD_C + Vector3(0, r * 1.12 + 0.03, 0)
+	_add(_sphere(0.05), white, top)
+	for k in 8:
+		var a := TAU * k / 8.0
+		_add(_sphere(0.03), white, top + Vector3(sin(a) * 0.035, (k % 2) * 0.02 - 0.005, cos(a) * 0.035))
 
 
 # ── 장식품 ───────────────────────────────────────────────────
 func _scarf() -> void:
-	var red := _stripe_mat(Color(0.78, 0.15, 0.18), Color(0.96, 0.92, 0.84), 12.0, 1, 0.95)
-	_add(_torus(0.128, 0.058), red, Vector3(0, 0.662, 0))
-	var tail := _stripe_mat(Color(0.78, 0.15, 0.18), Color(0.96, 0.92, 0.84), 18.0, 0, 0.95)
-	_add(_box(0.1, 0.3, 0.03), tail, Vector3(0.085, 0.5, 0.175), Vector3(0.22, 0, -0.16))
-	_add(_box(0.09, 0.24, 0.03), tail, Vector3(0.03, 0.53, 0.185), Vector3(0.2, 0, 0.1))
+	var red := _stripe_mat(Color(0.82, 0.14, 0.18), Color(0.98, 0.93, 0.85), 12.0, 1, 0.95)
+	_add(_torus(0.15, 0.05), red, Vector3(0, 0.655, 0))
+	_add(_torus(0.165, 0.042), red, Vector3(0, 0.615, 0), Vector3(0.12, 0, 0))
+	var tail := _stripe_mat(Color(0.82, 0.14, 0.18), Color(0.98, 0.93, 0.85), 18.0, 0, 0.95)
+	_add(_box(0.1, 0.3, 0.035), tail, Vector3(0.085, 0.49, 0.19), Vector3(0.28, 0, -0.18))
+	_add(_box(0.09, 0.24, 0.035), tail, Vector3(0.03, 0.52, 0.2), Vector3(0.24, 0, 0.1))
+	for k in 4:   # 술
+		_add(_cyl(0.008, 0.008, 0.05, 6), _mat(Color(0.98, 0.93, 0.85), 0.9), Vector3(0.11 + k * 0.02 - 0.03, 0.335, 0.215), Vector3(0.28, 0, -0.18))
 
 
 func _sunglasses() -> void:
-	var glass := _mat(Color(0.04, 0.08, 0.1), 0.05, 0.3)
-	for sx in [-1.0, 1.0]:
-		_add(_box(0.12, 0.075, 0.014), glass, Vector3(sx * 0.064, 0.792, 0.146), Vector3(0, sx * 0.3, 0))
-		_add(_box(0.006, 0.006, 0.14), glass, Vector3(sx * 0.13, 0.802, 0.05), Vector3(0, sx * 0.15, 0))
-	_add(_box(0.04, 0.008, 0.008), glass, Vector3(0, 0.805, 0.158))
+	var frame := _mat(Color(0.08, 0.08, 0.1), 0.25, 0.4)
+	var lens := _mat(Color(0.06, 0.1, 0.16), 0.03, 0.6)
+	lens.rim_enabled = true
+	lens.rim = 0.6
+	var y := 0.8
+	for sx: float in [-1.0, 1.0]:
+		var x := sx * 0.062
+		var z := sqrt(HEAD_R * HEAD_R - x * x) + 0.012
+		var face := Vector3(PI / 2, sx * 0.4, 0)
+		var disc := _cyl(0.05, 0.05, 0.012, 24)
+		var l := _add(disc, lens, Vector3(x, y, z), face)
+		l.scale = Vector3(1.15, 1.0, 0.85)
+		var rim := _add(_torus(0.052, 0.008), frame, Vector3(x, y, z), face)
+		rim.scale = Vector3(1.15, 1.0, 0.85)
+		# 다리
+		_add(_box(0.008, 0.01, 0.15), frame, Vector3(sx * 0.137, y + 0.01, 0.06), Vector3(0, sx * 0.2, 0))
+		# 반짝
+		_add(_sphere(0.009), _mat(Color(1, 1, 1), 0.1), Vector3(x - 0.02, y + 0.02, z + 0.009))
+	_add(_box(0.042, 0.009, 0.009), frame, Vector3(0, y + 0.012, HEAD_R + 0.014))
 
 
 func _pearls() -> void:
-	var pearl := _mat(Color(0.96, 0.94, 0.92), 0.12, 0.1)
-	for k in 24:
-		var a := k * TAU / 24.0
-		var f := 0.5 + 0.5 * cos(a)
-		var r := 0.128 + 0.012 * f
-		_add(_sphere(0.023), pearl, Vector3(sin(a) * r, 0.648 - 0.03 * f, cos(a) * r))
+	var pearl := _mat(Color(0.98, 0.96, 0.94), 0.1, 0.15)
+	pearl.rim_enabled = true
+	pearl.rim = 0.4
+	# 옷깃 위에 걸쳐 앞쪽으로 늘어진 진주 목걸이
+	for k in 30:
+		var a := k * TAU / 30.0
+		var f := 0.5 + 0.5 * cos(a)          # 앞쪽(1) ~ 뒤쪽(0)
+		var r := 0.19 + 0.012 * f
+		_add(_sphere(0.022), pearl, Vector3(sin(a) * r, 0.612 - 0.07 * f * f, cos(a) * r))
+	# 가운데 큰 진주 + 금 고리
+	_add(_torus(0.016, 0.005), _mat(Color(1.0, 0.8, 0.35), 0.25, 0.9), Vector3(0, 0.528, 0.208), Vector3(PI / 2, 0, 0))
+	var big := _add(_sphere(0.036), pearl, Vector3(0, 0.49, 0.212))
+	big.scale = Vector3(1.0, 1.15, 1.0)
 
 
 # ── 옷 ───────────────────────────────────────────────────────
+## 주름진 망토 (어깨에서 펄럭이며 뒤로 퍼짐). 안감은 금색
+func _cape_mesh(inset: float) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rows := 14
+	var cols := 28
+	var a0 := PI * 0.5
+	var a1 := PI * 1.5
+	var pts := []
+	for i in rows + 1:
+		var t := float(i) / rows                  # 0 = 어깨, 1 = 바닥
+		var y := lerpf(0.6, 0.08, t)
+		var row := []
+		for j in cols + 1:
+			var u := float(j) / cols
+			var a := lerpf(a0, a1, u)
+			var back := maxf(0.0, -cos(a))         # 뒤쪽일수록 1
+			var fold := sin(u * PI * 9.0) * 0.018 * t
+			var r := body_radius(clampf(y, 0.1, 0.6)) + 0.03 + t * t * 0.13 * back + fold - inset
+			r = maxf(r, 0.17 - inset)
+			row.append(Vector3(sin(a) * r, y - back * t * 0.02, cos(a) * r))
+		pts.append(row)
+	for i in rows:
+		for j in cols:
+			var p00: Vector3 = pts[i][j]
+			var p01: Vector3 = pts[i][j + 1]
+			var p10: Vector3 = pts[i + 1][j]
+			var p11: Vector3 = pts[i + 1][j + 1]
+			var n := (p10 - p00).cross(p01 - p00).normalized()
+			for v in [p00, p10, p11, p00, p11, p01]:
+				st.set_normal(-n)
+				st.add_vertex(v)
+	return st.commit()
+
+
 func _cape() -> void:
-	var pr := PackedVector2Array()
-	for i in 12:
-		var y := lerpf(0.1, 0.6, float(i) / 11.0)
-		pr.append(Vector2(0.205 + (0.6 - y) * 0.3, y))
-	var mesh := lathe(pr, 24, PI * 0.62, PI * 1.38)   # 뒤쪽만
-	var red := _mat(Color(0.7, 0.08, 0.11), 0.6)
-	red.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_add(mesh, red, Vector3.ZERO)
-	var gold := _mat(Color(0.98, 0.76, 0.3), 0.3, 0.8)
-	_add(_torus(0.19, 0.016), gold, Vector3(0, 0.6, 0))
-	_add(_sphere(0.022), gold, Vector3(0, 0.598, 0.19))
+	var red := _mat(Color(0.72, 0.07, 0.12), 0.55)
+	red.cull_mode = BaseMaterial3D.CULL_FRONT     # 바깥에서 보이는 면 (삼각형이 안쪽을 앞면으로 둠)
+	var lining := _mat(Color(0.95, 0.74, 0.3), 0.35, 0.3)
+	lining.cull_mode = BaseMaterial3D.CULL_BACK
+	_add(_cape_mesh(0.0), red, Vector3.ZERO)
+	_add(_cape_mesh(0.0), lining, Vector3.ZERO)
+	var red2 := red.duplicate() as StandardMaterial3D
+	red2.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_add(_cyl(0.215, 0.215, 0.07, 32), red2, Vector3(0, 0.6, 0))               # 높은 깃
+	var gold := _mat(Color(0.98, 0.76, 0.3), 0.25, 0.9)
+	_add(_torus(0.205, 0.014), gold, Vector3(0, 0.567, 0))
+	_add(_sphere(0.03), gold, Vector3(0, 0.575, 0.205))
+	var gem := _mat(Color(0.2, 0.95, 0.7), 0.1, 0.2)
+	gem.emission_enabled = true
+	gem.emission = Color(0.2, 0.95, 0.7)
+	gem.emission_energy_multiplier = 0.5
+	_add(_sphere(0.018), gem, Vector3(0, 0.575, 0.232))
 
 
 func _swim_ring() -> void:
-	var r := body_radius(0.29) + 0.07
-	_add(_torus(r, 0.074), _stripe_mat(Color(0.95, 0.38, 0.36), Color(0.98, 0.96, 0.92), 8.0, 1, 0.3), Vector3(0, 0.29, 0))
+	var r := body_radius(0.29) + 0.075
+	_add(_torus(r, 0.08), _stripe_mat(Color(0.97, 0.36, 0.36), Color(0.99, 0.97, 0.93), 8.0, 1, 0.22), Vector3(0, 0.29, 0))
+	# 밧줄 손잡이
+	var rope := _mat(Color(0.95, 0.88, 0.7), 0.9)
+	for k in 4:
+		var a := TAU * k / 4.0 + PI / 4
+		_add(_torus(0.045, 0.008), rope, Vector3(sin(a) * (r + 0.07), 0.29, cos(a) * (r + 0.07)), Vector3(0, a, PI / 2))
 
 
 func _coat() -> void:
 	var pr := PackedVector2Array()
 	for i in 16:
-		var y := lerpf(0.125, 0.585, float(i) / 15.0)
-		pr.append(Vector2(body_radius(y) + 0.022 + maxf(0.5 - y, 0.0) * 0.06, y))
-	var brown := _mat(Color(0.66, 0.46, 0.28), 0.85)
+		var y := lerpf(0.12, 0.585, float(i) / 15.0)
+		pr.append(Vector2(body_radius(y) + 0.022 + maxf(0.5 - y, 0.0) * 0.07, y))
+	var brown := _mat(Color(0.68, 0.48, 0.3), 0.85)
 	brown.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_add(lathe(pr, 40), brown, Vector3.ZERO)
-	_add(_torus(0.155, 0.03), _mat(Color(0.56, 0.38, 0.22), 0.85), Vector3(0, 0.585, 0))
-	for by in [0.24, 0.34, 0.44]:
-		var rr := body_radius(by) + 0.022 + maxf(0.5 - by, 0.0) * 0.06
-		_add(_sphere(0.016), _mat(Color(0.22, 0.13, 0.07), 0.4), Vector3(0, by, rr + 0.004))
+	var dark := _mat(Color(0.5, 0.33, 0.19), 0.85)
+	# 옷깃 (앞에서 V 자로 벌어짐)
+	for sx: float in [-1.0, 1.0]:
+		_add(_box(0.07, 0.17, 0.02), dark, Vector3(sx * 0.055, 0.53, body_radius(0.53) + 0.03), Vector3(-0.25, 0, sx * 0.45))
+	_add(_torus(0.16, 0.032), dark, Vector3(0, 0.588, 0))
+	# 허리띠 + 버클
+	var by := 0.34
+	_add(_torus(body_radius(by) + 0.03, 0.018), _mat(Color(0.3, 0.19, 0.1), 0.6), Vector3(0, by, 0))
+	_add(_box(0.05, 0.045, 0.012), _mat(Color(1.0, 0.8, 0.35), 0.25, 0.9), Vector3(0, by, body_radius(by) + 0.05))
+	# 단추 · 주머니
+	for yy: float in [0.255, 0.44, 0.5]:
+		var rr := body_radius(yy) + 0.022 + maxf(0.5 - yy, 0.0) * 0.07
+		_add(_sphere(0.017), _mat(Color(0.22, 0.13, 0.07), 0.35), Vector3(0, yy, rr + 0.006))
+	for sx: float in [-1.0, 1.0]:
+		var py := 0.22
+		var rr := body_radius(py) + 0.022 + maxf(0.5 - py, 0.0) * 0.07
+		_add(_box(0.07, 0.012, 0.03), dark, Vector3(sx * rr * 0.6, py, rr * 0.8 + 0.005), Vector3(0, sx * 0.65, 0))
+
+
+func _add_to(parent: Node3D, mesh: Mesh, mat: Material, pos: Vector3, rot: Vector3 = Vector3.ZERO) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = mat
+	mi.position = pos
+	mi.rotation = rot
+	parent.add_child(mi)
+	return mi
