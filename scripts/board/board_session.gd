@@ -18,6 +18,16 @@ const COIN_TEX := preload("res://textures/ui/coin.png")
 const TROPHY_TEX := preload("res://textures/ui/trophy.png")
 const GOLD := Color("ffcf4a")
 const DICE_ATLAS := preload("res://textures/dice/dice_atlas.png")
+const SHOP_TEX := {
+	"wall": preload("res://textures/ui/shop/wall.png"),
+	"awning": preload("res://textures/ui/shop/awning.png"),
+	"counter": preload("res://textures/ui/shop/counter.png"),
+	"slot": preload("res://textures/ui/shop/slot.png"),
+	"sign": preload("res://textures/ui/shop/sign.png"),
+	"tag": preload("res://textures/ui/shop/tag.png"),
+	"shutter": preload("res://textures/ui/shop/shutter.png"),
+	"button": preload("res://textures/ui/shop/button.png"),
+}
 const MAIN_MENU := "res://scenes/main_menu.tscn"
 
 const PEARL := Color("eafffa")
@@ -1275,56 +1285,74 @@ func _spawn_coin_spaces(p: Dictionary, kind: String) -> void:
 
 # ── 상점 ─────────────────────────────────────────────────────
 ## 들를 때마다 가끔 트로피가 진열됨 (다른 상품은 나중에)
+## 나무 가게가 문을 여는 화면: 차양이 내려오고 간판이 흔들리고 덧문이 양쪽으로 열려요
 func _open_shop(p: Dictionary) -> void:
-	Audio.play("toast")
 	var has_trophy := _rng.randf() < Rules.SHOP_TROPHY_CHANCE
 	if force_shop_trophy >= 0:
 		has_trophy = force_shop_trophy == 1
 		force_shop_trophy = -1
 	var dim := _modal_dim()
-	var panel := _modal_panel(dim, Color(1.0, 0.6, 0.7, 0.8))
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 18)
-	panel.add_child(v)
-	var head := HBoxContainer.new()
-	head.alignment = BoxContainer.ALIGNMENT_CENTER
-	head.add_theme_constant_override("separation", 14)
-	v.add_child(head)
-	head.add_child(_kind_swatch("shop", 48))
-	var title := Label.new()
-	title.text = "SHOP"
-	title.add_theme_font_size_override("font_size", 44)
-	head.add_child(title)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 16)
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.add_child(row)
+	dim.color = Color(0, 0.03, 0.03, 0.0)
+	create_tween().tween_property(dim, "color:a", 0.55, 0.25)
+	var stall := Control.new()
+	stall.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stall.size = Vector2(1240, 830)
+	dim.add_child(stall)
+	var vp := get_viewport().get_visible_rect().size
+	var sc := minf(vp.x / 1320.0, vp.y / 900.0)
+	stall.scale = Vector2.ONE * sc
+	stall.position = (vp - stall.size * sc) * 0.5
+
+	# 나무 벽 + 진열 칸 (덧문 뒤에 숨어 있다가 열림)
+	var wall_box := Control.new()
+	wall_box.clip_contents = true
+	wall_box.position = Vector2(70, 230)
+	wall_box.size = Vector2(1100, 560)
+	wall_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stall.add_child(wall_box)
+	wall_box.add_child(_tex_rect(SHOP_TEX["wall"], Vector2.ZERO, Vector2(1100, 560)))
 	_shop_buy = null
 	for k in 3:
-		var slot := PanelContainer.new()
-		slot.custom_minimum_size = Vector2(150, 190)
-		slot.add_theme_stylebox_override("panel", _glass(Color(0.06, 0.26, 0.24, 0.8), Color(GOLD, 0.7) if k == 0 and has_trophy else Color(AQUA, 0.3), 2, 18))
-		var sv := VBoxContainer.new()
-		sv.alignment = BoxContainer.ALIGNMENT_CENTER
-		sv.add_theme_constant_override("separation", 6)
-		slot.add_child(sv)
-		if k == 0 and has_trophy:
-			var ic := _icon(TROPHY_TEX, 72)
-			ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-			sv.add_child(ic)
-			var price := HBoxContainer.new()
-			price.alignment = BoxContainer.ALIGNMENT_CENTER
-			price.add_child(_icon(COIN_TEX, 24))
-			var pl := Label.new()
+		var x := 105.0 + k * 315.0
+		wall_box.add_child(_tex_rect(SHOP_TEX["slot"], Vector2(x, 70), Vector2(230, 250)))
+		var trophy_slot := k == 0 and has_trophy
+		if trophy_slot:
+			var ic := _icon(TROPHY_TEX, 150)
+			ic.position = Vector2(x + 40, 115)
+			ic.size = Vector2(150, 150)
+			wall_box.add_child(ic)
+		else:
+			var q := _outlined_label("?", 96)
+			q.add_theme_color_override("font_color", Color(1.0, 0.88, 0.7, 0.45))
+			q.add_theme_color_override("font_outline_color", Color(0.2, 0.1, 0.04))
+			q.size = Vector2(230, 250)
+			q.position = Vector2(x, 70)
+			q.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			wall_box.add_child(q)
+		# 가격표
+		var tag := _tex_rect(SHOP_TEX["tag"], Vector2(x + 40, 340), Vector2(150, 64))
+		wall_box.add_child(tag)
+		var price := HBoxContainer.new()
+		price.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		price.alignment = BoxContainer.ALIGNMENT_CENTER
+		price.position = Vector2(x + 82, 340)
+		price.size = Vector2(100, 64)
+		price.add_theme_constant_override("separation", 6)
+		wall_box.add_child(price)
+		var pl := Label.new()
+		if trophy_slot:
+			price.add_child(_icon(COIN_TEX, 28))
 			pl.text = str(Rules.SHOP_TROPHY_PRICE)
-			pl.add_theme_color_override("font_color", GOLD)
-			price.add_child(pl)
-			sv.add_child(price)
-			var buy := _glass_button("BUY")
-			buy.custom_minimum_size = Vector2(110, 44)
-			buy.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		else:
+			pl.text = "SOON"
+		pl.add_theme_font_size_override("font_size", 24 if trophy_slot else 18)
+		pl.add_theme_color_override("font_color", Color(0.42, 0.24, 0.1))
+		price.add_child(pl)
+		if trophy_slot:
+			var buy := _wood_button("BUY", Vector2(190, 66))
+			buy.position = Vector2(x + 20, 430)
 			buy.disabled = int(p["coins"]) < Rules.SHOP_TROPHY_PRICE
-			sv.add_child(buy)
+			wall_box.add_child(buy)
 			_shop_buy = buy
 			buy.pressed.connect(func() -> void:
 				if buy.disabled:
@@ -1333,29 +1361,61 @@ func _open_shop(p: Dictionary) -> void:
 				buy.text = "SOLD"
 				_add_coins(p, -Rules.SHOP_TROPHY_PRICE)
 				_add_trophy(p, 1))
-		else:
-			var q := Label.new()
-			q.text = "?"
-			q.add_theme_font_size_override("font_size", 64)
-			q.add_theme_color_override("font_color", Color(PEARL, 0.5))
-			q.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			sv.add_child(q)
-		row.add_child(slot)
-	var msg := Label.new()
-	msg.text = "More items are coming soon!"
-	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	msg.add_theme_color_override("font_color", Color(PEARL, 0.8))
-	v.add_child(msg)
-	var close := _glass_button("CLOSE")
-	close.custom_minimum_size = Vector2(200, 56)
-	close.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	# 덧문 두 짝
+	var left := _tex_rect(SHOP_TEX["shutter"], Vector2.ZERO, Vector2(550, 560))
+	var right := _tex_rect(SHOP_TEX["shutter"], Vector2(550, 0), Vector2(550, 560))
+	right.flip_h = true
+	left.flip_h = false
+	wall_box.add_child(left)
+	wall_box.add_child(right)
+
+	# 계산대 + 안내 + 닫기
+	stall.add_child(_tex_rect(SHOP_TEX["counter"], Vector2(30, 650), Vector2(1180, 180)))
+	var msg := _outlined_label("More items are coming soon!", 26)
+	msg.add_theme_color_override("font_color", Color(1.0, 0.95, 0.85))
+	msg.add_theme_color_override("font_outline_color", Color(0.25, 0.12, 0.05))
+	msg.position = Vector2(30, 690)
+	msg.size = Vector2(1180, 40)
+	stall.add_child(msg)
+	var close := _wood_button("CLOSE", Vector2(250, 74))
+	close.position = Vector2(495, 740)
 	close.set_meta("sfx", "back")
-	v.add_child(close)
+	stall.add_child(close)
+	# 차양 · 간판
+	var awn := _tex_rect(SHOP_TEX["awning"], Vector2(0, -260), Vector2(1240, 210))
+	stall.add_child(awn)
+	var board_sign := _tex_rect(SHOP_TEX["board_sign"], Vector2(400, -220), Vector2(440, 190))
+	board_sign.pivot_offset = Vector2(220, 0)
+	stall.add_child(board_sign)
+	var sh := HBoxContainer.new()
+	sh.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sh.alignment = BoxContainer.ALIGNMENT_CENTER
+	sh.add_theme_constant_override("separation", 14)
+	sh.position = Vector2(0, 66)
+	sh.size = Vector2(440, 110)
+	board_sign.add_child(sh)
+	sh.add_child(_kind_swatch("shop", 56))
+	var title := _outlined_label("SHOP", 56)
+	title.add_theme_color_override("font_color", Color(1.0, 0.93, 0.78))
+	title.add_theme_color_override("font_outline_color", Color(0.22, 0.1, 0.04))
+	sh.add_child(title)
+
 	_shop_panel = dim
 	_shop_close = close
 	_shop_open = true
 	close.pressed.connect(_close_shop)
-	await _show_modal(panel)
+	# 문 여는 연출
+	Audio.play("toast")
+	var t := create_tween()
+	t.tween_property(awn, "position:y", 150.0, 0.5).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
+	t.parallel().tween_property(board_sign, "position:y", 0.0, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT).set_delay(0.12)
+	t.tween_callback(func() -> void: Audio.play("tab"))
+	t.tween_property(left, "position:x", -560.0, 0.55).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+	t.parallel().tween_property(right, "position:x", 1110.0, 0.55).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+	var swing := board_sign.create_tween().set_loops(3)
+	swing.tween_property(board_sign, "rotation", 0.05, 0.35).set_trans(Tween.TRANS_SINE)
+	swing.tween_property(board_sign, "rotation", -0.04, 0.35).set_trans(Tween.TRANS_SINE)
+	await t.finished
 	shot_hint = "45_shop_trophy" if has_trophy else "45_shop"
 	if _is_auto(p):
 		await get_tree().create_timer(1.4).timeout
@@ -1372,7 +1432,58 @@ func _close_shop() -> void:
 		return
 	_shop_open = false
 	if is_instance_valid(_shop_panel):
-		_shop_panel.queue_free()
+		var panel := _shop_panel
+		panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var t := create_tween()
+		t.tween_property(panel, "modulate:a", 0.0, 0.25)
+		t.tween_callback(panel.queue_free)
+
+
+func _tex_rect(tex: Texture2D, pos: Vector2, size_: Vector2) -> TextureRect:
+	var r := TextureRect.new()
+	r.texture = tex
+	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	r.stretch_mode = TextureRect.STRETCH_SCALE
+	r.position = pos
+	r.size = size_
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return r
+
+
+## 나무 판자 버튼
+func _wood_button(text: String, size_: Vector2) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.size = size_
+	b.custom_minimum_size = size_
+	b.pivot_offset = size_ * 0.5
+	b.add_theme_font_size_override("font_size", 24)
+	for k in ["font_color", "font_hover_color", "font_pressed_color"]:
+		b.add_theme_color_override(k, Color(1.0, 0.95, 0.85))
+	b.add_theme_color_override("font_disabled_color", Color(0.85, 0.78, 0.7, 0.6))
+	b.add_theme_color_override("font_outline_color", Color(0.25, 0.12, 0.05))
+	b.add_theme_constant_override("outline_size", 6)
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		var st := StyleBoxTexture.new()
+		st.texture = SHOP_TEX["button"]
+		st.texture_margin_left = 30
+		st.texture_margin_right = 30
+		st.texture_margin_top = 24
+		st.texture_margin_bottom = 24
+		match state:
+			"hover":
+				st.modulate_color = Color(1.15, 1.12, 1.05)
+			"pressed":
+				st.modulate_color = Color(0.85, 0.82, 0.78)
+			"disabled":
+				st.modulate_color = Color(0.55, 0.5, 0.48)
+		b.add_theme_stylebox_override(state, st)
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	b.mouse_entered.connect(func() -> void: b.create_tween().tween_property(b, "scale", Vector2.ONE * 1.06, 0.1))
+	b.mouse_exited.connect(func() -> void: b.create_tween().tween_property(b, "scale", Vector2.ONE, 0.1))
+	return b
 
 
 # ── 창 · 고르기 ──────────────────────────────────────────────

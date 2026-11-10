@@ -207,6 +207,7 @@ const KO := {
 	"BUY": "사기",
 	"NO THANKS": "안 살래요",
 	"SOLD": "판매 완료",
+	"SOON": "준비 중",
 	"+1 TROPHY!": "트로피 +1!",
 	"A TROPHY APPEARED!": "트로피 등장!",
 	"Pass by and buy it for %d coins!": "지나가면서 동전 %d개로 살 수 있어요!",
