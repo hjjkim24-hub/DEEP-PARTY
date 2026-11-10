@@ -12,6 +12,7 @@ extends Control
 ##   "pad":    float               뚫는 영역 여유 (기본 12)
 ##   "dim":    bool                false 면 화면을 어둡게 하지 않음 (전체를 보여줄 때)
 ##   "quad":   func() -> PackedVector2Array   화면 위 네 점 — 그 모양 그대로 딱 맞게 뚫음 (3D 칸 강조)
+##   "interact": bool             "until" 없는 설명 단계에서도 밝힌 곳을 누를 수 있게 (기본: 보기만)
 ## 다 끝나면 finished, 건너뛰면 skipped 신호.
 ##
 ## 두 가지 쓰는 법:
@@ -333,6 +334,10 @@ func _place_bubble() -> void:
 func _has_point(point: Vector2) -> bool:
 	if _idle:
 		return false
+	# 설명만 하는 단계: 밝힌 곳은 보기만 (실수로 눌러서 진행이 막히지 않게)
+	var st := current()
+	if not st.has("until") and not bool(st.get("interact", false)):
+		return true
 	if _quad_mode:
 		return not Geometry2D.is_point_in_polygon(point, _quad)
 	if _has_hole and _hole.has_point(point):

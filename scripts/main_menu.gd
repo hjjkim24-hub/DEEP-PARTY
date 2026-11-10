@@ -819,6 +819,21 @@ func _on_tutorial_skipped() -> void:
 		_board_thumbs[0].visible = false
 
 
+## 튜토리얼 START 단계: 혹시 CPU 를 빼거나 다른 모드로 바뀌었으면 시작할 수 있게 되돌림
+func _tut_make_startable() -> void:
+	if GameState.can_start():
+		return
+	if GameState.selected_mode != GameState.Mode.FREE_FOR_ALL:
+		GameState.set_mode(GameState.Mode.FREE_FOR_ALL)
+		_lobby_mode_label.text = GameState.get_mode_name()
+	for i in range(1, GameState.MAX_PLAYERS):
+		if GameState.can_start():
+			break
+		if GameState.players[i].is_empty():
+			_lobby_add_cpu(i)
+	_refresh_lobby()
+
+
 ## 지금 화면에서 meta "tut" 이 key 인 노드 찾기
 func _tut(key: String) -> Control:
 	var page: Control = _pages.get(_current)
@@ -905,6 +920,7 @@ func _tutorial_steps() -> Array:
 		},
 		{
 			"text": "Everyone's ready. Press START!",
+			"enter": func() -> void: _tut_make_startable(),
 			"target": func() -> Control: return _lobby_start,
 			"until": func() -> bool: return _current == "board" and not _busy,
 			"auto": func() -> void: _on_lobby_start(),

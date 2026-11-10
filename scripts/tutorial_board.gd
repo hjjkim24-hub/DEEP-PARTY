@@ -46,7 +46,7 @@ func _run_tutorial() -> void:
 	await _say({"text": "Climb the stairs up the coral hill, cross the bridge, hop across the stone pillars and go through the rock tunnel!",
 		"enter": func() -> void: _move_camera(Vector3(-13, 3.5, -11), 1.7, 1.6), "dim": false, "shot": "19_world_plateau"})
 	await _say({"text": "Drag with the mouse to look around, and roll the mouse wheel to zoom in and out.",
-		"target": func() -> Control: return _screen_marker, "pad": 0.0})
+		"target": func() -> Control: return _screen_marker, "pad": 0.0, "interact": true})
 
 	# 1) 주사위 · 갈림길 · 일반 칸
 	await _guided_turn(_tile_near(11.2, 0.0),
