@@ -53,7 +53,8 @@ func _draw() -> void:
 		c + d * R * 0.02 - n * R * 0.2,
 		c + d * R * 0.02 - n * R * 0.5,
 	])
-	draw_colored_polygon(pts, Color(AQUA if not locked else Color(0.6, 0.7, 0.7), a))
+	if not Geometry2D.triangulate_polygon(pts).is_empty():
+		draw_colored_polygon(pts, Color(AQUA if not locked else Color(0.6, 0.7, 0.7), a))
 
 
 func _has_point(point: Vector2) -> bool:

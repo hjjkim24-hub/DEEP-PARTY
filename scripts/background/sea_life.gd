@@ -100,7 +100,13 @@ func _draw_kelp(k: Array, idx: int) -> void:
 			cols.append(_kelp_color(fog, float(j) / float(segs) * 0.6, 0.95))
 		for j in range(right.size() - 1, -1, -1):
 			cols.append(_kelp_color(fog, float(j) / float(segs) * 0.6, 0.95))
-		draw_polygon(poly, cols)
+		if not Geometry2D.triangulate_polygon(poly).is_empty():
+			draw_polygon(poly, cols)
+		else:
+			# 많이 휘어서 외곽선이 꼬이면 마디마다 따로 그림
+			for j in left.size() - 1:
+				var q := PackedVector2Array([left[j], left[j + 1], right[j + 1], right[j]])
+				_safe_poly(q, cols[j])
 		# 잎
 		for j in range(2, segs, 2):
 			var f := float(j) / float(segs)
@@ -114,7 +120,7 @@ func _draw_kelp(k: Array, idx: int) -> void:
 			var mid := (base + tip) * 0.5
 			var nrm := Vector2(-leaf_dir.y, leaf_dir.x)
 			var leaf := PackedVector2Array([base, mid + nrm * leaf_w, tip, mid - nrm * leaf_w * 0.6])
-			draw_colored_polygon(leaf, _kelp_color(fog, 0.35 + f * 0.4, 0.85))
+			_safe_poly(leaf, _kelp_color(fog, 0.35 + f * 0.4, 0.85))
 
 
 func _draw_fish() -> void:
@@ -135,9 +141,16 @@ func _draw_fish() -> void:
 		for i in 12:
 			var a := TAU * float(i) / 12.0
 			body.append(p + Vector2(cos(a) * sz, sin(a) * sz * 0.38))
-		draw_colored_polygon(body, col)
+		_safe_poly(body, col)
 		var tb := p + Vector2(-sz * 0.85, 0)
 		var tail_pts := PackedVector2Array([
 			tb, tb + Vector2(-sz * 0.6, -sz * 0.45).rotated(tail), tb + Vector2(-sz * 0.6, sz * 0.45).rotated(tail)])
-		draw_colored_polygon(tail_pts, col)
+		_safe_poly(tail_pts, col)
 		draw_circle(p + Vector2(sz * 0.2, -sz * 0.12), sz * 0.6, Color(1, 1, 1, 0.06))
+
+
+## 꼬이거나 납작한 도형은 건너뜀 (삼각분할 오류 방지)
+func _safe_poly(pts: PackedVector2Array, c: Color) -> void:
+	if pts.size() < 3 or Geometry2D.triangulate_polygon(pts).is_empty():
+		return
+	draw_colored_polygon(pts, c)
