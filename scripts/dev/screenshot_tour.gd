@@ -43,7 +43,8 @@ func _shot(shot_name: String) -> void:
 	print("SHOT: ", path, " ", img.get_size())
 
 
-func _drive(overlay: Node, shots: Dictionary) -> void:
+## scene_time: 3D 보드에서는 게임 시간으로 기다림 (가상 화면은 너무 느려서 게임 시계가 실제 시간보다 느리게 감)
+func _drive(overlay: Node, shots: Dictionary, scene_time: bool = false) -> void:
 	var last := -2
 	var stuck := 0.0
 	while is_instance_valid(overlay) and overlay.is_inside_tree():
@@ -55,7 +56,10 @@ func _drive(overlay: Node, shots: Dictionary) -> void:
 			last = idx
 			stuck = 0.0
 			if shots.has(idx):
-				await _sec(4.0)
+				if scene_time:
+					await get_tree().create_timer(4.0).timeout
+				else:
+					await _sec(4.0)
 				await _shot(shots[idx])
 			if not is_instance_valid(overlay):
 				break
@@ -147,7 +151,7 @@ func _run() -> void:
 	await _shot("16_world_diving_in")
 	while tb._overlay == null:
 		await get_tree().process_frame
-	await _drive(tb._overlay, {0: "17_world_start", 1: "18_world_overview", 2: "19_world_plateau", 3: "22_tile_plain", 4: "23_tile_chance", 5: "24_tile_minigame", 6: "25_tile_portal", 7: "26_tile_shop", 8: "27_legend", 10: "20_world_my_pawn"})
+	await _drive(tb._overlay, {0: "17_world_start", 1: "18_world_overview", 2: "19_world_plateau", 3: "22_tile_plain", 4: "23_tile_chance", 5: "24_tile_minigame", 6: "25_tile_portal", 7: "26_tile_shop", 8: "27_legend", 10: "20_world_my_pawn"}, true)
 	await _sec(0.6)
 	await _shot("21_tutorial_complete")
 	while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
