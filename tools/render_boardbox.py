@@ -276,6 +276,37 @@ def lid_art():
     return img
 
 
+def tutorial_lid():
+    img = water(L, sand_from=0.6)
+    kelp(img, 140, 2048, 900, 0.8, 30, (16, 92, 70, 200))
+    kelp(img, 1900, 2048, 1000, 2.0, 30, (16, 92, 70, 200))
+    prn = Image.open(os.path.join(HERE, "out", "tutorial_board_print.png")).convert("RGBA")
+    quad = [(470, 1040), (1580, 1040), (1800, 1760), (250, 1760)]
+    thick = 60
+    sh = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(sh).polygon([(x + 20, y + thick + 30) for x, y in quad], fill=(0, 20, 18, 160))
+    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(36)))
+    side = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(side).polygon([quad[3], quad[2], (quad[2][0], quad[2][1] + thick), (quad[3][0], quad[3][1] + thick)],
+                                 fill=(10, 52, 60, 255))
+    img.alpha_composite(side)
+    img.alpha_composite(warp_onto(img.size, prn, quad))
+    place_pawn(img, PALETTE["coral"], (560, 1640), 420)
+    place_pawn(img, PALETTE["mint"], (1500, 1380), 330)
+    die(img, 1160, 1480, 66)
+    bubbles(img, [(1640, 900, 40), (1700, 790, 26), (1660, 700, 17), (420, 980, 26), (380, 900, 16)])
+    pill(img, "DEEP PARTY", (1024, 205), 62, spacing=10)
+    text_block(img, "TUTORIAL", (1024, 470), 250, spacing=10)
+    pill(img, "PRACTICE BOARD", (1024, 720), 54, spacing=8)
+    pill(img, "LEARN THE BASICS", (1024, 1915), 46, spacing=6)
+    frame = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(frame)
+    d.rounded_rectangle([46, 46, L - 47, L - 47], radius=60, outline=(234, 255, 250, 120), width=6)
+    d.rounded_rectangle([64, 64, L - 65, L - 65], radius=48, outline=(127, 240, 219, 70), width=3)
+    img.alpha_composite(frame)
+    return img
+
+
 def locked_lid():
     img = water(L, sand_from=0.75)
     arr = np.asarray(img).astype(np.float32)
@@ -433,6 +464,8 @@ def main():
                      side_band(side_w, side_h, "DEEP PARTY", "1-4 PLAYERS", dark=True), "sunken_island_box.png")
     locked = render_box(locked_lid(), side_band(side_w, side_h, "", "", dark=True),
                         side_band(side_w, side_h, "", "", dark=True), "locked_box.png")
+    tut = render_box(tutorial_lid(), side_band(side_w, side_h, "TUTORIAL", "PRACTICE BOARD"),
+                     side_band(side_w, side_h, "DEEP PARTY", "LEARN THE BASICS", dark=True), "tutorial_box.png")
     shadow = render_shadow()
     # 셋 다 같은 영역으로 잘라서 Godot 에서 같은 자리에 겹쳐 그리면 딱 맞게
     union = Image.new("RGBA", box.size)
@@ -441,6 +474,7 @@ def main():
     bb = union.getbbox()
     box.crop(bb).save(os.path.join(OUT, "sunken_island_box.png"))
     locked.crop(bb).save(os.path.join(OUT, "locked_box.png"))
+    tut.crop(bb).save(os.path.join(OUT, "tutorial_box.png"))
     shadow.crop(bb).save(os.path.join(OUT, "box_shadow.png"))
     print("saved to", OUT)
 

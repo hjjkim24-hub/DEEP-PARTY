@@ -11,6 +11,8 @@ const ToggleSwitch := preload("res://scripts/ui/toggle_switch.gd")
 const LobbyPawn := preload("res://scripts/ui/lobby_pawn.gd")
 const ItemIcon := preload("res://scripts/ui/item_icon.gd")
 const BoardBoxView := preload("res://scripts/ui/board_box_view.gd")
+const TutorialOverlay := preload("res://scripts/ui/tutorial_overlay.gd")
+const TUTORIAL_BOARD_SCENE := "res://scenes/tutorial_board.tscn"
 const UIFont := preload("res://fonts/Poppins-Bold.ttf")
 
 const GAME_TITLE := "DEEP\nPARTY"
@@ -23,6 +25,16 @@ const GAME_SCENE := "res://scenes/board.tscn"  ## 아직 없음 - 만들면 보�
 
 ## 보드 고르기 화면에 나오는 보드게임 상자들 (상자 그림은 tools/render_boardbox.py)
 const BOARDS := [
+	{
+		# 튜토리얼 중에만 보여요
+		"id": "tutorial",
+		"name": "TUTORIAL BOARD",
+		"desc": "A small practice board for learning how DEEP PARTY works. Perfect for your first game!",
+		"tags": ["PRACTICE", "1-4 PLAYERS"],
+		"box": preload("res://textures/boards/tutorial_box.png"),
+		"locked": false,
+		"tutorial": true,
+	},
 	{
 		"id": "sunken_island",
 		"name": "SUNKEN ISLAND",
@@ -112,7 +124,8 @@ var _cz_tab := 0
 var _cz_tab_buttons: Array[Button] = []
 var _cz_tab_pages: Array[Control] = []
 # 보드 고르기
-var _board_index := 0
+var _board_index := 1   # 0번은 튜토리얼 보드
+var _tutorial: Control
 var _board_big: BoardBoxView
 var _board_name: Label
 var _board_desc: Label
@@ -328,6 +341,7 @@ func _build_lobby_page(parent: Control) -> Control:
 	bottom.add_child(back)
 	var invite := _make_glass_button("INVITE FRIEND", Vector2(250, 66), 20)
 	invite.pressed.connect(_lobby_invite)
+	invite.set_meta("tut", "invite")
 	bottom.add_child(invite)
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -471,6 +485,7 @@ func _make_slot(i: int, p: Dictionary, cpu_no: int, team: bool) -> PanelContaine
 			name_l.text = "You"
 			sub_l.text = "Host"
 			var cz := _make_slot_button("CUSTOMIZE")
+			cz.set_meta("tut", "customize")
 			cz.pressed.connect(_lobby_customize)
 			v.add_child(cz)
 		"cpu":
@@ -479,12 +494,14 @@ func _make_slot(i: int, p: Dictionary, cpu_no: int, team: bool) -> PanelContaine
 			sub_l.text = "Computer player"
 			var lv := _make_segmented(["Easy", "Normal", "Hard"], int(p.get("level", 1)), func(lvl: int) -> void: _lobby_set_level(i, lvl))
 			lv.add_theme_constant_override("separation", 4)
+			lv.set_meta("tut", "level_%d" % i)
 			for b in lv.get_meta("buttons"):
 				b.custom_minimum_size = Vector2(0, 48)
 				b.add_theme_font_size_override("font_size", 16)
 			v.add_child(lv)
 			var rm := _make_slot_button("REMOVE")
 			rm.pressed.connect(_lobby_remove.bind(i))
+			rm.set_meta("tut", "remove_%d" % i)
 			rm.set_meta("sfx", "remove")
 			v.add_child(rm)
 		"friend":
@@ -497,6 +514,7 @@ func _make_slot(i: int, p: Dictionary, cpu_no: int, team: bool) -> PanelContaine
 			sub_l.text = "Add a CPU or invite a friend"
 			var add := _make_slot_button("+ ADD CPU")
 			add.pressed.connect(_lobby_add_cpu.bind(i))
+			add.set_meta("tut", "add_%d" % i)
 			add.set_meta("sfx", "add")
 			v.add_child(add)
 	return card
@@ -621,6 +639,7 @@ func _build_board_page(parent: Control) -> Control:
 	left.add_child(cap)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
+	row.set_meta("tut", "board_thumbs")
 	left.add_child(row)
 	for i in BOARDS.size():
 		var tb := _make_board_thumb(i)
@@ -710,6 +729,11 @@ func _make_board_thumb(i: int) -> Button:
 
 
 func _open_board_select() -> void:
+	_board_thumbs[0].visible = GameState.tutorial_active   # 튜토리얼 보드는 튜토리얼 중에만
+	if GameState.tutorial_active:
+		_board_index = 0
+	elif _board_index == 0:
+		_board_index = 1
 	var n := GameState.filled_count()
 	_board_mode_label.text = "%s  •  %s" % [tr(GameState.get_mode_name()), tr("%d PLAYERS") % n]
 	_select_board(_board_index, false)
@@ -718,7 +742,7 @@ func _open_board_select() -> void:
 
 func _select_board(i: int, with_fx: bool = true) -> void:
 	var data: Dictionary = BOARDS[i]
-	var changed := i != _board_index or _board_big.box == null
+	var changed: bool = i != _board_index or _board_big.box == null or _board_big.box != data["box"]
 	_board_index = i
 	if changed:
 		_board_big.box = data["box"]
@@ -750,15 +774,153 @@ func _on_board_play() -> void:
 		return
 	Audio.play("start")
 	GameState.selected_board = data["id"]
-	if ResourceLoader.exists(GAME_SCENE):
+	var scene_path := TUTORIAL_BOARD_SCENE if data.get("tutorial", false) else GAME_SCENE
+	if ResourceLoader.exists(scene_path):
 		_busy = true
 		Audio.stop_music(0.4)
 		var t := create_tween()
 		t.tween_property(_fade, "color:a", 1.0, 0.4)
 		await t.finished
-		get_tree().change_scene_to_file(GAME_SCENE)
+		get_tree().change_scene_to_file(scene_path)
 	else:
 		_toast(tr("Let's go! The board itself is being built next."))
+
+
+# =============================================================== 튜토리얼 (TUTORIAL)
+## 메인화면 TUTORIAL → 바로 시작. 실제 화면 위에서 하나씩 짚어 주고,
+## 마지막에 튜토리얼 보드(연습판)를 열어 들어가요 (scenes/tutorial_board.tscn 에서 이어짐).
+
+func _start_tutorial() -> void:
+	if _tutorial:
+		return
+	GameState.tutorial_active = true
+	GameState.reset_lobby()
+	_tutorial = TutorialOverlay.new()
+	_tutorial.name = "Tutorial"
+	add_child(_tutorial)
+	_tutorial.finished.connect(_on_tutorial_closed)
+	_tutorial.skipped.connect(_on_tutorial_skipped)
+	_tutorial.start(_tutorial_steps())
+
+
+func _on_tutorial_closed() -> void:
+	_tutorial = null
+
+
+func _on_tutorial_skipped() -> void:
+	_tutorial = null
+	GameState.tutorial_active = false
+	if _current == "board":
+		_select_board(1, false)
+		_board_thumbs[0].visible = false
+
+
+## 지금 화면에서 meta "tut" 이 key 인 노드 찾기
+func _tut(key: String) -> Control:
+	var page: Control = _pages.get(_current)
+	if page == null:
+		return null
+	for n in page.find_children("*", "Control", true, false):
+		if n.has_meta("tut") and String(n.get_meta("tut")) == key:
+			return n as Control
+	return null
+
+
+func _tutorial_steps() -> Array:
+	return [
+		{"text": "Welcome to DEEP PARTY! I'll show you how everything works, step by step."},
+		{
+			"text": "First, press PLAY to start a game.",
+			"target": func() -> Control: return _main_buttons[0],
+			"until": func() -> bool: return _current == "mode" and not _busy,
+			"auto": func() -> void: _on_menu_pressed("play", _main_buttons[0]),
+		},
+		{
+			"text": "FREE-FOR-ALL: everyone plays for themselves. Only one player takes the crown!",
+			"target": func() -> Control: return _mode_buttons[0],
+		},
+		{
+			"text": "2 VS 2: team up in pairs. You win or lose together with your teammate!",
+			"target": func() -> Control: return _mode_buttons[1],
+		},
+		{
+			"text": "CO-OP: all four players work together to clear the minigames.",
+			"target": func() -> Control: return _mode_buttons[2],
+		},
+		{
+			"text": "Let's try FREE-FOR-ALL. Click it!",
+			"target": func() -> Control: return _mode_buttons[0],
+			"until": func() -> bool: return _current == "lobby" and not _busy,
+			"auto": func() -> void: _on_mode_chosen(0, "", _mode_buttons[0]),
+		},
+		{
+			"text": "This is the lobby. Up to four players can join. That's you in the first seat!",
+			"target": func() -> Control: return _lobby_slots,
+			"pad": 8.0,
+		},
+		{
+			"text": "Empty seats can be filled with computer players. Press + ADD CPU.",
+			"target": func() -> Control: return _tut("add_1"),
+			"until": func() -> bool: return not GameState.players[1].is_empty(),
+			"auto": func() -> void: _lobby_add_cpu(1),
+		},
+		{
+			"text": "Choose how strong the CPU is: Easy, Normal or Hard.",
+			"target": func() -> Control: return _tut("level_1"),
+		},
+		{
+			"text": "Changed your mind? REMOVE takes the CPU out of its seat.",
+			"target": func() -> Control: return _tut("remove_1"),
+		},
+		{
+			"text": "Want to play with friends? INVITE FRIEND sends them an invite through Steam. (This works once Steam is connected.)",
+			"target": func() -> Control: return _tut("invite"),
+		},
+		{
+			"text": "Now let's dress up your pawn. Press CUSTOMIZE.",
+			"target": func() -> Control: return _tut("customize"),
+			"until": func() -> bool: return _current == "customize" and not _busy,
+			"auto": func() -> void: _lobby_customize(),
+		},
+		{
+			"text": "Use these tabs to pick a color, hat, pattern, accessory and outfit.",
+			"target": func() -> Control: return _tut("cz_tabs"),
+		},
+		{
+			"text": "Try on a hat! Click any hat to wear it. You can wear one item from each category.",
+			"enter": func() -> void: _select_cz_tab(1),
+			"target": func() -> Control: return _tut("cz_items_hat"),
+			"until": func() -> bool: return GameState.equipped(0, "hat") != "",
+			"auto": func() -> void: _on_item_pressed("hat", "party_hat"),
+		},
+		{
+			"text": "Looking good! REMOVE takes an item off again. Press DONE to go back to the lobby.",
+			"target": func() -> Control: return _tut("cz_done"),
+			"until": func() -> bool: return _current == "lobby" and not _busy,
+			"auto": func() -> void: _go_back(),
+		},
+		{
+			"text": "Everyone's ready. Press START!",
+			"target": func() -> Control: return _lobby_start,
+			"until": func() -> bool: return _current == "board" and not _busy,
+			"auto": func() -> void: _on_lobby_start(),
+		},
+		{
+			"text": "Here you choose which board game to play. Each box is a different board.",
+			"target": func() -> Control: return _tut("board_thumbs"),
+		},
+		{
+			"text": "This is the Tutorial Board, a small practice board. Let's open it and learn how a board game works!",
+			"target": func() -> Control: return _board_big,
+			"pad": -40.0,
+		},
+		{
+			"text": "Press PLAY to open the box!",
+			"target": func() -> Control: return _board_play,
+			"until": func() -> bool: return _busy,
+			"auto": func() -> void: _on_board_play(),
+		},
+	]
 
 # =============================================================== 꾸미기 (CUSTOMIZE)
 ## 왼쪽: 내 말 크게 미리보기 / 오른쪽: 색 고르기 (모자·무늬는 나중에)
@@ -824,6 +986,7 @@ func _build_customize_page(parent: Control) -> Control:
 	opts.add_child(right)
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 10)
+	tabs.set_meta("tut", "cz_tabs")
 	right.add_child(tabs)
 	for i in CZ_TABS.size():
 		var tb := _make_glass_button(CZ_TABS[i], Vector2(0, 58), 19)
@@ -890,6 +1053,7 @@ func _build_customize_page(parent: Control) -> Control:
 		_cz_remove[cat] = rm
 		var items_row := HBoxContainer.new()
 		items_row.add_theme_constant_override("separation", 18)
+		items_row.set_meta("tut", "cz_items_" + cat)
 		pagev.add_child(items_row)
 		var tiles: Array[Button] = []
 		for item_id in GameState.COSMETICS[cat]:
@@ -909,6 +1073,7 @@ func _build_customize_page(parent: Control) -> Control:
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bottom.add_child(sp)
 	var done := _make_primary_button("DONE", Vector2(240, 66))
+	done.set_meta("tut", "cz_done")
 	done.pressed.connect(_go_back)
 	bottom.add_child(done)
 	return page
@@ -1684,7 +1849,7 @@ func _go_back() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
-		if _busy:
+		if _busy or _tutorial:
 			return
 		if _current == "main":
 			_main_buttons[_main_buttons.size() - 1].grab_focus()  # QUIT 버튼으로
@@ -1709,7 +1874,7 @@ func _on_menu_pressed(id: String, b: Button) -> void:
 		"play":
 			_show_page("mode")
 		"tutorial":
-			_toast(tr("The tutorial is on its way!"))
+			_start_tutorial()
 		"collection":
 			_toast(tr("Minigames will show up here once they're made!"))
 		"settings":

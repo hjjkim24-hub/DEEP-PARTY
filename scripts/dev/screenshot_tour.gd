@@ -11,7 +11,7 @@ func _ready() -> void:
 		if a.begins_with("--shots-dir="):
 			_dir = a.substr("--shots-dir=".length())
 	DirAccess.make_dir_recursive_absolute(_dir)
-	get_tree().create_timer(400.0, true, false, true).timeout.connect(func() -> void:
+	get_tree().create_timer(900.0, true, false, true).timeout.connect(func() -> void:
 		print("TOUR TIMEOUT")
 		get_tree().quit(2))
 	_run()
@@ -41,6 +41,35 @@ func _shot(shot_name: String) -> void:
 	var path := _dir.path_join(shot_name + ".png")
 	img.save_png(path)
 	print("SHOT: ", path, " ", img.get_size())
+
+
+func _drive(overlay: Node, shots: Dictionary) -> void:
+	var last := -2
+	var stuck := 0.0
+	while is_instance_valid(overlay) and overlay.is_inside_tree():
+		await _sec(0.8)
+		if not is_instance_valid(overlay):
+			break
+		var idx: int = overlay.index
+		if idx != last:
+			last = idx
+			stuck = 0.0
+			if shots.has(idx):
+				await _sec(1.8)
+				await _shot(shots[idx])
+			if not is_instance_valid(overlay):
+				break
+			var st: Dictionary = overlay.current()
+			if overlay.is_waiting_for_action():
+				if st.has("auto"):
+					(st["auto"] as Callable).call()
+			else:
+				overlay.next()
+		else:
+			stuck += 0.8
+			if stuck > 40.0:
+				print("TOUR: tutorial stuck at ", idx)
+				return
 
 
 func _run() -> void:
@@ -103,6 +132,22 @@ func _run() -> void:
 	m._show_page("settings")
 	await _settle(m, "settings")
 	await _shot("07_settings")
+
+	# 튜토리얼
+	m._go_back()
+	await _settle(m, "main")
+	m._start_tutorial()
+	await _drive(m._tutorial, {0: "10_tut_welcome", 2: "11_tut_modes", 7: "12_tut_add_cpu", 13: "13_tut_hat", 17: "14_tut_board_box"})
+	while get_tree().current_scene == null or get_tree().current_scene.name != "TutorialBoard":
+		await get_tree().process_frame
+	var tb: Node = get_tree().current_scene
+	while tb._overlay == null:
+		await get_tree().process_frame
+	await _drive(tb._overlay, {0: "15_board_start", 2: "16_board_dice", 3: "17_board_moved", 5: "18_board_round"})
+	await _sec(0.6)
+	await _shot("19_tutorial_complete")
+	while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
+		await get_tree().process_frame
 
 	print("TOUR DONE")
 	await Audio.stop_music(0.1)

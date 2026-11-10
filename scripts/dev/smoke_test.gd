@@ -4,7 +4,7 @@ extends Node
 ## 시작 로고 → 메인화면 → 설정/모드/로비/꾸미기 화면을 자동으로 한 바퀴 돌고 종료합니다.
 ## GitHub 자동 빌드에서 스크립트 오류를 미리 잡는 데 씁니다.
 
-const TIMEOUT_SEC := 120.0
+const TIMEOUT_SEC := 300.0
 
 
 func _ready() -> void:
@@ -20,6 +20,36 @@ func _sec(t: float) -> void:
 
 func _step(msg: String) -> void:
 	print("SMOKE: ", msg)
+
+
+## 튜토리얼 안내를 끝까지 자동으로 넘김 (플레이어 동작이 필요한 단계는 "auto" 로 대신 눌러 줌)
+func _drive(overlay: Node, on_step: Callable = Callable()) -> void:
+	var last := -2
+	var stuck := 0.0
+	while is_instance_valid(overlay) and overlay.is_inside_tree():
+		await _sec(0.6)
+		if not is_instance_valid(overlay):
+			break
+		var idx: int = overlay.index
+		if idx != last:
+			last = idx
+			stuck = 0.0
+			if on_step.is_valid():
+				await on_step.call(idx)
+			if not is_instance_valid(overlay):
+				break
+			var st: Dictionary = overlay.current()
+			print("SMOKE:   step %d: %s" % [idx, String(st.get("text", "")).left(50)])
+			if overlay.is_waiting_for_action():
+				if st.has("auto"):
+					(st["auto"] as Callable).call()
+			else:
+				overlay.next()
+		else:
+			stuck += 0.6
+			if stuck > 25.0:
+				push_error("Tutorial stuck at step %d" % idx)
+				return
 
 
 func _run() -> void:
@@ -38,6 +68,30 @@ func _run() -> void:
 	_step("tutorial button")
 	m._on_menu_pressed("tutorial", m._main_buttons[1])
 	await _sec(0.3)
+
+	_step("tutorial: menu walkthrough")
+	m._start_tutorial()
+	await _drive(m._tutorial)
+	var waited := 0.0
+	while (get_tree().current_scene == null or get_tree().current_scene.name != "TutorialBoard") and waited < 15.0:
+		await get_tree().process_frame
+		waited += get_process_delta_time()
+	if get_tree().current_scene.name != "TutorialBoard":
+		push_error("Tutorial board did not open")
+	else:
+		_step("tutorial: board")
+		var tb: Node = get_tree().current_scene
+		while tb._overlay == null:
+			await get_tree().process_frame
+		await _drive(tb._overlay)
+	waited = 0.0
+	while (get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu") and waited < 15.0:
+		await get_tree().process_frame
+		waited += get_process_delta_time()
+	m = get_tree().current_scene
+	if m.name != "MainMenu" or GameState.tutorial_active:
+		push_error("Did not return to the main menu after the tutorial")
+	await _sec(2.0)
 
 	_step("settings")
 	m._show_page("settings")

@@ -45,6 +45,9 @@ var selected_mode: int = Mode.FREE_FOR_ALL
 ## 보드 고르기에서 고른 보드 id (예: "sunken_island")
 var selected_board: String = "sunken_island"
 
+## 튜토리얼 진행 중인지 (메인화면 TUTORIAL → 튜토리얼 보드 끝까지)
+var tutorial_active := false
+
 ## 로비 자리 4개. 빈자리는 {} (빈 딕셔너리)
 ##   {"kind": "host", "color": 0~11, "hat": "crown", ...}   방장(나), color = PALETTE 번호, 꾸미기는 종류별 아이템 id
 ##   {"kind": "cpu", "level": 0~2, "color": 0~11}   CPU (0 쉬움, 1 보통, 2 어려움)
