@@ -415,7 +415,9 @@ func _tiles() -> void:
 		_mi(_box(Vector3(size + 0.25, 0.12, size + 0.25)), dark, base + Vector3(0, 0.06, 0), b)
 		var plane := PlaneMesh.new()
 		plane.size = Vector2(size - 0.12, size - 0.12)
-		_mi(plane, _tile_top_mat(kind), base + Vector3(0, TILE_H + 0.004, 0), b)
+		# 그림은 카메라(남쪽)에서 똑바로 읽히게: 네모라서 90°씩 돌려도 칸과 딱 맞음
+		var yaw_top: float = float(sp["yaw"]) - roundf(float(sp["yaw"]) / (PI / 2.0)) * (PI / 2.0)
+		_mi(plane, _tile_top_mat(kind), base + Vector3(0, TILE_H + 0.004, 0), Basis(Vector3.UP, yaw_top))
 		# 협곡 위 칸은 돌기둥이 받침
 		if _in_chasm(base.x, base.z):
 			var depth := base.y - natural_height(base.x, base.z) + 0.5
