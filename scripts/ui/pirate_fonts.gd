@@ -83,6 +83,20 @@ static func _check(n: Node) -> void:
 		_update(n as Label)
 
 
+## 양피지 위에 쓴 잉크 글씨 (테두리 · 그림자 없이, 잉크 결만)
+static func ink(l: Label, col: Color, is_title: bool = false) -> Label:
+	l.set_meta("pirate_done", true)
+	l.add_theme_font_override("font", title() if is_title else body())
+	l.add_theme_color_override("font_color", col)
+	l.add_theme_constant_override("outline_size", 0)
+	l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
+	var m := ShaderMaterial.new()
+	m.shader = TextShader
+	m.set_shader_parameter("metal", 0.0)
+	l.material = m
+	return l
+
+
 ## 셰이더에 줄 위치를 알려 줌 (세로 금빛 그라데이션이 글자 높이에 맞게)
 static func _update(l: Label) -> void:
 	if not is_instance_valid(l) or not (l.material is ShaderMaterial):

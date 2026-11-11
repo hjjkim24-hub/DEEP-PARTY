@@ -13,6 +13,17 @@ const AQUA := Color("7ff0db")
 const DEEP := Color("05302c")
 const GOLD := Color("ffcf4a")
 const GREEN := Color("7dff9a")
+## 보물지도 느낌 재료 (tools/make_map_ui.py)
+const T_PARCH := preload("res://textures/ui/map/parchment.png")
+const T_CARD := preload("res://textures/ui/map/parchment_card.png")
+const T_COMPASS := preload("res://textures/ui/map/compass.png")
+const T_SEAL := preload("res://textures/ui/map/wax_seal.png")
+const T_STAMP := preload("res://textures/ui/map/stamp.png")
+const T_FRAME := preload("res://textures/ui/map/frame.png")
+const T_RIBBON := preload("res://textures/ui/map/ribbon.png")
+const INK := Color(0.24, 0.13, 0.06)
+const INK_RED := Color(0.55, 0.13, 0.08)
+const CREAM := Color(0.98, 0.9, 0.7)
 
 var game_id := ""
 var players: Array = []
@@ -90,6 +101,29 @@ func _label(text: String, size_: int, col: Color = PEARL, outline: int = 0) -> L
 	return l
 
 
+func _ink(text: String, size_: int, col: Color = INK, is_title: bool = false) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.add_theme_font_size_override("font_size", size_)
+	return PirateFonts.ink(l, col, is_title)
+
+
+## 늘려도 가장자리가 그대로인 그림 판 (양피지 · 액자 · 리본)
+func _tex_box(tex: Texture2D, margin: Vector4, content: Vector4) -> StyleBoxTexture:
+	var s := StyleBoxTexture.new()
+	s.texture = tex
+	s.texture_margin_left = margin.x
+	s.texture_margin_top = margin.y
+	s.texture_margin_right = margin.z
+	s.texture_margin_bottom = margin.w
+	s.content_margin_left = content.x
+	s.content_margin_top = content.y
+	s.content_margin_right = content.z
+	s.content_margin_bottom = content.w
+	return s
+
+
 func _box(bg: Color, border: Color, bw: int, radius: int) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = bg
@@ -103,24 +137,21 @@ func _box(bg: Color, border: Color, bw: int, radius: int) -> StyleBoxFlat:
 func _build() -> void:
 	# 위: MINIGAME! 리본 + 제목 + 목표
 	var pill := PanelContainer.new()
-	var ps := _box(GOLD, GOLD, 0, 30)
-	ps.content_margin_left = 30
-	ps.content_margin_right = 30
-	ps.content_margin_top = 6
-	ps.content_margin_bottom = 6
-	pill.add_theme_stylebox_override("panel", ps)
-	var pl := _label("MINIGAME!", 26, DEEP)
+	pill.add_theme_stylebox_override("panel", _tex_box(T_RIBBON, Vector4(60, 20, 60, 20), Vector4(70, 8, 70, 14)))
+	var pl := _ink("MINIGAME!", 32, CREAM, true)
+	pl.add_theme_color_override("font_shadow_color", Color(0.2, 0.02, 0.0, 0.7))
+	pl.add_theme_constant_override("shadow_offset_y", 2)
 	pill.add_child(pl)
 	_arena.add_child(pill)
-	pill.position = Vector2(ARENA.x * 0.5 - 110, 34)
-	pill.size = Vector2(220, 0)
+	pill.position = Vector2(ARENA.x * 0.5 - 170, 26)
+	pill.size = Vector2(340, 0)
 	pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var title := _label(_info.title, 92, GOLD, 22)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.position = Vector2(0, 86)
 	title.size = Vector2(ARENA.x, 120)
 	_arena.add_child(title)
-	var goal := _label(_info.goal, 30, AQUA, 10)
+	var goal := _label(_info.goal, 30, CREAM, 10)
 	goal.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	goal.position = Vector2(0, 204)
 	goal.size = Vector2(ARENA.x, 44)
@@ -128,11 +159,7 @@ func _build() -> void:
 
 	# 왼쪽: 미리보기 화면 (실제 게임을 CPU들이 자동으로 하는 장면)
 	var frame := PanelContainer.new()
-	var fs := _box(Color(0, 0, 0, 0.6), AQUA, 6, 26)
-	fs.set_content_margin_all(10)
-	fs.shadow_color = Color(AQUA, 0.25)
-	fs.shadow_size = 24
-	frame.add_theme_stylebox_override("panel", fs)
+	frame.add_theme_stylebox_override("panel", _tex_box(T_FRAME, Vector4(70, 70, 70, 70), Vector4(40, 40, 40, 40)))
 	frame.position = Vector2(90, 278)
 	frame.size = Vector2(1040, 585)
 	frame.custom_minimum_size = frame.size
@@ -150,7 +177,7 @@ func _build() -> void:
 	var rec := HBoxContainer.new()
 	rec.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	rec.add_theme_constant_override("separation", 10)
-	rec.position = Vector2(118, 300)
+	rec.position = Vector2(150, 330)
 	_arena.add_child(rec)
 	_rec_dot = Panel.new()
 	_rec_dot.custom_minimum_size = Vector2(20, 20)
@@ -167,45 +194,68 @@ func _build() -> void:
 	side.size = Vector2(650, 585)
 	side.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_arena.add_child(side)
+	var parch := _tex_box(T_PARCH, Vector4(90, 90, 90, 90), Vector4(52, 44, 52, 40))
 	var how := PanelContainer.new()
-	var hs := _box(Color(0.02, 0.14, 0.15, 0.85), Color(AQUA, 0.4), 2, 22)
-	hs.set_content_margin_all(28)
-	how.add_theme_stylebox_override("panel", hs)
+	how.add_theme_stylebox_override("panel", parch)
 	how.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	side.add_child(how)
+	var how_in := Control.new()
+	how_in.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	how.add_child(how_in)
+	# 지도 그림: 오른쪽 아래 나침반 + 점선 뱃길 + 붉은 X
+	var comp := TextureRect.new()
+	comp.texture = T_COMPASS
+	comp.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	comp.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	comp.modulate = Color(1, 1, 1, 0.55)
+	comp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	comp.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	comp.offset_left = -170
+	comp.offset_top = -170
+	comp.offset_right = 10
+	comp.offset_bottom = 10
+	how_in.add_child(comp)
+	var path := Control.new()
+	path.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	path.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	path.draw.connect(func() -> void: _draw_map_path(path))
+	path.resized.connect(path.queue_redraw)
+	how_in.add_child(path)
 	var hv := VBoxContainer.new()
-	hv.add_theme_constant_override("separation", 14)
-	how.add_child(hv)
-	hv.add_child(_label("HOW TO PLAY", 26, AQUA))
-	var desc := _label(_info.how_to, 28)
+	hv.add_theme_constant_override("separation", 12)
+	hv.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	how_in.add_child(hv)
+	hv.add_child(_ink("How to Play", 40, INK_RED, true))
+	var desc := _ink(_info.how_to, 28)
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	desc.custom_minimum_size = Vector2(590, 0)
+	desc.custom_minimum_size = Vector2(540, 0)
 	desc.add_theme_constant_override("line_spacing", 6)
 	hv.add_child(desc)
 	var ctrl := PanelContainer.new()
-	ctrl.add_theme_stylebox_override("panel", hs)
+	ctrl.add_theme_stylebox_override("panel", _tex_box(T_PARCH, Vector4(90, 90, 90, 90), Vector4(52, 34, 52, 34)))
 	side.add_child(ctrl)
 	var cv := VBoxContainer.new()
-	cv.add_theme_constant_override("separation", 12)
+	cv.add_theme_constant_override("separation", 10)
 	ctrl.add_child(cv)
-	cv.add_child(_label("CONTROLS", 26, AQUA))
+	cv.add_child(_ink("Controls", 36, INK_RED, true))
 	var ch := HBoxContainer.new()
 	ch.add_theme_constant_override("separation", 22)
 	cv.add_child(ch)
 	if _info.controls == "MOUSE":
 		ch.add_child(_mouse_icon())
-		var t := _label("Click with the left mouse button", 26)
+		var t := _ink("Click with the left mouse button", 26)
 		t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		t.custom_minimum_size = Vector2(400, 0)
 		ch.add_child(t)
 	else:
 		ch.add_child(_keys_icon(["W", "A", "S", "D"]))
-		var or_l := _label("or", 24, Color(PEARL, 0.7))
+		var or_l := _ink("or", 24, Color(INK, 0.7))
 		or_l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		ch.add_child(or_l)
 		ch.add_child(_keys_icon(["↑", "←", "↓", "→"]))
-		var t2 := _label("Swim", 26)
+		var t2 := _ink("Swim", 26)
 		t2.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		ch.add_child(t2)
 
@@ -221,29 +271,60 @@ func _build() -> void:
 		row.add_child(_player_card(p))
 
 
-func _player_card(p: Dictionary) -> PanelContainer:
+func _player_card(p: Dictionary) -> Control:
 	var slot := int(p["slot"])
 	_ready_state[slot] = false
+	var wrap := Control.new()
+	wrap.custom_minimum_size = Vector2(420, 150)
+	wrap.mouse_filter = Control.MOUSE_FILTER_PASS
 	var card := PanelContainer.new()
-	card.custom_minimum_size = Vector2(400, 150)
-	card.add_theme_stylebox_override("panel", _card_style(p["color"], false))
+	card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	card.add_theme_stylebox_override("panel", _tex_box(T_CARD, Vector4(60, 50, 60, 50), Vector4(30, 18, 40, 18)))
+	wrap.add_child(card)
 	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 18)
+	h.add_theme_constant_override("separation", 16)
 	card.add_child(h)
-	var dot := Panel.new()
-	dot.custom_minimum_size = Vector2(54, 54)
-	dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	dot.add_theme_stylebox_override("panel", _box(p["color"], Color.WHITE, 4, 27))
-	h.add_child(dot)
+	# 플레이어 색 밀랍 봉인
+	var seal := TextureRect.new()
+	seal.texture = T_SEAL
+	seal.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	seal.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	seal.custom_minimum_size = Vector2(86, 86)
+	seal.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	seal.modulate = (p["color"] as Color).lightened(0.2)
+	seal.rotation = randf_range(-0.3, 0.3)
+	seal.pivot_offset = Vector2(43, 43)
+	h.add_child(seal)
 	var v := VBoxContainer.new()
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.add_theme_constant_override("separation", 6)
+	v.add_theme_constant_override("separation", 2)
 	h.add_child(v)
-	v.add_child(_label(p["name"], 30))
-	var status := _label("WAITING...", 22, Color(PEARL, 0.55))
+	v.add_child(_ink(p["name"], 34, INK, true))
+	var status := _ink("WAITING...", 22, Color(INK, 0.6))
 	v.add_child(status)
-	_cards[slot] = {"status": status, "panel": card, "color": p["color"]}
+	# 준비되면 찍히는 붉은 도장
+	var stamp := Control.new()
+	stamp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stamp.size = Vector2(250, 92)
+	stamp.position = Vector2(150, 30)
+	stamp.pivot_offset = stamp.size * 0.5
+	stamp.rotation = -0.16
+	stamp.visible = false
+	var st_tex := TextureRect.new()
+	st_tex.texture = T_STAMP
+	st_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	st_tex.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	st_tex.modulate = Color(0.72, 0.1, 0.08, 0.92)
+	st_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stamp.add_child(st_tex)
+	var st_l := _ink("READY!", 50, Color(0.72, 0.1, 0.08, 0.92), true)
+	st_l.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	st_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	st_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	stamp.add_child(st_l)
+	wrap.add_child(stamp)
+	_cards[slot] = {"status": status, "panel": wrap, "color": p["color"], "stamp": stamp}
 	if _is_human(p):
 		var b := Button.new()
 		b.text = "READY!"
@@ -251,30 +332,44 @@ func _player_card(p: Dictionary) -> PanelContainer:
 		b.custom_minimum_size = Vector2(150, 70)
 		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		b.add_theme_font_size_override("font_size", 24)
-		b.add_theme_stylebox_override("normal", _box(GOLD, GOLD, 0, 18))
-		b.add_theme_stylebox_override("hover", _box(Color("ffe08a"), GOLD, 0, 18))
-		b.add_theme_stylebox_override("pressed", _box(GOLD.darkened(0.15), GOLD, 0, 18))
-		b.add_theme_stylebox_override("disabled", _box(Color(GREEN, 0.25), GREEN, 2, 18))
+		b.add_theme_font_size_override("font_size", 26)
+		b.add_theme_font_override("font", PirateFonts.title())
+		var red := Color(0.55, 0.1, 0.07)
+		b.add_theme_stylebox_override("normal", _box(red, Color(0.85, 0.65, 0.3), 3, 14))
+		b.add_theme_stylebox_override("hover", _box(red.lightened(0.15), Color(1.0, 0.8, 0.4), 3, 14))
+		b.add_theme_stylebox_override("pressed", _box(red.darkened(0.2), Color(0.85, 0.65, 0.3), 3, 14))
+		b.add_theme_stylebox_override("disabled", StyleBoxEmpty.new())
 		b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		for k in ["font_color", "font_hover_color", "font_pressed_color"]:
-			b.add_theme_color_override(k, DEEP)
-		b.add_theme_color_override("font_disabled_color", GREEN)
+			b.add_theme_color_override(k, CREAM)
+		b.add_theme_color_override("font_disabled_color", Color(0, 0, 0, 0))
 		b.pressed.connect(func() -> void:
 			b.disabled = true
-			b.text = "OK!"
 			_set_ready(slot))
 		h.add_child(b)
 		_cards[slot]["button"] = b
-	return card
+	return wrap
 
 
-func _card_style(col: Color, ready_: bool) -> StyleBoxFlat:
-	var s := _box(Color(0.02, 0.12, 0.14, 0.9) if not ready_ else Color(0.04, 0.24, 0.18, 0.92),
-		GREEN if ready_ else Color(col, 0.7), 4 if ready_ else 2, 24)
-	s.set_content_margin_all(20)
-	s.content_margin_left = 26
-	return s
+## 양피지 위 점선 뱃길과 보물 X
+func _draw_map_path(c: Control) -> void:
+	var s := c.size
+	if s.x < 50:
+		return
+	var a := Vector2(s.x * 0.05, s.y * 0.95)
+	var ctl := Vector2(s.x * 0.35, s.y * 0.62)
+	var b := Vector2(s.x * 0.62, s.y * 0.9)
+	var prev := a
+	for i in range(1, 41):
+		var t := i / 40.0
+		var p := a.lerp(ctl, t).lerp(ctl.lerp(b, t), t)
+		if i % 2 == 0:
+			c.draw_line(prev, p, Color(INK, 0.45), 3.0, true)
+		prev = p
+	var x := b + Vector2(16, 0)
+	var r := 13.0
+	c.draw_line(x + Vector2(-r, -r), x + Vector2(r, r), Color(INK_RED, 0.8), 6.0, true)
+	c.draw_line(x + Vector2(-r, r), x + Vector2(r, -r), Color(INK_RED, 0.8), 6.0, true)
 
 
 func _set_ready(slot: int) -> void:
@@ -283,14 +378,21 @@ func _set_ready(slot: int) -> void:
 	_ready_state[slot] = true
 	var c: Dictionary = _cards[slot]
 	var st: Label = c["status"]
-	st.text = "READY!"
-	st.add_theme_color_override("font_color", GREEN)
-	var panel: PanelContainer = c["panel"]
-	panel.add_theme_stylebox_override("panel", _card_style(c["color"], true))
+	st.text = "Aye, ready!"
+	# 도장 꽝!
+	var stamp: Control = c["stamp"]
+	stamp.visible = true
+	stamp.scale = Vector2.ONE * 2.2
+	stamp.modulate.a = 0.0
+	var t := create_tween().set_parallel(true)
+	t.tween_property(stamp, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.tween_property(stamp, "modulate:a", 1.0, 0.1)
+	var panel: Control = c["panel"]
 	panel.pivot_offset = panel.size * 0.5
-	var t := create_tween()
-	t.tween_property(panel, "scale", Vector2.ONE * 1.07, 0.08)
-	t.tween_property(panel, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK)
+	var t2 := create_tween()
+	t2.tween_interval(0.15)
+	t2.tween_property(panel, "scale", Vector2.ONE * 0.96, 0.05)
+	t2.tween_property(panel, "scale", Vector2.ONE, 0.15).set_trans(Tween.TRANS_BACK)
 	Audio.play("toggle_on")
 
 
@@ -362,17 +464,19 @@ func _mouse_icon() -> Control:
 	c.draw.connect(func() -> void:
 		var r := Rect2(10, 6, 70, 108)
 		var body := StyleBoxFlat.new()
-		body.bg_color = Color(0.9, 0.95, 0.95)
+		body.bg_color = Color(0.93, 0.86, 0.7)
+		body.border_color = INK
+		body.set_border_width_all(3)
 		body.set_corner_radius_all(34)
 		body.anti_aliasing = true
 		c.draw_style_box(body, r)
 		var left := StyleBoxFlat.new()
-		left.bg_color = GOLD if int(_t * 2.5) % 2 == 0 else Color(GOLD, 0.45)
+		left.bg_color = INK_RED if int(_t * 2.5) % 2 == 0 else Color(INK_RED, 0.4)
 		left.corner_radius_top_left = 34
 		left.anti_aliasing = true
 		c.draw_style_box(left, Rect2(10, 6, 34, 46))
-		c.draw_line(Vector2(45, 6), Vector2(45, 52), Color(0.4, 0.5, 0.5), 3)
-		c.draw_line(Vector2(10, 52), Vector2(80, 52), Color(0.4, 0.5, 0.5), 3))
+		c.draw_line(Vector2(45, 6), Vector2(45, 52), INK, 3)
+		c.draw_line(Vector2(10, 52), Vector2(80, 52), INK, 3))
 	c.set_process(true)
 	var tm := Timer.new()
 	tm.wait_time = 0.2
@@ -389,13 +493,13 @@ func _keys_icon(keys: Array) -> Control:
 	var pos := [Vector2(58, 2), Vector2(2, 60), Vector2(58, 60), Vector2(114, 60)]
 	for i in 4:
 		var k := PanelContainer.new()
-		var st := _box(Color(0.9, 0.95, 0.95), Color(0.5, 0.6, 0.6), 0, 10)
+		var st := _box(Color(0.93, 0.86, 0.7), INK, 2, 8)
 		st.border_width_bottom = 6
 		k.add_theme_stylebox_override("panel", st)
 		k.position = pos[i]
 		k.size = Vector2(54, 54)
 		k.custom_minimum_size = Vector2(54, 54)
-		var l := _label(keys[i], 26, DEEP)
+		var l := _ink(keys[i], 26, INK)
 		l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
