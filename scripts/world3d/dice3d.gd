@@ -6,6 +6,8 @@ extends Node3D
 
 const MeshKit := preload("res://scripts/world3d/mesh_kit.gd")
 const ATLAS := preload("res://textures/dice/dice_atlas.png")
+const NORMAL := preload("res://textures/dice/dice_normal.png")
+const ROUGH := preload("res://textures/dice/dice_rough.png")
 const SIZE := 1.15
 
 ## 눈 n 이 위(+Y)로 오게 하는 회전
@@ -29,18 +31,40 @@ var _anchor := Vector3.ZERO
 
 func _ready() -> void:
 	_body = MeshInstance3D.new()
-	_body.mesh = MeshKit.rounded_box(Vector3.ONE * SIZE, SIZE * 0.17, true, 4)
+	_body.mesh = MeshKit.rounded_box(Vector3.ONE * SIZE, SIZE * 0.17, true, 6)
+	# 오래된 상아 주사위: 결·긁힘·드릴로 판 눈(노멀맵), 잉크 부분은 번들, 표면은 반들반들 (클리어코트)
 	var m := StandardMaterial3D.new()
-	m.albedo_texture = ATLAS
-	m.roughness = 0.22
+	m.albedo_texture = _mip(ATLAS)
+	m.normal_enabled = true
+	m.normal_texture = _mip(NORMAL)
+	m.normal_scale = 1.4
+	m.roughness_texture = _mip(ROUGH)
+	m.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
+	m.roughness = 1.0
 	m.metallic_specular = 0.6
+	m.clearcoat_enabled = true
+	m.clearcoat = 0.45
+	m.clearcoat_roughness = 0.25
+	m.subsurf_scatter_enabled = true
+	m.subsurf_scatter_strength = 0.25
 	m.rim_enabled = true
-	m.rim = 0.25
+	m.rim = 0.2
+	m.rim_tint = 0.6
 	m.emission_enabled = true
-	m.emission = Color(0.12, 0.16, 0.15)
+	m.emission = Color(0.1, 0.12, 0.1)
 	_body.material_override = m
 	add_child(_body)
 	visible = false
+
+
+static func _mip(t: Texture2D) -> Texture2D:
+	var img := t.get_image()
+	if img == null:
+		return t
+	if img.is_compressed():
+		img.decompress()
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 func _process(delta: float) -> void:
@@ -83,10 +107,44 @@ func roll_to(n: int) -> void:
 	var tw := create_tween()
 	tw.tween_method(func(f: float) -> void: _body.basis = Basis(from.slerp(to, f)), 0.0, 1.0, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	await tw.finished
+	_sparkle()
 	var pop := create_tween()
 	pop.tween_property(self, "scale", Vector3.ONE * 1.25, 0.1)
 	pop.tween_property(self, "scale", Vector3.ONE, 0.18).set_trans(Tween.TRANS_BACK)
 	await pop.finished
+
+
+## 숫자가 정해지는 순간 금빛 반짝이가 톡 터짐
+func _sparkle() -> void:
+	var p := CPUParticles3D.new()
+	p.one_shot = true
+	p.amount = 26
+	p.lifetime = 0.7
+	p.explosiveness = 0.95
+	p.direction = Vector3.UP
+	p.spread = 180.0
+	p.initial_velocity_min = 1.5
+	p.initial_velocity_max = 3.2
+	p.gravity = Vector3(0, -2.5, 0)
+	p.scale_amount_min = 0.5
+	p.scale_amount_max = 1.0
+	var q := SphereMesh.new()
+	q.radius = 0.05
+	q.height = 0.1
+	q.radial_segments = 6
+	q.rings = 3
+	var mm := StandardMaterial3D.new()
+	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mm.albedo_color = Color(1.0, 0.85, 0.4)
+	q.material = mm
+	p.mesh = q
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	p.color_ramp = g
+	add_child(p)
+	p.emitting = true
+	p.finished.connect(p.queue_free)
 
 
 func hide_dice() -> void:

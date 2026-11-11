@@ -60,6 +60,8 @@ static func rounded_box(size: Vector3, radius: float, atlas: bool = false, edge_
 					st.add_index(i0); st.add_index(i1); st.add_index(i2)
 					st.add_index(i0); st.add_index(i2); st.add_index(i3)
 		base += w * cv.size()
+	if atlas:
+		st.generate_tangents()    # 주사위 노멀맵용
 	return st.commit()
 
 
