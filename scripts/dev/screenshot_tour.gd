@@ -148,10 +148,12 @@ func _run() -> void:
 	await _sec(0.5)
 	await _idle(m)
 	# 상자 열리는 연출 (실제로 들어가지는 않고 연출만)
+	var ui_root := m._pages["board"].get_parent() as Control
+	ui_root.hide()
 	var fx: Control = preload("res://scripts/ui/box_open_fx.gd").new()
 	m.add_child(fx)
 	fx.play(m._board_big.box, m._board_box_rect())
-	await _sec(1.0)
+	await _sec(0.5)
 	fx.freeze = true
 	await _shot("08_box_shake")
 	fx.freeze = false
@@ -166,6 +168,7 @@ func _run() -> void:
 	while fx._t >= 0.0:
 		await get_tree().process_frame
 	fx.queue_free()
+	ui_root.show()
 	m._go_back()
 	await _settle(m, "lobby")
 	m._go_back()

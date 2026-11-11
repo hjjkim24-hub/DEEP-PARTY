@@ -794,7 +794,8 @@ func _on_board_play() -> void:
 		# 상자가 덜덜 떨리다 팍 열리고, 쏟아지는 빛 속으로 빨려 들어감
 		var ui := _pages["board"].get_parent() as Control
 		var tw := create_tween()
-		tw.tween_property(ui, "modulate:a", 0.0, 0.3)
+		tw.tween_property(ui, "modulate:a", 0.0, 0.18)
+		tw.tween_callback(ui.hide)
 		var fx := BoxOpenFx.new()
 		add_child(fx)
 		move_child(fx, _fade.get_index())

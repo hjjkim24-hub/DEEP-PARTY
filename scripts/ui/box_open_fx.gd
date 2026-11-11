@@ -5,6 +5,8 @@ extends Control
 
 signal finished
 
+const LightShader := preload("res://shaders/box_light.gdshader")
+
 const IMG := Vector2(963, 665)            ## 상자 그림 크기 (tools/render_boardbox.py)
 ## 상자 윗면 네 꼭짓점 (그림 좌표): 왼쪽, 뒤, 오른쪽, 앞
 const TOP := [Vector2(80, 268), Vector2(398, 6), Vector2(887, 152), Vector2(627, 470)]
@@ -20,6 +22,8 @@ var _rng := RandomNumberGenerator.new()
 var _sparks: Array = []                    ## [pos, vel, life, size]
 var _streaks: Array = []                   ## 빨려 들어가는 빛줄기 [angle, dist, speed, len]
 var _glow: Control
+var _light: ColorRect
+var _lm: ShaderMaterial
 var _shake := Vector2.ZERO
 var _shake_rot := 0.0
 var freeze := false                        ## 스크린샷 찍을 때 잠깐 멈춤
@@ -29,6 +33,13 @@ var _soft: GradientTexture2D               ## 부드러운 동그란 빛 (가장
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_light = ColorRect.new()
+	_light.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_light.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_lm = ShaderMaterial.new()
+	_lm.shader = LightShader
+	_light.material = _lm
+	add_child(_light)
 	_glow = Control.new()
 	_glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -100,11 +111,34 @@ func _process(delta: float) -> void:
 		st[2] *= 1.0 + delta * 3.0
 		st[1] -= st[2] * delta
 	_streaks = _streaks.filter(func(st: Array) -> bool: return st[1] > 10.0)
+	_update_light()
 	queue_redraw()
 	_glow.queue_redraw()
 	if _t >= _total():
 		_t = -1.0
 		finished.emit()
+
+
+func _update_light() -> void:
+	var z := _zoom()
+	_lm.set_shader_parameter("screen", size)
+	_lm.set_shader_parameter("origin", _z(_center()))
+	_lm.set_shader_parameter("scale", _rect.size.x * minf(z, 10.0))
+	if _t < SHAKE_T:
+		var k := pow(_t / SHAKE_T, 1.8)
+		_lm.set_shader_parameter("power", 1.0)
+		_lm.set_shader_parameter("core", 0.03 + 0.14 * k)
+		_lm.set_shader_parameter("rays", 0.0)
+		_lm.set_shader_parameter("spread", 0.5)
+	else:
+		var b := _t - SHAKE_T
+		var open_k := clampf(b / 0.25, 0.0, 1.0)
+		var flash := clampf(1.0 - b / 0.4, 0.0, 1.0)
+		var u := clampf((_t - SHAKE_T - BURST_T * 0.5) / SUCK_T, 0.0, 1.0)
+		_lm.set_shader_parameter("power", 1.0 + flash * 1.2 + u * u * 2.5)
+		_lm.set_shader_parameter("core", 0.5 + open_k * 0.7)
+		_lm.set_shader_parameter("rays", open_k * 1.3)
+		_lm.set_shader_parameter("spread", lerpf(0.55, 1.25, open_k) + u * 1.6)
 
 
 # ── 좌표 ─────────────────────────────────────────────────────
@@ -174,7 +208,7 @@ func _draw() -> void:
 			var a2: Vector2 = flo[i]
 			var b2: Vector2 = flo[(i + 1) % 4]
 			draw_polygon(PackedVector2Array([_z(core), _z(a2), _z(b2)]),
-				PackedColorArray([Color(1.0, 1.0, 0.95), Color(0.2, 0.75, 0.62).lerp(Color(0.7, 1.0, 0.9), bright * 0.5), Color(0.2, 0.75, 0.62).lerp(Color(0.7, 1.0, 0.9), bright * 0.5)]))
+				PackedColorArray([Color(0.95, 1.0, 0.96), Color(0.1, 0.5, 0.45).lerp(Color(0.5, 0.95, 0.85), bright * 0.6), Color(0.1, 0.5, 0.45).lerp(Color(0.5, 0.95, 0.85), bright * 0.6)]))
 		# 앞쪽 벽 윗단 (두께)
 		draw_polyline(PackedVector2Array([_z(rimp[0]), _z(rimp[3]), _z(rimp[2])]), Color(0.08, 0.36, 0.33), 6.0 * minf(_zoom(), 3.0), true)
 		# 날아가는 뚜껑 (상자 그림 통째로)
@@ -204,42 +238,23 @@ func _draw_glow() -> void:
 	var c := _center()
 	var rim := PackedVector2Array([_top(0), _top(1), _top(2), _top(3), _top(0)])
 	if _t < SHAKE_T:
-		# 뚜껑 틈으로 새는 빛 (점점 굵고 밝게)
+		# 뚜껑 틈으로 새는 빛 (가늘고 부드럽게 번짐)
 		var k := pow(_t / SHAKE_T, 1.5)
-		for i in 4:
-			var w := (2.0 + i * 5.0) * (0.4 + k)
-			_glow.draw_polyline(rim, Color(0.35, 1.0, 0.8, (0.5 - i * 0.11) * k), w, true)
-		_glow_disc(c, _rect.size.x * (0.2 + 0.25 * k), Color(0.3, 0.9, 0.75, 0.18 * k))
+		for i in 6:
+			var w := (1.5 + i * i * 2.2) * (0.5 + k)
+			_glow.draw_polyline(rim, Color(0.55, 1.0, 0.88, (0.42 - i * 0.065) * k), w, true)
 	else:
-		var b := _t - SHAKE_T
-		var z := _zoom()
-		var flash := clampf(1.0 - b / 0.35, 0.0, 1.0)
-		# 위로 뻗는 빛기둥 (부채꼴)
-		var beam_h := size.y * (0.6 + minf(b * 2.0, 0.8))
-		for i in 9:
-			var f := (float(i) + 0.5) / 9.0
-			var base := _top(0).lerp(_top(2), f).lerp(c, 0.35)
-			var spread := (f - 0.5) * size.x * 0.5
-			var wob := sin(_t * 7.0 + i * 1.7) * 0.25 + 0.75
-			var w := _rect.size.x * 0.06
-			var pts := PackedVector2Array([_z(base - Vector2(w, 0)), _z(base + Vector2(w, 0)), _z(base + Vector2(spread + w * 3.0, -beam_h)), _z(base + Vector2(spread - w * 3.0, -beam_h))])
-			var cols := PackedColorArray([Color(0.7, 1.0, 0.9, 0.55 * wob), Color(0.7, 1.0, 0.9, 0.55 * wob), Color(0.2, 0.8, 0.7, 0.0), Color(0.2, 0.8, 0.7, 0.0)])
-			_glow.draw_polygon(pts, cols)
-		# 입구에서 뿜어 나오는 빛
-		_glow_disc(_z(c), _rect.size.x * (0.45 + b * 0.6) * minf(z, 6.0), Color(0.5, 1.0, 0.85, 0.35 + flash * 0.4))
-		_glow_disc(_z(c), _rect.size.x * 0.22 * minf(z, 8.0), Color(1.0, 1.0, 0.95, 0.5))
-		# 빨려 들어가는 빛줄기
+		# 빨려 들어가는 빛줄기 (꼬리가 흐려지는 가는 선)
 		for st in _streaks:
 			var dir := Vector2.from_angle(st[0])
 			var p0: Vector2 = c + dir * float(st[1])
 			var p1: Vector2 = c + dir * (float(st[1]) + float(st[3]))
-			_glow.draw_line(p0, p1, Color(0.7, 1.0, 0.92, 0.55), 3.0, true)
-		# 터질 때 번쩍
-		if flash > 0.0:
-			_glow.draw_rect(Rect2(Vector2.ZERO, size), Color(0.6, 1.0, 0.9, flash * 0.55))
+			_glow.draw_polyline_colors(PackedVector2Array([p0, p1]), PackedColorArray([Color(0.75, 1.0, 0.94, 0.4), Color(0.2, 0.8, 0.7, 0.0)]), 2.0, true)
 	for sp in _sparks:
 		var a := clampf(float(sp[2]) / 0.7, 0.0, 1.0)
-		_glow.draw_circle(_z(sp[0]), float(sp[3]) * (0.6 + a), Color(0.6, 1.0, 0.85, a))
+		var sp_p := _z(sp[0])
+		_glow_disc(sp_p, float(sp[3]) * 4.0, Color(0.4, 1.0, 0.85, a * 0.5))
+		_glow.draw_circle(sp_p, float(sp[3]) * 0.5 * (0.6 + a), Color(1.0, 1.0, 0.95, a))
 
 
 func _glow_disc(p: Vector2, r: float, col: Color) -> void:
