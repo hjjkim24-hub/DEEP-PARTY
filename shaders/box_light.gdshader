@@ -40,8 +40,8 @@ void fragment() {
 	vec3 beam_col = mix(vec3(0.92, 1.0, 0.96), vec3(0.15, 0.72, 0.6), clamp(r / (scale * 2.2), 0.0, 1.0));
 	col += beam_col * beam * rays;
 	// 가로로 길게 뻗는 광채
-	float st = exp(-abs(d.y) / (scale * 0.01)) * exp(-abs(d.x) / (scale * 1.4));
-	col += vec3(0.65, 1.0, 0.95) * st * 0.6 * core;
+	float st = exp(-abs(d.y) / (scale * 0.006)) * exp(-abs(d.x) / (scale * 0.55));
+	col += vec3(0.65, 1.0, 0.95) * st * 0.3 * core;
 	// 빛 속을 떠오르는 먼지
 	vec2 g = (p + vec2(sin(p.y * 0.01 + TIME) * 6.0, TIME * 45.0)) / (scale * 0.05);
 	vec2 id = floor(g);
