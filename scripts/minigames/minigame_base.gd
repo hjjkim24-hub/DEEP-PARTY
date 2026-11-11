@@ -13,7 +13,7 @@ extends Control
 signal finished(ranking: Array)
 signal demo_done
 
-const UIFont := preload("res://fonts/Poppins-Bold.ttf")
+const PirateFonts := preload("res://scripts/ui/pirate_fonts.gd")
 const BackgroundScene := preload("res://scenes/underwater_background.tscn")
 const ARENA := Vector2(1920, 1080)
 const PEARL := Color("eafffa")
@@ -65,7 +65,7 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	var th := Theme.new()
-	th.default_font = UIFont
+	th.default_font = PirateFonts.body()
 	th.default_font_size = 24
 	th.set_color("font_color", "Label", PEARL)
 	theme = th

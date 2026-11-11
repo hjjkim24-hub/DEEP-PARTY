@@ -15,7 +15,7 @@ const TutorialOverlay := preload("res://scripts/ui/tutorial_overlay.gd")
 const PathArrow := preload("res://scripts/ui/path_arrow.gd")
 const PauseMenu := preload("res://scripts/ui/pause_menu.gd")
 const MinigameIntro := preload("res://scripts/minigames/minigame_intro.gd")
-const UIFont := preload("res://fonts/Poppins-Bold.ttf")
+const PirateFonts := preload("res://scripts/ui/pirate_fonts.gd")
 const CARD_TEX := preload("res://textures/tiles/card_chance.png")
 const COIN_TEX := preload("res://textures/ui/coin.png")
 const TROPHY_TEX := preload("res://textures/ui/trophy.png")
@@ -302,12 +302,13 @@ func _build_ui() -> void:
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var th := Theme.new()
-	th.default_font = UIFont
+	th.default_font = PirateFonts.body()
 	th.default_font_size = 24
 	th.set_color("font_color", "Label", PEARL)
 	root.theme = th
 	_ui.add_child(root)
 	_root = root
+	PirateFonts.watch(self)    # 큰 글씨는 해적 깃발 글씨로
 
 	_start_marker = Control.new()
 	_start_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE

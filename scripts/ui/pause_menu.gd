@@ -5,7 +5,7 @@ extends Control
 
 signal leave_requested
 
-const UIFont := preload("res://fonts/Poppins-Bold.ttf")
+const PirateFonts := preload("res://scripts/ui/pirate_fonts.gd")
 const PEARL := Color("eafffa")
 const AQUA := Color("7ff0db")
 const DEEP := Color("05302c")
@@ -21,7 +21,7 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	var th := Theme.new()
-	th.default_font = UIFont
+	th.default_font = PirateFonts.body()
 	th.default_font_size = 24
 	th.set_color("font_color", "Label", PEARL)
 	theme = th

@@ -6,7 +6,7 @@ extends Control
 
 const Minigames := preload("res://scripts/minigames/registry.gd")
 const BgShader := preload("res://shaders/mg_intro_bg.gdshader")
-const UIFont := preload("res://fonts/Poppins-Bold.ttf")
+const PirateFonts := preload("res://scripts/ui/pirate_fonts.gd")
 const ARENA := Vector2(1920, 1080)
 const PEARL := Color("eafffa")
 const AQUA := Color("7ff0db")
@@ -45,7 +45,7 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	var th := Theme.new()
-	th.default_font = UIFont
+	th.default_font = PirateFonts.body()
 	th.default_font_size = 26
 	th.set_color("font_color", "Label", PEARL)
 	theme = th
