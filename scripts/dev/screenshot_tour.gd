@@ -151,12 +151,18 @@ func _run() -> void:
 	var fx: Control = preload("res://scripts/ui/box_open_fx.gd").new()
 	m.add_child(fx)
 	fx.play(m._board_big.box, m._board_box_rect())
-	await _sec(0.9)
+	await _sec(1.0)
+	fx.freeze = true
 	await _shot("08_box_shake")
-	await _sec(0.75)
+	fx.freeze = false
+	await _sec(0.55)
+	fx.freeze = true
 	await _shot("08b_box_burst")
-	await _sec(0.75)
+	fx.freeze = false
+	await _sec(0.6)
+	fx.freeze = true
 	await _shot("08c_box_suck")
+	fx.freeze = false
 	while fx._t >= 0.0:
 		await get_tree().process_frame
 	fx.queue_free()

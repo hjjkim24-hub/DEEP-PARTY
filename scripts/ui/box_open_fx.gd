@@ -22,6 +22,8 @@ var _streaks: Array = []                   ## 빨려 들어가는 빛줄기 [ang
 var _glow: Control
 var _shake := Vector2.ZERO
 var _shake_rot := 0.0
+var freeze := false                        ## 스크린샷 찍을 때 잠깐 멈춤
+var _soft: GradientTexture2D               ## 부드러운 동그란 빛 (가장자리로 갈수록 투명)
 
 
 func _ready() -> void:
@@ -35,6 +37,17 @@ func _ready() -> void:
 	_glow.material = add
 	_glow.draw.connect(_draw_glow)
 	add_child(_glow)
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	g.add_point(0.35, Color(1, 1, 1, 0.55))
+	_soft = GradientTexture2D.new()
+	_soft.gradient = g
+	_soft.fill = GradientTexture2D.FILL_RADIAL
+	_soft.fill_from = Vector2(0.5, 0.5)
+	_soft.fill_to = Vector2(1.0, 0.5)
+	_soft.width = 256
+	_soft.height = 256
 
 
 func play(box: Texture2D, rect: Rect2) -> void:
@@ -50,7 +63,7 @@ func _total() -> float:
 
 
 func _process(delta: float) -> void:
-	if _t < 0.0:
+	if _t < 0.0 or freeze:
 		return
 	var prev := _t
 	_t += delta
@@ -141,10 +154,29 @@ func _draw() -> void:
 		draw_colored_polygon(PackedVector2Array([_z(F), _z(R), _z(R + down), _z(F + down)]), side_c.darkened(0.3))
 		# 옆면 금테
 		draw_polyline(PackedVector2Array([_z(L), _z(F), _z(R)]), Color(0.95, 0.8, 0.4), 3.0 * minf(_zoom(), 3.0), true)
-		var inner := PackedVector2Array()
+		# 상자 안: 안쪽 벽 (뒤쪽 두 벽이 보임) + 빛이 차오르는 바닥
+		var inset := 0.1
+		var cc := _center()
+		var rimp: Array = []
+		var flo: Array = []
 		for i in 4:
-			inner.append(_z(_top(i)))
-		draw_colored_polygon(inner, Color(0.85, 1.0, 0.95))
+			var tp: Vector2 = _top(i)
+			rimp.append(tp)
+			flo.append(tp.lerp(cc, inset) + down * 0.9)
+		var wall_c := Color(0.05, 0.28, 0.26)
+		# 뒤쪽 벽 (왼쪽-뒤, 뒤-오른쪽)
+		draw_colored_polygon(PackedVector2Array([_z(rimp[0]), _z(rimp[1]), _z(flo[1]), _z(flo[0])]), wall_c.lightened(0.15))
+		draw_colored_polygon(PackedVector2Array([_z(rimp[1]), _z(rimp[2]), _z(flo[2]), _z(flo[1])]), wall_c)
+		# 바닥: 가운데가 하얗게 빛나는 그라데이션
+		var core: Vector2 = (flo[0] + flo[1] + flo[2] + flo[3]) * 0.25
+		var bright := clampf(b / 0.25, 0.0, 1.0)
+		for i in 4:
+			var a2: Vector2 = flo[i]
+			var b2: Vector2 = flo[(i + 1) % 4]
+			draw_polygon(PackedVector2Array([_z(core), _z(a2), _z(b2)]),
+				PackedColorArray([Color(1.0, 1.0, 0.95), Color(0.2, 0.75, 0.62).lerp(Color(0.7, 1.0, 0.9), bright * 0.5), Color(0.2, 0.75, 0.62).lerp(Color(0.7, 1.0, 0.9), bright * 0.5)]))
+		# 앞쪽 벽 윗단 (두께)
+		draw_polyline(PackedVector2Array([_z(rimp[0]), _z(rimp[3]), _z(rimp[2])]), Color(0.08, 0.36, 0.33), 6.0 * minf(_zoom(), 3.0), true)
 		# 날아가는 뚜껑 (상자 그림 통째로)
 		if b < BURST_T + 0.4:
 			var u := clampf(b / (BURST_T + 0.4), 0.0, 1.0)
@@ -211,9 +243,7 @@ func _draw_glow() -> void:
 
 
 func _glow_disc(p: Vector2, r: float, col: Color) -> void:
-	for i in 10:
-		var f := 1.0 - float(i) / 10.0
-		_glow.draw_circle(p, r * f, Color(col, col.a * 0.16))
+	_glow.draw_texture_rect(_soft, Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0), false, col)
 
 
 func _spawn_burst() -> void:
