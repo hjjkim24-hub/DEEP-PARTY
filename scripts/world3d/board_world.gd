@@ -2662,7 +2662,7 @@ func _outer_seabed() -> void:
 				vv.y = hf.call(vv.x, vv.z)
 				q[v] = vv
 			var n1 := ((q[2] as Vector3) - (q[0] as Vector3)).cross((q[1] as Vector3) - (q[0] as Vector3)).normalized()
-			for v in [q[0], q[2], q[1], q[0], q[3], q[2]]:
+			for v in [q[0], q[1], q[2], q[0], q[2], q[3]]:
 				st.set_normal(n1)
 				st.set_uv(Vector2((v as Vector3).x, (v as Vector3).z) * 0.25)
 				st.add_vertex(v)
