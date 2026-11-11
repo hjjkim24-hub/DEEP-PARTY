@@ -59,6 +59,16 @@ func _debug_showcase() -> void:
 	await get_tree().create_timer(1.4, false).timeout
 	shot_hint = "36_map_overview"
 	await get_tree().create_timer(3.2, false).timeout
+	# 길 · 계단 이음새 가까이서 (스크린샷 확인용)
+	if world.map_id == "sunken_island":
+		var spots := {"stairs_s": Vector3(0, 3, 13.5), "stairs_w": Vector3(-18, 3, -2), "rough_e": Vector3(14, 5, -8),
+			"gangway": Vector3(-41, 1.5, 19), "junction": Vector3(0, 0, 22), "lane": Vector3(-15, 0, 19)}
+		for k in spots:
+			var at3: Vector3 = spots[k]
+			_move_camera(Vector3(at3.x, world.ground_height(at3.x, at3.z), at3.z), 1.25, 1.0)
+			await get_tree().create_timer(1.3, false).timeout
+			shot_hint = "35_detail_" + k
+			await get_tree().create_timer(3.2, false).timeout
 	for lm in world.cfg.get("landmarks", []):
 		var at: Vector2 = lm["at"]
 		_move_camera(Vector3(at.x, world.ground_height(at.x, at.y), at.y), 2.0, 1.0)

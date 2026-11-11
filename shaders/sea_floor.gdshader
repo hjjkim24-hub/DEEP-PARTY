@@ -1,9 +1,12 @@
 shader_type spatial;
 // 바다 밑 모래 바닥: 모래 결, 물결무늬, 비탈은 바위, 깊은 곳은 어둡게, 일렁이는 물빛
-uniform vec3 sand_a : source_color = vec3(0.7, 0.66, 0.52);
-uniform vec3 sand_b : source_color = vec3(0.52, 0.56, 0.44);
-uniform vec3 rock_c : source_color = vec3(0.46, 0.47, 0.44);
-uniform float caustic_strength = 0.28;
+uniform vec3 sand_a : source_color = vec3(0.6, 0.58, 0.47);
+uniform vec3 sand_b : source_color = vec3(0.43, 0.49, 0.4);
+uniform vec3 rock_c : source_color = vec3(0.38, 0.4, 0.38);
+uniform float caustic_strength = 0.34;
+// 길 자국(R) · 칸 둘레 그늘(G)
+uniform sampler2D path_mask : filter_linear, repeat_disable;
+uniform vec4 board_rect = vec4(-18.0, -16.0, 36.0, 32.0);
 varying vec3 wpos;
 varying vec3 wnorm;
 
@@ -19,6 +22,24 @@ float fbm(vec2 p) {
 	float a = 0.5;
 	for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; }
 	return v;
+}
+// 자갈 무늬: 가장 가까운 점까지 거리 + 그 점의 번호
+vec3 cells(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	float d1 = 8.0;
+	float d2 = 8.0;
+	vec2 id = vec2(0.0);
+	for (int y = -1; y <= 1; y++) {
+		for (int x = -1; x <= 1; x++) {
+			vec2 g = vec2(float(x), float(y));
+			vec2 o = vec2(hash(i + g), hash(i + g + 17.3)) * 0.8 + 0.1;
+			float d = length(g + o - f);
+			if (d < d1) { d2 = d1; d1 = d; id = i + g; }
+			else if (d < d2) { d2 = d; }
+		}
+	}
+	return vec3(d2 - d1, hash(id), d1);
 }
 float caustic(vec2 p, float t) {
 	float a = sin(p.x * 3.1 + sin(p.y * 2.3 + t) * 1.7 + t);
@@ -41,8 +62,25 @@ void fragment() {
 	float rip = sin(p.y * 2.4 + p.x * 0.7 + fbm(p * 0.25) * 7.0);
 	c *= 0.92 + 0.08 * rip;
 	c *= 0.9 + 0.2 * noise(p * 6.0);
+	// 다져진 길 + 군데군데 박힌 자갈
+	vec2 m = texture(path_mask, (p - board_rect.xy) / board_rect.zw).rg;
+	float edge = (fbm(p * 1.4 + 9.0) - 0.5) * 0.45;
+	float path = smoothstep(0.3, 0.62, m.r + edge);
+	vec3 cel = cells(p * 2.6);
+	float stones = smoothstep(0.04, 0.12, cel.x) * step(0.35, cel.y) * smoothstep(0.55, 0.85, m.r + edge * 0.5);
+	vec3 trod = mix(vec3(0.5, 0.47, 0.38), vec3(0.44, 0.43, 0.36), noise(p * 3.0));
+	vec3 stone_c = mix(vec3(0.56, 0.54, 0.48), vec3(0.66, 0.6, 0.5), cel.y) * (0.85 + 0.15 * noise(p * 9.0));
+	c = mix(c, trod, path * 0.8);
+	c = mix(c, stone_c, stones * 0.9);
+	c *= 1.0 - 0.18 * path * (1.0 - stones) * smoothstep(0.08, 0.0, cel.x);
+	// 칸 둘레 접지 그늘
+	c *= 1.0 - 0.38 * m.g;
+	// 비탈은 결이 있는 바위
 	float slope = 1.0 - wnorm.y;
-	c = mix(c, rock_c * (0.75 + 0.5 * fbm(p * 0.9)), smoothstep(0.22, 0.5, slope));
+	float strata = 0.82 + 0.18 * sin(wpos.y * 5.5 + fbm(p * 0.6) * 5.0);
+	vec3 rock = rock_c * (0.7 + 0.45 * fbm(p * 0.9 + wpos.y * 0.3)) * strata;
+	rock = mix(rock, vec3(0.3, 0.42, 0.32), smoothstep(0.55, 0.8, fbm(p * 0.5 + wpos.y * 0.4)) * 0.5);
+	c = mix(c, rock, smoothstep(0.2, 0.45, slope));
 	c *= 1.0 - 0.55 * smoothstep(-0.5, -5.0, wpos.y);
 	ALBEDO = c;
 	ROUGHNESS = 0.95;

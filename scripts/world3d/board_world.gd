@@ -326,7 +326,8 @@ func ground_height(x: float, z: float) -> float:
 	var h := natural_height(x, z)
 	if h < -1.5:
 		return h
-	# 칸 근처는 칸 높이에 맞춰 평평하게 (계단 언덕도 여기서 생김). 배 갑판 위 칸은 제외
+	# 칸 근처는 칸 높이에 맞춰 평평하게, 칸 사이 길은 두 칸 높이를 잇는 경사로로 땅을 깎거나 돋움
+	# (그래서 계단이 언덕에 박혀 있는 것처럼 자연스럽게 놓임). 배 갑판 위 칸은 제외
 	var best_w := 0.0
 	var target := 0.0
 	for i in _near(x, z):
@@ -341,6 +342,21 @@ func ground_height(x: float, z: float) -> float:
 			if w > best_w:
 				best_w = w
 				target = b.y - 0.05
+	for pair in _near_links(x, z):
+		var sa: Dictionary = spaces[pair[0]]
+		var sb: Dictionary = spaces[pair[1]]
+		if sa.get("deck", false) or sb.get("deck", false):
+			continue
+		var a: Vector3 = sa["base"]
+		var b: Vector3 = sb["base"]
+		var ab := Vector2(b.x - a.x, b.z - a.z)
+		var t := clampf(Vector2(x - a.x, z - a.z).dot(ab) / maxf(ab.length_squared(), 0.001), 0.0, 1.0)
+		var d := Vector2(x - a.x, z - a.z).distance_to(ab * t)
+		if d < 2.6:
+			var w := smoothstep(2.6, 0.9, d)
+			if w > best_w:
+				best_w = w
+				target = lerpf(a.y, b.y, t) - 0.08
 	return lerpf(h, target, best_w)
 
 
@@ -464,12 +480,12 @@ func _environment() -> void:
 	sky.sky_material = sm
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.3, 0.6, 0.6)
-	env.ambient_light_energy = 0.5
+	env.ambient_light_color = Color(0.26, 0.52, 0.56)
+	env.ambient_light_energy = 0.42
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 0.88
+	env.tonemap_exposure = 0.8
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.05, 0.3, 0.33)
+	env.fog_light_color = Color(0.03, 0.22, 0.27)
 	env.fog_density = float(cfg.get("fog", 0.012))
 	env.fog_sky_affect = 0.3
 	env.glow_enabled = true
@@ -477,15 +493,15 @@ func _environment() -> void:
 	env.glow_bloom = 0.04
 	env.ssao_enabled = true
 	env.ssao_radius = 1.2
-	env.ssao_intensity = 1.6
+	env.ssao_intensity = 2.0
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.18
-	env.adjustment_contrast = 1.05
+	env.adjustment_saturation = 1.1
+	env.adjustment_contrast = 1.12
 	we.environment = env
 	add_child(we)
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-58, -32, 0)
-	sun.light_energy = 1.15
+	sun.light_energy = 1.0
 	sun.light_color = Color(1.0, 0.96, 0.86)
 	sun.light_angular_distance = 1.5
 	sun.shadow_enabled = true
@@ -537,7 +553,62 @@ func _floor() -> void:
 			st.add_index(c)
 	var m := ShaderMaterial.new()
 	m.shader = FloorShader
+	m.set_shader_parameter("path_mask", _path_mask())
+	m.set_shader_parameter("board_rect", Vector4(-half_w, -half_d, half_w * 2.0, half_d * 2.0))
 	_mi(st.commit(), m, Vector3.ZERO)
+
+
+## 바닥에 칠할 길 자국(R)과 칸 둘레 그늘(G) 그림. 1m 에 4 픽셀
+func _path_mask() -> ImageTexture:
+	const PX := 4.0
+	var w := int(half_w * 2.0 * PX)
+	var hgt := int(half_d * 2.0 * PX)
+	var data := PackedByteArray()
+	data.resize(w * hgt * 2)
+	data.fill(0)
+	var done := {}
+	for i in spaces.size():
+		var a: Vector3 = spaces[i]["base"]
+		# 칸 둘레 그늘 (칸 방향으로 돌린 네모)
+		var half := (PLAZA * 0.5 + 0.3) if spaces[i]["kind"] == "start" else (TILE * 0.5 + 0.18)
+		var yaw: float = spaces[i]["yaw"]
+		var cs := cos(yaw)
+		var sn := sin(yaw)
+		var reach := half * 1.42 + 0.8
+		for py in range(maxi(0, int((a.z - reach + half_d) * PX)), mini(hgt, int((a.z + reach + half_d) * PX) + 1)):
+			for px in range(maxi(0, int((a.x - reach + half_w) * PX)), mini(w, int((a.x + reach + half_w) * PX) + 1)):
+				var dx := (px + 0.5) / PX - half_w - a.x
+				var dz := (py + 0.5) / PX - half_d - a.z
+				var lx := absf(dx * cs - dz * sn)
+				var lz := absf(dx * sn + dz * cs)
+				var db := maxf(lx, lz) - half
+				var v := int(255.0 * smoothstep(0.8, -0.05, db))
+				var k := (py * w + px) * 2 + 1
+				if v > data[k]:
+					data[k] = v
+		for j in spaces[i]["links"]:
+			var key := "%d_%d" % [mini(i, j), maxi(i, j)]
+			if done.has(key):
+				continue
+			done[key] = true
+			var b: Vector3 = spaces[j]["base"]
+			if spaces[i].get("deck", false) and spaces[j].get("deck", false):
+				continue
+			var a2 := Vector2(a.x, a.z)
+			var ab := Vector2(b.x, b.z) - a2
+			var lo := Vector2(minf(a.x, b.x), minf(a.z, b.z)) - Vector2(1.8, 1.8)
+			var hi := Vector2(maxf(a.x, b.x), maxf(a.z, b.z)) + Vector2(1.8, 1.8)
+			for py in range(maxi(0, int((lo.y + half_d) * PX)), mini(hgt, int((hi.y + half_d) * PX) + 1)):
+				for px in range(maxi(0, int((lo.x + half_w) * PX)), mini(w, int((hi.x + half_w) * PX) + 1)):
+					var q := Vector2((px + 0.5) / PX - half_w, (py + 0.5) / PX - half_d)
+					var t := clampf((q - a2).dot(ab) / maxf(ab.length_squared(), 0.001), 0.0, 1.0)
+					var d := (q - a2).distance_to(ab * t)
+					var v := int(255.0 * smoothstep(1.6, 0.7, d))
+					var k := (py * w + px) * 2
+					if v > data[k]:
+						data[k] = v
+	var img := Image.create_from_data(w, hgt, false, Image.FORMAT_RG8, data)
+	return ImageTexture.create_from_image(img)
 
 
 func _board_rim() -> void:
@@ -593,7 +664,7 @@ func _rbox(size: Vector3, r: float) -> ArrayMesh:
 
 
 func _tiles() -> void:
-	var foot_m := _mat(Color(0.76, 0.72, 0.62), 0.55)
+	var foot_m := _mat(Color(0.6, 0.57, 0.5), 0.7)
 	var gold := _mat(Color(0.95, 0.76, 0.34), 0.25, 0.85)
 	var stud := SphereMesh.new()
 	stud.radius = 0.08
@@ -616,7 +687,7 @@ func _tiles() -> void:
 					stud_x.append(Transform3D(Basis(), base + b * Vector3(cx * (PLAZA * 0.5 + 0.15), 0.21, cz * (PLAZA * 0.5 + 0.15))))
 			continue
 		var size := TILE + (0.2 if kind == "junction" else 0.0)
-		var body_c: Color = Color(0.93, 0.93, 0.88) if kind == "junction" else (TILE_COLORS[kind] as Color).darkened(0.2)
+		var body_c: Color = Color(0.82, 0.82, 0.77) if kind == "junction" else (TILE_COLORS[kind] as Color).darkened(0.2)
 		# 유약 바른 도자기 같은 칸 몸통 + 크림색 받침 + 금 장식
 		sp["body_mi"] = _mi(_rbox(Vector3(size, TILE_H, size), 0.15), _mat(body_c, 0.25), base + Vector3(0, TILE_H * 0.5, 0), b)
 		_mi(_rbox(Vector3(size + 0.36, 0.16, size + 0.36), 0.07), foot_m, base + Vector3(0, 0.08, 0), b)
@@ -637,19 +708,22 @@ func _tiles() -> void:
 
 # ── 길 (돌길 / 계단 / 다리 / 징검다리) ────────────────────────
 func _connectors() -> void:
-	var cobble := _mat(Color(0.7, 0.66, 0.55), 0.85)
-	var step_m := _mat(Color(0.74, 0.71, 0.62), 0.6)
-	var pebble_cols := [Color(0.82, 0.78, 0.7), Color(0.9, 0.7, 0.64), Color(0.62, 0.8, 0.78), Color(0.74, 0.68, 0.84)]
-	var pebble := SphereMesh.new()
-	pebble.radius = 0.13
-	pebble.height = 0.12
-	pebble.radial_segments = 12
-	pebble.rings = 6
+	var step_ms := [_mat(Color(0.62, 0.6, 0.53), 0.75), _mat(Color(0.57, 0.56, 0.5), 0.8), _mat(Color(0.66, 0.62, 0.54), 0.7)]
+	var curb_m := _mat(Color(0.5, 0.5, 0.45), 0.85)
+	var moss := _mat(Color(0.3, 0.47, 0.33), 0.95)
 	var wood := _mat(Color(0.48, 0.33, 0.2), 0.8)
 	var rope := _mat(Color(0.78, 0.68, 0.48), 0.9)
+	var lantern_glow := _glow_mat(Color(0.4, 1.0, 0.8), 1.6)
+	var flag := CylinderMesh.new()       # 길에 반쯤 묻힌 납작한 판석
+	flag.top_radius = 0.5
+	flag.bottom_radius = 0.46
+	flag.height = 0.14
+	flag.radial_segments = 7
+	flag.rings = 1
+	var flag_cols := [Color(0.6, 0.58, 0.51), Color(0.68, 0.63, 0.53), Color(0.53, 0.55, 0.5), Color(0.64, 0.6, 0.56)]
+	var fl_x := []
+	var fl_c := []
 	var done := {}
-	var peb_x := []
-	var peb_c := []
 	for i in spaces.size():
 		for j in spaces[i]["links"]:
 			var key := "%d_%d" % [mini(i, j), maxi(i, j)]
@@ -658,8 +732,8 @@ func _connectors() -> void:
 			done[key] = true
 			var a: Vector3 = spaces[i]["base"]
 			var b: Vector3 = spaces[j]["base"]
-			var ra := PLAZA * 0.5 if spaces[i]["kind"] == "start" else TILE * 0.5
-			var rb := PLAZA * 0.5 if spaces[j]["kind"] == "start" else TILE * 0.5
+			var ra := PLAZA * 0.5 if spaces[i]["kind"] == "start" else TILE * 0.5 + 0.18
+			var rb := PLAZA * 0.5 if spaces[j]["kind"] == "start" else TILE * 0.5 + 0.18
 			var flat := Vector3(b.x - a.x, 0, b.z - a.z)
 			var dist := flat.length()
 			var dir := flat / dist
@@ -679,38 +753,85 @@ func _connectors() -> void:
 					_bridge(p0, p1, bas, glen, wood, rope)
 				# 아니면 징검다리 — 아무것도 없이 뚝 떨어져 있음
 				continue
+			var deck_link: bool = spaces[i].get("deck", false) or spaces[j].get("deck", false)
+			if deck_link:
+				if absf(dy) > 0.2:
+					_gangway(p0, p1, a.y + 0.05, b.y + 0.05, bas, glen, wood, rope)
+				continue    # 갑판 위 칸끼리는 갑판 널빤지가 길
 			var rough_link: bool = spaces[i].get("rough", false) or spaces[j].get("rough", false)
 			if rough_link:
 				_rough_link(p0, p1, a.y + TILE_H, b.y + TILE_H, bas, glen)
 				continue
 			if absf(dy) > 0.3:
-				var n := maxi(2, int(ceil(absf(dy) / 0.28)))
+				# 경사로에 박힌 돌계단 (땅도 같은 경사로 깎여 있음) + 양옆 낮은 돌턱
+				var n := maxi(2, int(ceil(absf(dy) / 0.26)))
 				for s in n:
 					var f := (float(s) + 0.5) / n
 					var pos := p0.lerp(p1, f)
-					var top := lerpf(a.y + TILE_H, b.y + TILE_H, (float(s) + 1.0) / n) if dy > 0 else lerpf(a.y + TILE_H, b.y + TILE_H, float(s) / n)
-					var low := minf(a.y, b.y) - 0.3
+					var top := lerpf(a.y + TILE_H * 0.6, b.y + TILE_H * 0.6, (float(s) + 1.0) / n) if dy > 0 else lerpf(a.y + TILE_H * 0.6, b.y + TILE_H * 0.6, float(s) / n)
+					var ramp := lerpf(a.y, b.y, f)
+					var low := minf(ramp, top) - 0.45
 					var hgt := top - low
-					_mi(_rbox(Vector3(1.6, hgt, glen / n + 0.02), 0.05), step_m, Vector3(pos.x, low + hgt * 0.5, pos.z), bas)
+					var w := 1.55 + _rng.randf_range(-0.06, 0.06)
+					var sb := bas.rotated(Vector3.UP, _rng.randf_range(-0.03, 0.03))
+					_mi(_rbox(Vector3(w, hgt, glen / n + 0.04), 0.05), step_ms[s % step_ms.size()], Vector3(pos.x, low + hgt * 0.5, pos.z), sb)
+					if _rng.randf() < 0.25:
+						_mi(_rbox(Vector3(0.4, 0.03, glen / n * 0.7), 0.01), moss, Vector3(pos.x, top + 0.01, pos.z) + bas.x * _rng.randf_range(-0.5, 0.5), sb)
+				var slope_len := Vector3(gap.x, dy, gap.z).length()
+				var pitch := -atan2(dy, glen)
+				for sd: float in [-1.0, 1.0]:
+					var cpos := mid + bas.x * sd * 0.92 + Vector3(0, (a.y + b.y) * 0.5 - mid.y + TILE_H * 0.4, 0)
+					_mi(_rbox(Vector3(0.32, 0.5, slope_len + 0.2), 0.08), curb_m, cpos, bas * Basis(Vector3(1, 0, 0), pitch))
+				# 높은 계단 아래위에는 작은 돌 등불
+				if absf(dy) > 1.2:
+					for e: float in [0.12, 0.88]:
+						var lp: Vector3 = p0.lerp(p1, e) + bas.x * 1.3
+						var gy := ground_height(lp.x, lp.z)
+						_mi(_cyl(0.11, 0.15, 0.7, 8), curb_m, Vector3(lp.x, gy + 0.35, lp.z))
+						_mi(_rbox(Vector3(0.34, 0.3, 0.34), 0.06), curb_m, Vector3(lp.x, gy + 0.85, lp.z))
+						var orb := SphereMesh.new()
+						orb.radius = 0.1
+						orb.height = 0.2
+						_mi(orb, lantern_glow, Vector3(lp.x, gy + 0.85, lp.z))
+						_block(Vector2(lp.x, lp.z), 0.4)
 				continue
-			# 평범한 자갈길
-			var y := (a.y + b.y) * 0.5 + 0.08
-			_mi(_rbox(Vector3(1.2, 0.14, glen + 0.1), 0.06), cobble, Vector3(mid.x, y, mid.z), bas)
-			# 길 양옆 동글동글 조약돌
-			for s in int(glen / 0.42):
-				var f := (float(s) + 0.5) / int(glen / 0.42)
-				var pp := p0.lerp(p1, f)
-				for side in [-0.7, 0.7]:
-					var off: Vector3 = bas.x * (side + _rng.randf_range(-0.04, 0.04))
-					var sc := _rng.randf_range(0.8, 1.15)
-					peb_x.append(Transform3D(Basis().scaled(Vector3.ONE * sc), Vector3(pp.x + off.x, y + 0.04, pp.z + off.z)))
-					peb_c.append(pebble_cols[_rng.randi() % pebble_cols.size()])
-
-	if peb_x.size() > 0:
+			# 평평한 길: 다져진 길 자국은 바닥 셰이더가 그림. 여기엔 땅에 반쯤 묻힌 판석만 몇 개
+			var cnt := maxi(1, int(glen / 0.9))
+			for s in cnt:
+				if _rng.randf() < 0.3:
+					continue
+				var f := (float(s) + _rng.randf_range(0.25, 0.75)) / cnt
+				var pp := p0.lerp(p1, f) + bas.x * _rng.randf_range(-0.35, 0.35)
+				var gy := ground_height(pp.x, pp.z)
+				var sc := _rng.randf_range(0.55, 0.95)
+				var tb := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(sc * _rng.randf_range(0.8, 1.2), 1.0, sc))
+				fl_x.append(Transform3D(tb, Vector3(pp.x, gy - 0.035, pp.z)))
+				fl_c.append(flag_cols[_rng.randi() % flag_cols.size()])
+	if fl_x.size() > 0:
 		var vm := StandardMaterial3D.new()
 		vm.vertex_color_use_as_albedo = true
-		vm.roughness = 0.35
-		_multi(pebble, vm, peb_x, peb_c)
+		vm.roughness = 0.8
+		_multi(flag, vm, fl_x, fl_c)
+
+
+## 배로 오르내리는 나무 발판 (널빤지 + 밧줄 난간)
+func _gangway(p0: Vector3, p1: Vector3, y0: float, y1: float, bas: Basis, glen: float, wood: Material, rope: Material) -> void:
+	var n := maxi(3, int(glen / 0.45))
+	var pitch := -atan2(y1 - y0, glen)
+	var pb := bas * Basis(Vector3(1, 0, 0), pitch)
+	for s in n:
+		var f := (float(s) + 0.5) / n
+		var pos := p0.lerp(p1, f)
+		_mi(_box(Vector3(1.3, 0.08, glen / n * 0.85)), wood, Vector3(pos.x, lerpf(y0, y1, f), pos.z), pb)
+	for sd: float in [-1.0, 1.0]:
+		var c := (p0 + p1) * 0.5 + bas.x * sd * 0.62
+		_mi(_box(Vector3(0.1, 0.12, Vector3(glen, y1 - y0, 0).length())), wood, Vector3(c.x, (y0 + y1) * 0.5 - 0.06, c.z), pb)
+		for e: float in [0.0, 1.0]:
+			var q := p0.lerp(p1, e) + bas.x * sd * 0.62
+			var y := lerpf(y0, y1, e)
+			var gy := ground_height(q.x, q.z)
+			_mi(_cyl(0.06, 0.07, y - gy + 0.8, 8), wood, Vector3(q.x, (y + 0.8 + gy) * 0.5, q.z))
+		_mi(_cyl(0.025, 0.025, Vector3(glen, y1 - y0, 0).length(), 6), rope, Vector3(c.x, (y0 + y1) * 0.5 + 0.72, c.z), pb * Basis(Vector3(1, 0, 0), PI / 2))
 
 
 ## 험한 길: 울퉁불퉁한 바위 디딤돌이 칸 사이를 이어 줌 (높이 차가 크면 바위 계단)
@@ -746,7 +867,7 @@ func _bridge(p0: Vector3, p1: Vector3, bas: Basis, glen: float, wood: Material, 
 
 # ── 볼거리 ───────────────────────────────────────────────────
 func _landmarks() -> void:
-	var stone := _mat(Color(0.9, 0.88, 0.8), 0.45)
+	var stone := _mat(Color(0.76, 0.74, 0.67), 0.6)
 	var moss := _mat(Color(0.36, 0.6, 0.38), 0.9)
 	var sp0 := start_pos
 	# START 광장 둘레 부서진 기둥
@@ -840,7 +961,7 @@ func _landmarks() -> void:
 
 # ── 맵 볼거리: 신전 · 문 · 난파선 · 고래 뼈 · 거대 조개 ─────────
 func _temple(at: Vector2, r: float) -> void:
-	var stone := _mat(Color(0.9, 0.87, 0.78), 0.5)
+	var stone := _mat(Color(0.76, 0.74, 0.66), 0.6)
 	var dark := _mat(Color(0.7, 0.68, 0.6), 0.6)
 	var moss := _mat(Color(0.34, 0.58, 0.4), 0.9)
 	for q in 4:
@@ -905,7 +1026,7 @@ func _gate(at0: Vector2) -> void:
 	var gdir: Vector2 = snap[1]
 	var gside := Vector3(gdir.y, 0, -gdir.x)
 	var gb := Basis(Vector3.UP, atan2(gdir.x, gdir.y))
-	var stone := _mat(Color(0.88, 0.85, 0.76), 0.5)
+	var stone := _mat(Color(0.74, 0.72, 0.64), 0.6)
 	var gold := _mat(Color(0.95, 0.76, 0.34), 0.25, 0.85)
 	var top := 0.0
 	for side: float in [-1.0, 1.0]:
@@ -1042,7 +1163,7 @@ func _shipwreck(at: Vector2, length: float, deck: float) -> void:
 
 
 func _whale(at: Vector2, dir: Vector2) -> void:
-	var bone := _mat(Color(0.93, 0.9, 0.82), 0.55)
+	var bone := _mat(Color(0.84, 0.81, 0.73), 0.6)
 	var axis := Vector3(dir.x, 0, dir.y).normalized()
 	var side := Vector3(-axis.z, 0, axis.x)
 	var yaw := atan2(axis.x, axis.z)
@@ -1164,8 +1285,8 @@ func _light(p: Vector3, c: Color, energy: float, rng_: float) -> void:
 
 ## 무너진 바닷속 마을: 돌집 몇 채 + 우물 + 낮은 돌담
 func _village(at: Vector2) -> void:
-	var stone := _mat(Color(0.82, 0.78, 0.68), 0.75)
-	var stone2 := _mat(Color(0.7, 0.68, 0.6), 0.8)
+	var stone := _mat(Color(0.72, 0.68, 0.6), 0.8)
+	var stone2 := _mat(Color(0.6, 0.58, 0.52), 0.85)
 	var roof := _mat(Color(0.78, 0.38, 0.26), 0.7)
 	var dark := _mat(Color(0.05, 0.07, 0.08), 1.0)
 	var moss := _mat(Color(0.32, 0.56, 0.38), 0.9)
@@ -1826,6 +1947,26 @@ func _seagrass() -> void:
 			var sc := _rng.randf_range(0.7, 1.3)
 			var t := Transform3D(Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3.ONE * sc), Vector3(x, y - 0.03, z))
 			lists[_rng.randi() % 3].append(t)
+	# 길가 풀 (길 가장자리를 따라 듬성듬성)
+	for i in spaces.size():
+		var a: Vector3 = spaces[i]["base"]
+		for j in spaces[i]["links"]:
+			if j < i:
+				continue
+			var b: Vector3 = spaces[j]["base"]
+			var dir := Vector3(b.x - a.x, 0, b.z - a.z)
+			if dir.length() < 0.1:
+				continue
+			var side := Vector3(dir.z, 0, -dir.x).normalized()
+			for k in 3:
+				var p := a.lerp(b, _rng.randf_range(0.2, 0.8)) + side * (1.0 if _rng.randf() < 0.5 else -1.0) * _rng.randf_range(1.7, 2.3)
+				if not _free_spot(p.x, p.z, 0.1):
+					continue
+				var y := ground_height(p.x, p.z)
+				if y < -1.0:
+					continue
+				var sc := _rng.randf_range(0.5, 0.95)
+				lists[_rng.randi() % 3].append(Transform3D(Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3.ONE * sc), Vector3(p.x, y - 0.03, p.z)))
 	for i in 3:
 		if lists[i].size() > 0:
 			_multi(meshes[i], m, lists[i])
@@ -2023,6 +2164,52 @@ func _decor() -> void:
 			if _free_spot(x, zz, 0.4):
 				_kelp(Vector3(x, ground_height(x, zz), zz), _rng.randf_range(3.5, 6.5))
 				break
+	# 언덕 가장자리 바위 (절벽 아래가 맨땅으로 뚝 끊기지 않게)
+	for pl in plateaus:
+		var pc: Vector2 = pl["c"]
+		var pr: Vector2 = pl["r"]
+		var pn := int((pr.x + pr.y) * 1.7)
+		for k in pn:
+			var a := TAU * k / pn + _rng.randf_range(-0.12, 0.12)
+			var f := _rng.randf_range(1.03, 1.2)
+			var x := pc.x + cos(a) * pr.x * f
+			var z := pc.y + sin(a) * pr.y * f
+			var rr := _rng.randf_range(0.45, 1.25)
+			if _free_spot(x, z, rr * 0.7):
+				_rock(Vector3(x, ground_height(x, z) - rr * 0.3, z), rr)
+				_block(Vector2(x, z), rr * 0.8)
+	# 칸 받침 모서리에 자잘한 돌 · 풀 (칸이 땅에 붙어 있는 느낌)
+	var peb := SphereMesh.new()
+	peb.radius = 0.12
+	peb.height = 0.12
+	peb.radial_segments = 10
+	peb.rings = 5
+	var peb_cols := [Color(0.6, 0.58, 0.52), Color(0.7, 0.62, 0.55), Color(0.5, 0.56, 0.52), Color(0.66, 0.64, 0.6)]
+	var px_list := []
+	var pc_list := []
+	for sp in spaces:
+		if sp["kind"] == "start" or sp.get("deck", false) or _in_chasm((sp["base"] as Vector3).x, (sp["base"] as Vector3).z):
+			continue
+		var b3: Vector3 = sp["base"]
+		var tb := Basis(Vector3.UP, sp["yaw"])
+		var half := TILE * 0.5 + 0.3
+		for corner in 4:
+			if _rng.randf() < 0.55:
+				continue
+			var cx := -1.0 if corner % 2 == 0 else 1.0
+			var cz := -1.0 if corner < 2 else 1.0
+			var cp := b3 + tb * Vector3(cx * half, 0, cz * half)
+			for q in _rng.randi_range(2, 4):
+				var o := Vector3(_rng.randf_range(-0.35, 0.35), 0, _rng.randf_range(-0.35, 0.35))
+				var pp := cp + o
+				var sc := _rng.randf_range(0.6, 1.4)
+				px_list.append(Transform3D(Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(sc, sc * 0.7, sc * 1.2)), Vector3(pp.x, ground_height(pp.x, pp.z) + 0.02, pp.z)))
+				pc_list.append(peb_cols[_rng.randi() % peb_cols.size()])
+	if px_list.size() > 0:
+		var pm := StandardMaterial3D.new()
+		pm.vertex_color_use_as_albedo = true
+		pm.roughness = 0.75
+		_multi(peb, pm, px_list, pc_list)
 	# 험한 길 옆 큰 바위들
 	for sp in spaces:
 		if not sp.get("rough", false):
