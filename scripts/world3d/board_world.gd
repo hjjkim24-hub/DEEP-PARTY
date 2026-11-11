@@ -95,6 +95,7 @@ var _blocked: Array = []      ## 장식을 놓지 않을 자리 [Vector2 중심,
 var _blocked_grid := {}
 var _spinners: Array = []     ## 빙글빙글 도는 찬스 카드 {node, base_y, phase}
 var _portal_fx: Array = []    ## 포탈 고리 {node, mat, light, phase}
+var _critters: Array = []     ## 큰 원을 그리며 헤엄치는 바다거북 · 가오리
 var _rotors: Array = []       ## 빙글빙글 도는 것 [Node3D, 속도] (등대 불빛 …)
 var _glows: Array = []        ## 깜빡이며 빛나는 재질 [재질, 기본 세기, 위상]
 var _jellies: Array = []      ## 해파리 {node, base, phase}
@@ -132,6 +133,8 @@ func _ready() -> void:
 	_tile_props()
 	_decor()
 	_effects()
+	_outer_seabed()
+	_sea_life()
 
 
 # ── 칸 배치 ──────────────────────────────────────────────────
@@ -497,6 +500,14 @@ func _environment() -> void:
 	env.ssao_enabled = true
 	env.ssao_radius = 1.2
 	env.ssao_intensity = 2.0
+	# 물속 뿌연 빛 (Forward+ 에서만 보임): 햇빛이 물 속에서 기둥처럼 비침
+	env.volumetric_fog_enabled = true
+	env.volumetric_fog_density = 0.0045
+	env.volumetric_fog_albedo = Color(0.22, 0.5, 0.55)
+	env.volumetric_fog_anisotropy = 0.55
+	env.volumetric_fog_length = 90.0
+	env.volumetric_fog_ambient_inject = 0.15
+	env.glow_hdr_threshold = 0.9
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.1
 	env.adjustment_contrast = 1.12
@@ -508,6 +519,8 @@ func _environment() -> void:
 	sun.light_color = Color(1.0, 0.96, 0.86)
 	sun.light_angular_distance = 1.5
 	sun.shadow_enabled = true
+	sun.light_volumetric_fog_energy = 0.8
+	sun.shadow_blur = 1.4
 	sun.directional_shadow_max_distance = 70.0 if half_w < 30.0 else 110.0
 	add_child(sun)
 	# 그림자 쪽을 살짝 밝혀 주는 물빛 반사광
@@ -692,7 +705,11 @@ func _tiles() -> void:
 		var size := TILE + (0.2 if kind == "junction" else 0.0)
 		var body_c: Color = Color(0.82, 0.82, 0.77) if kind == "junction" else (TILE_COLORS[kind] as Color).darkened(0.2)
 		# 유약 바른 도자기 같은 칸 몸통 + 크림색 받침 + 금 장식
-		sp["body_mi"] = _mi(_rbox(Vector3(size, TILE_H, size), 0.15), _mat(body_c, 0.25), base + Vector3(0, TILE_H * 0.5, 0), b)
+		var glaze := _mat(body_c, 0.32)
+		glaze.clearcoat_enabled = true
+		glaze.clearcoat = 0.7
+		glaze.clearcoat_roughness = 0.15
+		sp["body_mi"] = _mi(_rbox(Vector3(size, TILE_H, size), 0.15), glaze, base + Vector3(0, TILE_H * 0.5, 0), b)
 		_mi(_rbox(Vector3(size + 0.36, 0.16, size + 0.36), 0.07), foot_m, base + Vector3(0, 0.08, 0), b)
 		for cx in [-1.0, 1.0]:
 			for cz in [-1.0, 1.0]:
@@ -2595,10 +2612,174 @@ func _process(delta: float) -> void:
 		var pulse := 0.5 + 0.5 * sin(_time * 1.6 + ph)
 		jn.position = (j["base"] as Vector3) + Vector3(sin(_time * 0.2 + ph) * 0.8, sin(_time * 0.8 + ph) * 0.6, cos(_time * 0.17 + ph) * 0.8)
 		jn.scale = Vector3(1.0 + pulse * 0.12, 1.0 - pulse * 0.1, 1.0 + pulse * 0.12)
+	for c in _critters:
+		var cn: Node3D = c["node"]
+		var ang: float = float(c["phase"]) + _time * float(c["speed"])
+		var cen: Vector3 = c["center"]
+		var rad: Vector2 = c["radius"]
+		var pos := cen + Vector3(cos(ang) * rad.x, sin(_time * 0.3 + float(c["phase"])) * 0.8, sin(ang) * rad.y)
+		var nxt := cen + Vector3(cos(ang + 0.05 * signf(float(c["speed"]))) * rad.x, 0, sin(ang + 0.05 * signf(float(c["speed"]))) * rad.y)
+		cn.position = pos
+		var fwd := Vector3(nxt.x - pos.x, 0, nxt.z - pos.z)
+		if fwd.length() > 0.0001:
+			cn.rotation.y = atan2(fwd.x, fwd.z)
+		var flap := sin(_time * float(c["flap"]) + float(c["phase"]))
+		for w in c["wings"]:
+			var wn: Node3D = w[0]
+			wn.rotation.z = float(w[1]) * (0.25 + flap * float(w[2]))
 	for f in _portal_fx:
 		var k := 0.5 + 0.5 * sin(_time * 3.0 + float(f["phase"]))
 		(f["mat"] as StandardMaterial3D).emission_energy_multiplier = 1.6 + k * 1.6
 		(f["light"] as OmniLight3D).light_energy = 1.2 + k * 0.9
+
+
+# ── 판 바깥 바다 밑 (판이 허공에 떠 있지 않고 바다 속 세상 한가운데에 놓이게) ──
+func _outer_seabed() -> void:
+	var noise := FastNoiseLite.new()
+	noise.seed = 11
+	noise.frequency = 0.035
+	var ext := 75.0
+	var st2 := 2.5
+	var inner_w := half_w + 1.4
+	var inner_d := half_d + 1.4
+	var nx := int((half_w + ext) * 2.0 / st2)
+	var nz := int((half_d + ext) * 2.0 / st2)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var hf := func(x: float, z: float) -> float:
+		var out := maxf(absf(x) - inner_w, absf(z) - inner_d)
+		var k := clampf(out / ext, 0.0, 1.0)
+		return -0.4 - pow(k, 1.1) * 16.0 + noise.get_noise_2d(x, z) * (0.2 + k * 7.0)
+	for j in nz:
+		for i in nx:
+			var x0 := -half_w - ext + i * st2
+			var z0 := -half_d - ext + j * st2
+			if x0 > -inner_w - st2 and x0 < inner_w and z0 > -inner_d - st2 and z0 < inner_d:
+				continue
+			var q := [Vector3(x0, 0, z0), Vector3(x0 + st2, 0, z0), Vector3(x0 + st2, 0, z0 + st2), Vector3(x0, 0, z0 + st2)]
+			for v in q.size():
+				var vv: Vector3 = q[v]
+				vv.y = hf.call(vv.x, vv.z)
+				q[v] = vv
+			var n1 := ((q[2] as Vector3) - (q[0] as Vector3)).cross((q[1] as Vector3) - (q[0] as Vector3)).normalized()
+			for v in [q[0], q[2], q[1], q[0], q[3], q[2]]:
+				st.set_normal(n1)
+				st.set_uv(Vector2((v as Vector3).x, (v as Vector3).z) * 0.25)
+				st.add_vertex(v)
+	var m := ShaderMaterial.new()
+	m.shader = FloorShader
+	m.set_shader_parameter("board_rect", Vector4(-half_w, -half_d, half_w * 2.0, half_d * 2.0))
+	var blank := Image.create(1, 1, false, Image.FORMAT_RG8)
+	blank.fill(Color(0, 0, 0))
+	m.set_shader_parameter("path_mask", ImageTexture.create_from_image(blank))
+	_mi(st.commit(), m, Vector3.ZERO)
+	# 멀리 보이는 큰 바위 언덕 · 다시마 숲 실루엣
+	for k in 46:
+		var a := _rng.randf() * TAU
+		var dist := _rng.randf_range(8.0, 50.0)
+		var x := cos(a) * (half_w + dist)
+		var z := sin(a) * (half_d + dist)
+		if absf(x) < inner_w + 2.0 and absf(z) < inner_d + 2.0:
+			continue
+		var y: float = hf.call(x, z)
+		var r := _rng.randf_range(2.5, 6.5) * (1.0 + dist / 50.0)
+		_rock(Vector3(x, y - r * 0.35, z), r)
+		if _rng.randf() < 0.6:
+			for q in _rng.randi_range(3, 7):
+				var kx := x + _rng.randf_range(-r, r) * 1.3
+				var kz := z + _rng.randf_range(-r, r) * 1.3
+				_kelp(Vector3(kx, hf.call(kx, kz), kz), _rng.randf_range(6.0, 12.0))
+		elif _rng.randf() < 0.5:
+			_coral(Vector3(x, y + r * 0.45, z), [Color(1.0, 0.45, 0.4), Color(0.8, 0.45, 1.0), Color(1.0, 0.75, 0.35)][_rng.randi() % 3], _rng.randf_range(1.2, 2.0))
+
+
+# ── 바다 생물: 바다거북 · 쥐가오리 (판 위를 크게 돌며 헤엄) ─────
+func _sea_life() -> void:
+	var span := Vector2(half_w, half_d)
+	_turtle(Vector3(0, 13.0, 0), span * 0.7, 0.07, 0.0)
+	if half_w > 30.0:
+		_turtle(Vector3(-10, 16.0, 6), span * 0.45, -0.09, 2.0)
+		_manta(Vector3(6, 19.0, -4), span * 0.85, 0.05, 4.0)
+	else:
+		_manta(Vector3(0, 15.0, 0), span * 0.9, -0.08, 1.0)
+
+
+func _turtle(center: Vector3, radius: Vector2, speed: float, phase: float) -> void:
+	var root := Node3D.new()
+	add_child(root)
+	var body := Node3D.new()
+	body.scale = Vector3.ONE * 1.5
+	root.add_child(body)
+	var shell := SphereMesh.new()
+	shell.radius = 0.9
+	shell.height = 0.8
+	var shell_m := _mat(Color(0.36, 0.42, 0.22), 0.55)
+	var sm := _mi(shell, shell_m, Vector3(0, 0.1, 0), Basis(), body)
+	sm.scale = Vector3(1.0, 0.75, 1.25)
+	# 등껍질 무늬 (육각 판)
+	var plate_m := _mat(Color(0.52, 0.5, 0.26), 0.5)
+	for k in 7:
+		var a := TAU * k / 6.0
+		var pp := Vector3(0, 0.38, 0) if k == 6 else Vector3(sin(a) * 0.48, 0.26, cos(a) * 0.6)
+		var pl := _mi(_cyl(0.24, 0.26, 0.06, 6), plate_m, pp, Basis(), body)
+		pl.rotation = Vector3(-pp.z * 0.5, 0, pp.x * 0.5)
+	var skin := _mat(Color(0.55, 0.62, 0.42), 0.7)
+	var head := SphereMesh.new()
+	head.radius = 0.28
+	head.height = 0.5
+	var hm := _mi(head, skin, Vector3(0, 0.08, 1.25), Basis(), body)
+	hm.scale = Vector3(1.0, 0.85, 1.25)
+	for sd: float in [-1.0, 1.0]:
+		var eye := SphereMesh.new()
+		eye.radius = 0.05
+		eye.height = 0.1
+		_mi(eye, _mat(Color(0.05, 0.05, 0.05), 0.2), Vector3(sd * 0.16, 0.16, 1.42), Basis(), body)
+	var wings := []
+	for fz: float in [0.45, -0.6]:
+		for sd: float in [-1.0, 1.0]:
+			var hinge := Node3D.new()
+			hinge.position = Vector3(sd * 0.75, 0.05, fz)
+			body.add_child(hinge)
+			var fl := _mi(_rbox(Vector3(0.9 if fz > 0 else 0.5, 0.08, 0.38 if fz > 0 else 0.28), 0.04), skin, Vector3(sd * (0.45 if fz > 0 else 0.25), 0, 0), Basis(Vector3.UP, sd * (0.5 if fz > 0 else -0.4)), hinge)
+			wings.append([hinge, sd, 0.6 if fz > 0 else 0.3])
+	_critters.append({"node": root, "center": center, "radius": radius, "speed": speed, "phase": phase, "flap": 1.6, "wings": wings})
+
+
+func _manta(center: Vector3, radius: Vector2, speed: float, phase: float) -> void:
+	var root := Node3D.new()
+	add_child(root)
+	var body := Node3D.new()
+	body.scale = Vector3.ONE * 1.6
+	root.add_child(body)
+	var top := _mat(Color(0.12, 0.16, 0.2), 0.5)
+	var belly := _mat(Color(0.85, 0.88, 0.86), 0.6)
+	var core := SphereMesh.new()
+	core.radius = 0.6
+	core.height = 0.4
+	var cm := _mi(core, top, Vector3.ZERO, Basis(), body)
+	cm.scale = Vector3(1.0, 1.0, 1.6)
+	var wings := []
+	for sd: float in [-1.0, 1.0]:
+		var hinge := Node3D.new()
+		hinge.position = Vector3(sd * 0.45, 0, 0)
+		body.add_child(hinge)
+		# 삼각형 날개 (위 · 아래 색이 다름)
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var pts := [Vector3(0, 0, 0.8), Vector3(sd * 2.6, 0, -0.2), Vector3(0, 0, -0.7)]
+		for v in pts:
+			st.set_normal(Vector3.UP)
+			st.add_vertex(v)
+		var wm := top.duplicate() as StandardMaterial3D
+		wm.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_mi(st.commit(), wm, Vector3.ZERO, Basis(), hinge)
+		_mi(st.commit(), belly, Vector3(0, -0.02, 0), Basis(), hinge)
+		wings.append([hinge, sd, 0.45])
+	# 꼬리 · 머리 지느러미
+	_mi(_cyl(0.02, 0.06, 2.2, 6), top, Vector3(0, 0, -1.8), Basis(Vector3(1, 0, 0), PI / 2), body)
+	for sd: float in [-1.0, 1.0]:
+		_mi(_rbox(Vector3(0.12, 0.08, 0.5), 0.03), top, Vector3(sd * 0.3, 0, 1.0), Basis(Vector3.UP, sd * 0.3), body)
+	_critters.append({"node": root, "center": center, "radius": radius, "speed": speed, "phase": phase, "flap": 1.1, "wings": wings})
 
 
 # ── 다른 스크립트가 쓰는 것들 ─────────────────────────────────

@@ -52,6 +52,12 @@ void vertex() {
 	wnorm = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 }
 
+// 모래 표면 높낮이 (물결 + 모래알) — 노멀을 흔들어 입체감
+float sand_h(vec2 p) {
+	float r = sin(p.y * 2.4 + p.x * 0.7 + fbm(p * 0.25) * 7.0);
+	return r * 0.05 + noise(p * 7.0) * 0.018 + noise(p * 2.2) * 0.03;
+}
+
 void fragment() {
 	vec2 p = wpos.xz;
 	float n = fbm(p * 0.12);
@@ -82,8 +88,21 @@ void fragment() {
 	rock = mix(rock, vec3(0.3, 0.42, 0.32), smoothstep(0.55, 0.8, fbm(p * 0.5 + wpos.y * 0.4)) * 0.5);
 	c = mix(c, rock, smoothstep(0.2, 0.45, slope));
 	c *= 1.0 - 0.55 * smoothstep(-0.5, -5.0, wpos.y);
+	// 굴곡 노멀 (평평한 모래 · 길 위에서만, 길은 약하게)
+	float flatness = smoothstep(0.75, 0.95, wnorm.y);
+	float e = 0.06;
+	float h0 = sand_h(p);
+	float hx = sand_h(p + vec2(e, 0.0));
+	float hz = sand_h(p + vec2(0.0, e));
+	vec2 g = vec2(hx - h0, hz - h0) / e * flatness * (1.0 - 0.6 * path);
+	vec3 wn = normalize(wnorm + vec3(-g.x, 0.0, -g.y) * 0.9);
+	NORMAL = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
+	// 물결 골은 살짝 어둡고 젖은 느낌
+	c *= 0.94 + 0.12 * smoothstep(-0.05, 0.05, h0);
 	ALBEDO = c;
-	ROUGHNESS = 0.95;
+	ROUGHNESS = mix(0.95, 0.75, smoothstep(0.02, -0.05, h0));
+	AO = 1.0 - 0.35 * m.g;
+	AO_LIGHT_AFFECT = 0.4;
 	// 모래알 반짝
 	vec2 cell = floor(p * 14.0);
 	float glint = step(0.993, hash(cell)) * (0.5 + 0.5 * sin(TIME * 3.0 + hash(cell + 3.1) * 40.0));
