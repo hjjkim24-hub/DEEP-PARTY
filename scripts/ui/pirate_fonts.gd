@@ -1,14 +1,16 @@
 extends RefCounted
 ## 게임 안 글씨: 해적 보드게임 느낌
-##   제목·큰 글씨  = Pirata One (해적 깃발 같은 굵은 고딕 글씨)
-##   보통 글씨     = Almendra Bold (옛날 항해 지도 같은 글씨)
+##   제목·큰 글씨  = Pirata One (해적 깃발 같은 굵은 고딕 글씨) + 금박 재질 + 짙은 갈색 테두리 + 그림자
+##   보통 글씨     = Almendra Bold (옛날 항해 지도 같은 글씨) + 잉크 결 + 갈색 테두리
 ##   한글          = 고운바탕 Bold (옛 인쇄물 느낌, 두 글씨 모두의 대신 글씨)
 ## 메인화면은 그대로 Poppins.
 
 const TITLE := preload("res://fonts/PirataOne-Regular.ttf")
 const BODY := preload("res://fonts/Almendra-Bold.ttf")
 const KO := preload("res://fonts/GowunBatang-Bold.ttf")
+const TextShader := preload("res://shaders/pirate_text.gdshader")
 const TITLE_SIZE := 34      ## 이 크기 이상 글씨는 제목 글씨로
+const INK := Color(0.17, 0.09, 0.04)
 
 
 static func body() -> Font:
@@ -25,7 +27,18 @@ static func title() -> Font:
 	return f
 
 
-## root 아래에 새로 생기는 큰 글씨(라벨 · 버튼)는 자동으로 제목 글씨로 바꿈
+## 테마 기본 글씨: 갈색 테두리 + 옅은 그림자
+static func style_theme(th: Theme) -> void:
+	th.default_font = body()
+	for t in ["Label", "Button"]:
+		th.set_color("font_outline_color", t, Color(INK, 0.85))
+		th.set_constant("outline_size", t, 5)
+	th.set_color("font_shadow_color", "Label", Color(0, 0, 0, 0.35))
+	th.set_constant("shadow_offset_x", "Label", 0)
+	th.set_constant("shadow_offset_y", "Label", 2)
+
+
+## root 아래 글씨들에 재질을 입힘 (새로 생기는 것도)
 static func watch(root: Node) -> void:
 	var tree := root.get_tree()
 	var cb := func(n: Node) -> void:
@@ -37,17 +50,55 @@ static func watch(root: Node) -> void:
 	root.tree_exiting.connect(func() -> void:
 		if tree.node_added.is_connected(cb):
 			tree.node_added.disconnect(cb))
-	# 이미 있는 것들
 	for n in root.find_children("*", "Control", true, false):
 		if n is Label or n is Button:
 			_check(n)
 
 
 static func _check(n: Node) -> void:
-	if not is_instance_valid(n):
+	if not is_instance_valid(n) or n.has_meta("pirate_done"):
 		return
+	n.set_meta("pirate_done", true)
 	var c := n as Control
-	if c.has_theme_font_override("font"):
-		return
-	if c.has_theme_font_size_override("font_size") and c.get_theme_font_size("font_size") >= TITLE_SIZE:
+	var big := c.has_theme_font_size_override("font_size") and c.get_theme_font_size("font_size") >= TITLE_SIZE
+	if big and not c.has_theme_font_override("font"):
 		c.add_theme_font_override("font", title())
+	if big:
+		var sz := c.get_theme_font_size("font_size")
+		c.add_theme_color_override("font_outline_color", INK)
+		c.add_theme_constant_override("outline_size", maxi(6, sz / 6))
+		if n is Label:
+			c.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.55))
+			c.add_theme_constant_override("shadow_offset_y", maxi(3, sz / 14))
+			c.add_theme_constant_override("shadow_offset_x", 0)
+			c.add_theme_constant_override("shadow_outline_size", maxi(6, sz / 6))
+	if n is Label:
+		var m := ShaderMaterial.new()
+		m.shader = TextShader
+		m.set_shader_parameter("metal", 1.0 if big else 0.0)
+		c.material = m
+		var upd := func() -> void: _update(n as Label)
+		c.resized.connect(upd)
+		(n as Label).draw.connect(upd)
+		_update(n as Label)
+
+
+## 셰이더에 줄 위치를 알려 줌 (세로 금빛 그라데이션이 글자 높이에 맞게)
+static func _update(l: Label) -> void:
+	if not is_instance_valid(l) or not (l.material is ShaderMaterial):
+		return
+	var lh := float(l.get_line_height())
+	var lines := maxi(1, l.get_visible_line_count())
+	var total := lh * lines
+	var y0 := 0.0
+	if l.vertical_alignment == VERTICAL_ALIGNMENT_CENTER:
+		y0 = (l.size.y - total) * 0.5
+	elif l.vertical_alignment == VERTICAL_ALIGNMENT_BOTTOM:
+		y0 = l.size.y - total
+	var key := Vector2(y0, maxf(lh, 1.0))
+	if l.get_meta("pirate_key", Vector2(-1, -1)) == key:
+		return
+	l.set_meta("pirate_key", key)
+	var m := l.material as ShaderMaterial
+	m.set_shader_parameter("y0", key.x)
+	m.set_shader_parameter("line_h", key.y)

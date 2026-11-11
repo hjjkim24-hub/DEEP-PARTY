@@ -65,7 +65,7 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	var th := Theme.new()
-	th.default_font = PirateFonts.body()
+	PirateFonts.style_theme(th)
 	th.default_font_size = 24
 	th.set_color("font_color", "Label", PEARL)
 	theme = th
