@@ -21,12 +21,14 @@ const SFX_DIR := "res://audio/sfx/"
 const SFX_NAMES := [
 	"hover", "click", "back", "toggle_on", "toggle_off", "tick", "tab", "color",
 	"equip", "unequip", "add", "remove", "start", "toast", "bubbles",
+	"box_rumble", "box_burst", "box_whoosh",
 ]
 ## 소리별 음량(dB). 자주 나는 소리는 작게.
 const SFX_DB := {
 	"hover": -14.0, "tick": -10.0, "click": -5.0, "back": -5.0, "tab": -6.0,
 	"color": -5.0, "equip": -4.0, "unequip": -5.0, "add": -3.0, "remove": -4.0,
 	"start": -2.0, "toast": -6.0, "toggle_on": -6.0, "toggle_off": -6.0, "bubbles": -16.0,
+	"box_rumble": -4.0, "box_burst": -2.0, "box_whoosh": -3.0,
 }
 const PITCH_JITTER := {"hover": 0.08, "click": 0.05, "tick": 0.06, "bubbles": 0.15, "color": 0.03}
 const MIN_INTERVAL_MS := 40

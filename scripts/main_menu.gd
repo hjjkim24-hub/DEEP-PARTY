@@ -21,7 +21,8 @@ const VERSION_TEXT := "v0.1.0  •  Dev Build"
 ## 한글 등 Poppins 에 없는 글자를 그릴 시스템 폰트 (출시 전에는 한글 폰트 파일을 넣어 교체하세요)
 const FALLBACK_FONTS := ["Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK KR", "Noto Sans KR", "NanumGothic"]
 const SETTINGS_TABS := ["AUDIO", "VIDEO", "LANGUAGE"]
-const GAME_SCENE := "res://scenes/board.tscn"  ## 진짜 보드 게임 (scripts/board_game.gd)
+const GAME_SCENE := "res://scenes/board.tscn"
+const BoxOpenFx := preload("res://scripts/ui/box_open_fx.gd")  ## 진짜 보드 게임 (scripts/board_game.gd)
 
 ## 보드 고르기 화면에 나오는 보드게임 상자들 (상자 그림은 tools/render_boardbox.py)
 const BOARDS := [
@@ -764,6 +765,15 @@ func _select_board(i: int, with_fx: bool = true) -> void:
 		_bg.burst_bubbles(r.get_center() + Vector2(0, r.size.y * 0.2), 10)
 
 
+## 큰 상자 그림이 화면에 그려진 자리 (BoardBoxView 와 같은 계산)
+func _board_box_rect() -> Rect2:
+	var big := _board_big
+	var ts := big.box.get_size()
+	var k := minf(big.size.x / ts.x, big.size.y / ts.y)
+	var ds := ts * k
+	return Rect2(big.global_position + (big.size - ds) * 0.5, ds)
+
+
 func _on_board_play() -> void:
 	if _busy:
 		return
@@ -780,9 +790,18 @@ func _on_board_play() -> void:
 	var scene_path := TUTORIAL_BOARD_SCENE if data.get("tutorial", false) else GAME_SCENE
 	if ResourceLoader.exists(scene_path):
 		_busy = true
-		Audio.stop_music(0.4)
+		Audio.stop_music(0.8)
+		# 상자가 덜덜 떨리다 팍 열리고, 쏟아지는 빛 속으로 빨려 들어감
+		var ui := _pages["board"].get_parent() as Control
+		var tw := create_tween()
+		tw.tween_property(ui, "modulate:a", 0.0, 0.3)
+		var fx := BoxOpenFx.new()
+		add_child(fx)
+		move_child(fx, _fade.get_index())
+		await fx.play(_board_big.box, _board_box_rect())
+		_fade.color = Color(0.9, 1.0, 0.97, 1.0)
 		var t := create_tween()
-		t.tween_property(_fade, "color:a", 1.0, 0.4)
+		t.tween_property(_fade, "color", Color(0, 0, 0, 1), 0.25)
 		await t.finished
 		get_tree().change_scene_to_file(scene_path)
 	else:
