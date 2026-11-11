@@ -15,7 +15,7 @@ func _ready() -> void:
 		if a.begins_with("--shots-dir="):
 			_dir = a.substr("--shots-dir=".length())
 	DirAccess.make_dir_recursive_absolute(_dir)
-	get_tree().create_timer(1500.0, true, false, true).timeout.connect(func() -> void:
+	get_tree().create_timer(2100.0, true, false, true).timeout.connect(func() -> void:
 		print("TOUR TIMEOUT")
 		get_tree().quit(2))
 	_run()
