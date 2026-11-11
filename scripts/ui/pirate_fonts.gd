@@ -12,15 +12,17 @@ const TITLE_SIZE := 34      ## 이 크기 이상 글씨는 제목 글씨로
 
 
 static func body() -> Font:
-	if BODY.fallbacks.is_empty():
-		BODY.fallbacks = [KO]
-	return BODY
+	var f: FontFile = BODY
+	if f.fallbacks.is_empty():
+		f.fallbacks = [KO]
+	return f
 
 
 static func title() -> Font:
-	if TITLE.fallbacks.is_empty():
-		TITLE.fallbacks = [KO]
-	return TITLE
+	var f: FontFile = TITLE
+	if f.fallbacks.is_empty():
+		f.fallbacks = [KO]
+	return f
 
 
 ## root 아래에 새로 생기는 큰 글씨(라벨 · 버튼)는 자동으로 제목 글씨로 바꿈
