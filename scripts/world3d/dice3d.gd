@@ -51,7 +51,7 @@ func _ready() -> void:
 	m.rim = 0.2
 	m.rim_tint = 0.6
 	m.emission_enabled = true
-	m.emission = Color(0.1, 0.12, 0.1)
+	m.emission = Color(0.14, 0.11, 0.07)   # 물빛에 묻혀도 상아색이 살아 있게
 	_body.material_override = m
 	add_child(_body)
 	visible = false
