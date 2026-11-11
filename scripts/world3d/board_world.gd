@@ -352,11 +352,14 @@ func ground_height(x: float, z: float) -> float:
 		var ab := Vector2(b.x - a.x, b.z - a.z)
 		var t := clampf(Vector2(x - a.x, z - a.z).dot(ab) / maxf(ab.length_squared(), 0.001), 0.0, 1.0)
 		var d := Vector2(x - a.x, z - a.z).distance_to(ab * t)
-		if d < 2.6:
-			var w := smoothstep(2.6, 0.9, d)
+		var ty := lerpf(a.y, b.y, t) - 0.08
+		# 깎아 내는 곳은 넓게 (계단이 언덕 속으로 파고듦), 메우는 곳은 좁게 (둑이 툭 튀어나오지 않게)
+		var reach := 2.6 if ty < h else 1.7
+		if d < reach:
+			var w := smoothstep(reach, 0.85, d)
 			if w > best_w:
 				best_w = w
-				target = lerpf(a.y, b.y, t) - 0.08
+				target = ty
 	return lerpf(h, target, best_w)
 
 
@@ -715,12 +718,12 @@ func _connectors() -> void:
 	var rope := _mat(Color(0.78, 0.68, 0.48), 0.9)
 	var lantern_glow := _glow_mat(Color(0.4, 1.0, 0.8), 1.6)
 	var flag := CylinderMesh.new()       # 길에 반쯤 묻힌 납작한 판석
-	flag.top_radius = 0.5
-	flag.bottom_radius = 0.46
+	flag.top_radius = 0.36
+	flag.bottom_radius = 0.33
 	flag.height = 0.14
 	flag.radial_segments = 7
 	flag.rings = 1
-	var flag_cols := [Color(0.6, 0.58, 0.51), Color(0.68, 0.63, 0.53), Color(0.53, 0.55, 0.5), Color(0.64, 0.6, 0.56)]
+	var flag_cols := [Color(0.47, 0.46, 0.41), Color(0.53, 0.5, 0.43), Color(0.42, 0.45, 0.41), Color(0.5, 0.48, 0.45)]
 	var fl_x := []
 	var fl_c := []
 	var done := {}
@@ -777,11 +780,13 @@ func _connectors() -> void:
 					_mi(_rbox(Vector3(w, hgt, glen / n + 0.04), 0.05), step_ms[s % step_ms.size()], Vector3(pos.x, low + hgt * 0.5, pos.z), sb)
 					if _rng.randf() < 0.25:
 						_mi(_rbox(Vector3(0.4, 0.03, glen / n * 0.7), 0.01), moss, Vector3(pos.x, top + 0.01, pos.z) + bas.x * _rng.randf_range(-0.5, 0.5), sb)
-				var slope_len := Vector3(gap.x, dy, gap.z).length()
-				var pitch := -atan2(dy, glen)
-				for sd: float in [-1.0, 1.0]:
-					var cpos := mid + bas.x * sd * 0.92 + Vector3(0, (a.y + b.y) * 0.5 - mid.y + TILE_H * 0.4, 0)
-					_mi(_rbox(Vector3(0.32, 0.5, slope_len + 0.2), 0.08), curb_m, cpos, bas * Basis(Vector3(1, 0, 0), pitch))
+				# 높은 계단만 양옆 돌턱 (낮은 턱은 계단 몇 개로 충분)
+				if absf(dy) > 1.2:
+					var slope_len := Vector3(gap.x, dy, gap.z).length()
+					var pitch := -atan2(dy, glen)
+					for sd: float in [-1.0, 1.0]:
+						var cpos := mid + bas.x * sd * 0.9 + Vector3(0, (a.y + b.y) * 0.5 - mid.y + TILE_H * 0.3, 0)
+						_mi(_rbox(Vector3(0.28, 0.42, slope_len - 0.1), 0.08), curb_m, cpos, bas * Basis(Vector3(1, 0, 0), pitch))
 				# 높은 계단 아래위에는 작은 돌 등불
 				if absf(dy) > 1.2:
 					for e: float in [0.12, 0.88]:
@@ -798,14 +803,14 @@ func _connectors() -> void:
 			# 평평한 길: 다져진 길 자국은 바닥 셰이더가 그림. 여기엔 땅에 반쯤 묻힌 판석만 몇 개
 			var cnt := maxi(1, int(glen / 0.9))
 			for s in cnt:
-				if _rng.randf() < 0.3:
+				if _rng.randf() < 0.6:
 					continue
 				var f := (float(s) + _rng.randf_range(0.25, 0.75)) / cnt
 				var pp := p0.lerp(p1, f) + bas.x * _rng.randf_range(-0.35, 0.35)
 				var gy := ground_height(pp.x, pp.z)
 				var sc := _rng.randf_range(0.55, 0.95)
 				var tb := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(sc * _rng.randf_range(0.8, 1.2), 1.0, sc))
-				fl_x.append(Transform3D(tb, Vector3(pp.x, gy - 0.035, pp.z)))
+				fl_x.append(Transform3D(tb, Vector3(pp.x, gy - 0.05, pp.z)))
 				fl_c.append(flag_cols[_rng.randi() % flag_cols.size()])
 	if fl_x.size() > 0:
 		var vm := StandardMaterial3D.new()
@@ -1090,9 +1095,17 @@ func _shipwreck(at: Vector2, length: float, deck: float) -> void:
 		var bb := bas.rotated(Vector3.UP, 0.5 * away)
 		var tilt_b := Basis(bb * Vector3(0, 0, 1), 0.35 * away) * bb
 		var bh := deck + 0.4
-		_mi(_rbox(Vector3(w * 0.9, bh, 4.0), 0.5), wood, bow + Vector3(0, bh * 0.5 - 0.6, 0), tilt_b)
+		_mi(_rbox(Vector3(w * 0.9, bh, 4.0), 0.2), wood, bow + Vector3(0, bh * 0.5 - 0.6, 0), tilt_b)
 		var s2 := w * 0.9 / sqrt(2.0)
-		_mi(_rbox(Vector3(s2, bh, s2), 0.4), wood, bow + tilt_b * Vector3(0, 0, 2.0) + Vector3(0, bh * 0.5 - 0.6, 0), tilt_b * Basis(Vector3.UP, PI / 4))
+		_mi(_rbox(Vector3(s2, bh, s2), 0.18), wood, bow + tilt_b * Vector3(0, 0, 2.0) + Vector3(0, bh * 0.5 - 0.6, 0), tilt_b * Basis(Vector3.UP, PI / 4))
+		# 뱃머리 판자 줄 · 갑판 · 부러진 단면
+		for sd2: float in [-1.0, 1.0]:
+			for k2 in 3:
+				_mi(_box(Vector3(0.05, 0.1, 3.8)), dark, bow + tilt_b * Vector3(sd2 * (w * 0.45 + 0.01), bh - 1.1 - k2 * 0.6, 0) + Vector3(0, -0.6, 0), tilt_b)
+		_mi(_box(Vector3(w * 0.8, 0.06, 3.8)), plank, bow + tilt_b * Vector3(0, bh - 0.58, 0) + Vector3(0, -0.6, 0) + Vector3(0, 0.01, 0), tilt_b)
+		for k2 in 6:
+			var hh2 := _rng.randf_range(0.4, 1.2)
+			_mi(_box(Vector3(w * 0.13, hh2, 0.14)), dark if k2 % 2 == 0 else wood, bow + tilt_b * Vector3(-w * 0.38 + k2 * w * 0.15, bh - 0.6 + hh2 * 0.5 - 0.1, -2.0) + Vector3(0, -0.6, 0), tilt_b)
 		# 뱃머리 장식 (뿔처럼 뻗은 기둥)
 		_mi(_cyl(0.08, 0.2, 3.0, 8), wood, bow + tilt_b * Vector3(0, bh * 0.6, 4.2), tilt_b * Basis(Vector3(1, 0, 0), PI / 2 - 0.5))
 		_block(Vector2(bow.x, bow.z), 3.4)

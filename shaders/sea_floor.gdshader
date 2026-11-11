@@ -69,15 +69,15 @@ void fragment() {
 	vec3 cel = cells(p * 2.6);
 	float stones = smoothstep(0.04, 0.12, cel.x) * step(0.35, cel.y) * smoothstep(0.55, 0.85, m.r + edge * 0.5);
 	vec3 trod = mix(vec3(0.5, 0.47, 0.38), vec3(0.44, 0.43, 0.36), noise(p * 3.0));
-	vec3 stone_c = mix(vec3(0.56, 0.54, 0.48), vec3(0.66, 0.6, 0.5), cel.y) * (0.85 + 0.15 * noise(p * 9.0));
+	vec3 stone_c = mix(vec3(0.5, 0.49, 0.43), vec3(0.58, 0.54, 0.46), cel.y) * (0.85 + 0.15 * noise(p * 9.0));
 	c = mix(c, trod, path * 0.8);
-	c = mix(c, stone_c, stones * 0.9);
-	c *= 1.0 - 0.18 * path * (1.0 - stones) * smoothstep(0.08, 0.0, cel.x);
+	c = mix(c, stone_c, stones * 0.7);
+	c *= 1.0 - 0.1 * path * (1.0 - stones) * smoothstep(0.08, 0.0, cel.x);
 	// 칸 둘레 접지 그늘
 	c *= 1.0 - 0.38 * m.g;
 	// 비탈은 결이 있는 바위
 	float slope = 1.0 - wnorm.y;
-	float strata = 0.82 + 0.18 * sin(wpos.y * 5.5 + fbm(p * 0.6) * 5.0);
+	float strata = 0.9 + 0.1 * sin(wpos.y * 3.2 + fbm(p * 0.6) * 3.0);
 	vec3 rock = rock_c * (0.7 + 0.45 * fbm(p * 0.9 + wpos.y * 0.3)) * strata;
 	rock = mix(rock, vec3(0.3, 0.42, 0.32), smoothstep(0.55, 0.8, fbm(p * 0.5 + wpos.y * 0.4)) * 0.5);
 	c = mix(c, rock, smoothstep(0.2, 0.45, slope));
