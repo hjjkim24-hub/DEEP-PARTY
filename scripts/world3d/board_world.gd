@@ -21,6 +21,10 @@ extends Node3D
 ## 칸 배치는 아래 ROUTES 의 "tiles" 에서 길마다 순서대로 정해요.
 
 const FloorShader := preload("res://shaders/sea_floor.gdshader")
+const SandAlbedo := preload("res://textures/seabed/sand_albedo.png")
+const SandNormal := preload("res://textures/seabed/sand_normal.png")
+const RockAlbedo := preload("res://textures/seabed/rock_albedo.png")
+const RockNormal := preload("res://textures/seabed/rock_normal.png")
 const TileShader := preload("res://shaders/tile_top.gdshader")
 const KelpShader := preload("res://shaders/kelp3d.gdshader")
 const RayShader := preload("res://shaders/light_ray.gdshader")
@@ -571,12 +575,30 @@ func _floor() -> void:
 	m.shader = FloorShader
 	m.set_shader_parameter("path_mask", _path_mask())
 	m.set_shader_parameter("board_rect", Vector4(-half_w, -half_d, half_w * 2.0, half_d * 2.0))
+	_set_sand(m)
 	_mi(st.commit(), m, Vector3.ZERO)
 
 
-## 바닥에 칠할 길 자국(R)과 칸 둘레 그늘(G) 그림. 1m 에 4 픽셀
+## 고해상도 모래 · 바위 텍스처 (밉맵을 직접 만들어서 멀리서도 지글거리지 않게)
+var _tex_cache := {}
+func _mip_tex(t: Texture2D) -> ImageTexture:
+	if not _tex_cache.has(t):
+		var img := t.get_image()
+		if img.is_compressed():
+			img.decompress()
+		img.generate_mipmaps()
+		_tex_cache[t] = ImageTexture.create_from_image(img)
+	return _tex_cache[t]
+
+
+func _set_sand(m: ShaderMaterial) -> void:
+	m.set_shader_parameter("sand_albedo", _mip_tex(SandAlbedo))
+	m.set_shader_parameter("sand_normal", _mip_tex(SandNormal))
+
+
+## 바닥에 칠할 길 자국(R)과 칸 둘레 그늘(G) 그림. 1m 에 6 픽셀
 func _path_mask() -> ImageTexture:
-	const PX := 4.0
+	const PX := 6.0
 	var w := int(half_w * 2.0 * PX)
 	var hgt := int(half_d * 2.0 * PX)
 	var data := PackedByteArray()
@@ -1726,28 +1748,70 @@ func _block(at: Vector2, r: float) -> void:
 	_blocked_grid[k].append([at, r])
 
 
+var _rock_meshes: Array = []
+
+## 바위 모양 몇 가지를 미리 만들어 두고 돌려 씀 (여러 겹 울퉁불퉁 + 바닥은 평평하게 묻힘)
+func _rock_mesh() -> Mesh:
+	if _rock_meshes.is_empty():
+		for v in 8:
+			var fn := FastNoiseLite.new()
+			fn.seed = 100 + v
+			fn.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+			fn.fractal_type = FastNoiseLite.FRACTAL_RIDGED if v % 2 == 0 else FastNoiseLite.FRACTAL_FBM
+			fn.fractal_octaves = 4
+			fn.frequency = 0.9
+			var sm := SphereMesh.new()
+			sm.radius = 1.0
+			sm.height = 2.0
+			sm.radial_segments = 32
+			sm.rings = 18
+			var arr := sm.get_mesh_arrays()
+			var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			for i in verts.size():
+				var d := verts[i]
+				var k := 1.0 + fn.get_noise_3dv(d * 1.2) * 0.32
+				var q := d * k
+				# 납작한 면 (깎인 바위 느낌)
+				if q.y > 0.55:
+					q.y = lerpf(q.y, 0.55 + (q.y - 0.55) * 0.35, 0.8)
+				if q.y < -0.25:
+					q.y = -0.25 + (q.y + 0.25) * 0.3
+				verts[i] = q
+			# 노멀: 같은 자리 꼭짓점끼리 면 노멀을 모아 평균 (구 이음새에 줄이 안 생기게)
+			var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+			var acc := {}
+			for t in range(0, idx.size(), 3):
+				var a3 := verts[idx[t]]
+				var b3 := verts[idx[t + 1]]
+				var c3 := verts[idx[t + 2]]
+				var fnrm := (b3 - a3).cross(c3 - a3)
+				for vi in [idx[t], idx[t + 1], idx[t + 2]]:
+					var key := Vector3i((verts[vi] * 1000.0).round())
+					acc[key] = (acc.get(key, Vector3.ZERO) as Vector3) + fnrm
+			var norms := PackedVector3Array()
+			norms.resize(verts.size())
+			var sgn := 1.0
+			for i in verts.size():
+				var nn: Vector3 = (acc[Vector3i((verts[i] * 1000.0).round())] as Vector3).normalized()
+				norms[i] = nn
+			# 바깥을 보도록 방향 맞추기
+			if norms[0].dot(verts[0]) < 0.0 and norms[verts.size() / 2].dot(verts[verts.size() / 2]) < 0.0:
+				sgn = -1.0
+			for i in verts.size():
+				norms[i] *= sgn
+			arr[Mesh.ARRAY_VERTEX] = verts
+			arr[Mesh.ARRAY_NORMAL] = norms
+			arr[Mesh.ARRAY_TANGENT] = null
+			var am := ArrayMesh.new()
+			am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+			_rock_meshes.append(am)
+	return _rock_meshes[_rng.randi() % _rock_meshes.size()]
+
+
 func _rock(p: Vector3, r: float) -> void:
-	var sm := SphereMesh.new()
-	sm.radius = 1.0
-	sm.height = 2.0
-	sm.radial_segments = 14
-	sm.rings = 8
-	var arr := sm.get_mesh_arrays()
-	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
-	var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
-	var seed_ := _rng.randf() * 10.0
-	for i in verts.size():
-		var v := verts[i]
-		var k := 1.0 + 0.18 * sin(v.x * 3.1 + seed_) * sin(v.y * 2.7 + seed_ * 2.0) + 0.1 * sin(v.z * 5.3 + seed_)
-		verts[i] = v * k
-		norms[i] = (v * k).normalized()
-	arr[Mesh.ARRAY_VERTEX] = verts
-	arr[Mesh.ARRAY_NORMAL] = norms
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
-	var mi := _mi(mesh, _rock_mat(_rng.randi() % 3), p)
-	mi.scale = Vector3(r * _rng.randf_range(0.9, 1.3), r * _rng.randf_range(0.55, 0.8), r * _rng.randf_range(0.9, 1.2))
-	mi.rotation.y = _rng.randf() * TAU
+	var mi := _mi(_rock_mesh(), _rock_mat(_rng.randi() % 3), p)
+	mi.scale = Vector3(r * _rng.randf_range(0.9, 1.3), r * _rng.randf_range(0.6, 0.85), r * _rng.randf_range(0.9, 1.2))
+	mi.rotation = Vector3(_rng.randf_range(-0.12, 0.12), _rng.randf() * TAU, _rng.randf_range(-0.12, 0.12))
 
 
 func _coral(p: Vector3, c: Color, size: float) -> void:
@@ -1796,6 +1860,8 @@ func _rock_mat(k: int) -> ShaderMaterial:
 		var m := ShaderMaterial.new()
 		m.shader = RockShader
 		m.set_shader_parameter("rock_color", [Color(0.52, 0.52, 0.48), Color(0.47, 0.5, 0.47), Color(0.56, 0.52, 0.47)][k % 3])
+		m.set_shader_parameter("rock_tex", _mip_tex(RockAlbedo))
+		m.set_shader_parameter("rock_nrm", _mip_tex(RockNormal))
 		_mats[key] = m
 	return _mats[key]
 
@@ -2672,6 +2738,7 @@ func _outer_seabed() -> void:
 	var blank := Image.create(1, 1, false, Image.FORMAT_RG8)
 	blank.fill(Color(0, 0, 0))
 	m.set_shader_parameter("path_mask", ImageTexture.create_from_image(blank))
+	_set_sand(m)
 	_mi(st.commit(), m, Vector3.ZERO)
 	# 멀리 보이는 큰 바위 언덕 · 다시마 숲 실루엣
 	for k in 46:

@@ -247,6 +247,31 @@ def sample_tex(tex, u, v):
     return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy
 
 SAND = np.array([0.60, 0.54, 0.41], f32)
+# 고해상도 모래 디테일 (tools/make_sand.py 가 만든 이음새 없는 텍스처)
+SAND_TEX = np.asarray(Image.open(os.path.join(ROOT, "textures", "seabed", "sand_albedo.png")).convert("RGB")).astype(f32) / 255
+SAND_TEX /= SAND_TEX.reshape(-1, 3).mean(axis=0)
+SAND_NRM = np.asarray(Image.open(os.path.join(ROOT, "textures", "seabed", "sand_normal.png")).convert("RGB")).astype(f32) / 255 * 2 - 1
+
+ROCK_TEX = np.asarray(Image.open(os.path.join(ROOT, "textures", "seabed", "rock_albedo.png")).convert("RGB")).astype(f32) / 255
+ROCK_TEX /= ROCK_TEX.reshape(-1, 3).mean(axis=0)
+ROCK_NRM = np.asarray(Image.open(os.path.join(ROOT, "textures", "seabed", "rock_normal.png")).convert("RGB")).astype(f32) / 255 * 2 - 1
+
+def rock_tri(tex, p, n, scale=0.9):
+    """세 방향에서 바위 결을 입힘"""
+    w = np.abs(n) ** 4; w /= w.sum(axis=1, keepdims=True)
+    q = p / scale
+    a = sample_tex(tex, np.mod(q[:, 2], 1), np.mod(q[:, 1], 1))
+    b = sample_tex(tex, np.mod(q[:, 0] + 0.31, 1), np.mod(q[:, 2], 1))
+    c = sample_tex(tex, np.mod(q[:, 0] + 0.67, 1), np.mod(q[:, 1], 1))
+    return a * w[:, 0:1] + b * w[:, 1:2] + c * w[:, 2:3]
+
+def sand_detail(tex, x, z):
+    """두 가지 크기로 겹쳐서 반복이 티 나지 않게"""
+    a = sample_tex(tex, np.mod(x / 1.1, 1.0), np.mod(z / 1.1, 1.0))
+    xr = 0.8 * x - 0.6 * z; zr = 0.6 * x + 0.8 * z
+    b = sample_tex(tex, np.mod(xr / 2.9 + 0.37, 1.0), np.mod(zr / 2.9 + 0.11, 1.0))
+    k = np.clip(snoise(x * 0.9, z * 0.9) * 0.5 + 0.5, 0, 1)[:, None]
+    return a * (1 - k) + b * k
 
 def ripple(x, z):
     return np.sin(16 * (0.82 * x + 0.57 * z) + 2.5 * snoise(x * 0.7, z * 0.7))
@@ -261,7 +286,8 @@ def albedo_and_extra(p, n, mat):
     if np.any(m):
         r = ripple(x[m], z[m])
         speck = (snoise(x[m] * 31, z[m] * 31) > 0.62).astype(f32) * 0.5
-        alb[m] = SAND * (0.86 + 0.08 * r[:, None] * 0.5 + 0.08 * nz[m][:, None]) * (1 - 0.35 * speck[:, None])
+        det = sand_detail(SAND_TEX, x[m], z[m])
+        alb[m] = SAND * (0.86 + 0.08 * r[:, None] * 0.5 + 0.08 * nz[m][:, None]) * (det * 0.9 + 0.1)
     # 보드
     m = mat == 1
     if np.any(m):
@@ -330,10 +356,11 @@ def albedo_and_extra(p, n, mat):
     # 바위 (위쪽은 이끼)
     m = mat == 5
     if np.any(m):
-        rn = snoise(x[m] * 6, z[m] * 6 + y[m] * 6)
-        col = np.array([0.32, 0.31, 0.29], f32) * (0.75 + 0.3 * rn[:, None])
-        moss = np.clip((n[m][:, 1] - 0.45) * 2.2, 0, 1) * np.clip(snoise(x[m] * 3 + 2, z[m] * 3) + 0.6, 0, 1)
-        col = col * (1 - moss[:, None]) + np.array([0.24, 0.36, 0.18], f32) * moss[:, None]
+        tex = rock_tri(ROCK_TEX, p[m], n[m])
+        big = np.clip(snoise(x[m] * 1.3 + y[m], z[m] * 1.3) * 0.5 + 0.5, 0, 1)
+        col = np.array([0.36, 0.35, 0.32], f32) * (0.85 + 0.25 * big[:, None]) * tex
+        moss = np.clip((n[m][:, 1] - 0.72) * 4.0, 0, 1) * np.clip(tex.mean(axis=1) * 1.4 - 0.6, 0, 1) * 0.85
+        col = col * (1 - moss[:, None]) + np.array([0.22, 0.33, 0.17], f32) * tex * moss[:, None]
         alb[m] = col
     # 산호
     m = mat == 6
@@ -412,7 +439,24 @@ def render():
             xs, zs = P[ms, 0], P[ms, 2]
             g = np.cos(16 * (0.82 * xs + 0.57 * zs) + 2.5 * snoise(xs * 0.7, zs * 0.7)) * 0.18
             n[ms] += np.stack([g * 0.82, np.zeros_like(g), g * 0.57], 1)
+            dn = sand_detail(SAND_NRM, xs, zs)
+            n[ms] += np.stack([dn[:, 0] * 0.55, np.zeros_like(g), -dn[:, 1] * 0.55], 1)
             n[ms] /= np.linalg.norm(n[ms], axis=1, keepdims=True)
+        # 바위 표면 울퉁불퉁
+        mr = hit & (mat == 5)
+        if np.any(mr):
+            xr_, yr_, zr_ = P[mr, 0], P[mr, 1], P[mr, 2]
+            nn = n[mr]
+            w = np.abs(nn) ** 4; w /= w.sum(axis=1, keepdims=True)
+            q = P[mr] / 0.9
+            na = sample_tex(ROCK_NRM, np.mod(q[:, 2], 1), np.mod(q[:, 1], 1))
+            nb = sample_tex(ROCK_NRM, np.mod(q[:, 0] + 0.31, 1), np.mod(q[:, 2], 1))
+            nc = sample_tex(ROCK_NRM, np.mod(q[:, 0] + 0.67, 1), np.mod(q[:, 1], 1))
+            pert = (np.stack([np.zeros(len(nn)), na[:, 1], na[:, 0]], 1) * w[:, 0:1] * np.sign(nn[:, 0:1])
+                    + np.stack([nb[:, 0], np.zeros(len(nn)), nb[:, 1]], 1) * w[:, 1:2]
+                    + np.stack([nc[:, 0], nc[:, 1], np.zeros(len(nn))], 1) * w[:, 2:3] * np.sign(nn[:, 2:3]))
+            n[mr] += pert.astype(f32) * 0.9
+            n[mr] /= np.linalg.norm(n[mr], axis=1, keepdims=True)
         # 그림자 (부드럽게)
         sh = np.ones(len(idx), f32)
         st = np.full(len(hi), 0.02, f32); res = np.ones(len(hi), f32)

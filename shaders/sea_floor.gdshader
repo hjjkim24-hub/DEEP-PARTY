@@ -4,6 +4,10 @@ uniform vec3 sand_a : source_color = vec3(0.6, 0.58, 0.47);
 uniform vec3 sand_b : source_color = vec3(0.43, 0.49, 0.4);
 uniform vec3 rock_c : source_color = vec3(0.38, 0.4, 0.38);
 uniform float caustic_strength = 0.34;
+// 고해상도 모래 디테일 (반복 텍스처, 두 가지 크기로 섞어서 반복이 티 안 나게)
+uniform sampler2D sand_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D sand_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform float detail_scale = 2.4;
 // 길 자국(R) · 칸 둘레 그늘(G)
 uniform sampler2D path_mask : filter_linear, repeat_disable;
 uniform vec4 board_rect = vec4(-18.0, -16.0, 36.0, 32.0);
@@ -88,6 +92,18 @@ void fragment() {
 	rock = mix(rock, vec3(0.3, 0.42, 0.32), smoothstep(0.55, 0.8, fbm(p * 0.5 + wpos.y * 0.4)) * 0.5);
 	c = mix(c, rock, smoothstep(0.2, 0.45, slope));
 	c *= 1.0 - 0.55 * smoothstep(-0.5, -5.0, wpos.y);
+	// 고해상도 모래 결 (색 · 노멀). 가까이서 또렷, 멀리선 밉맵으로 자연스럽게
+	vec2 uv1 = p / detail_scale;
+	vec2 uv2 = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * p / (detail_scale * 2.7) + 0.37;
+	vec3 d1 = texture(sand_albedo, uv1).rgb;
+	vec3 d2 = texture(sand_albedo, uv2).rgb;
+	float mixk = smoothstep(0.35, 0.65, noise(p * 0.15));
+	vec3 det = mix(d1, d2, mixk) / vec3(0.66, 0.63, 0.53);
+	float rocky = smoothstep(0.2, 0.45, 1.0 - wnorm.y);
+	c *= mix(vec3(1.0), det, 0.85 * (1.0 - rocky) * (1.0 - stones * 0.6));
+	vec3 n1 = texture(sand_normal, uv1).rgb * 2.0 - 1.0;
+	vec3 n2 = texture(sand_normal, uv2).rgb * 2.0 - 1.0;
+	vec2 tn = mix(n1.xy, n2.xy, mixk) * (1.0 - rocky);
 	// 굴곡 노멀 (평평한 모래 · 길 위에서만, 길은 약하게)
 	float flatness = smoothstep(0.75, 0.95, wnorm.y);
 	float e = 0.06;
@@ -95,7 +111,7 @@ void fragment() {
 	float hx = sand_h(p + vec2(e, 0.0));
 	float hz = sand_h(p + vec2(0.0, e));
 	vec2 g = vec2(hx - h0, hz - h0) / e * flatness * (1.0 - 0.6 * path);
-	vec3 wn = normalize(wnorm + vec3(-g.x, 0.0, -g.y) * 0.9);
+	vec3 wn = normalize(wnorm + vec3(-g.x, 0.0, -g.y) * 0.9 + vec3(tn.x, 0.0, -tn.y) * 0.9);
 	NORMAL = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
 	// 물결 골은 살짝 어둡고 젖은 느낌
 	c *= 0.94 + 0.12 * smoothstep(-0.05, 0.05, h0);
