@@ -56,6 +56,8 @@ var _pawns: Array = []        ## {slot, name, color, cpu, team, node, spot, tile
 var _camera: Camera3D
 var _focus := Vector3.ZERO    ## 카메라가 바라보는 점
 var _zoom := 1.0              ## 1 = 가까이, 클수록 멀리
+var _cine := 0.0              ## 0..1: 연출용 카메라(_cine_xf)로 넘어간 정도
+var _cine_xf := Transform3D()
 var _follow: Node3D = null    ## 이 말을 카메라가 따라감
 var _cam_tween: Tween
 var _ui: CanvasLayer
@@ -243,9 +245,11 @@ func _apply_camera() -> void:
 	var off := Vector3(0, CLOSE.y * _zoom * (1.0 + 0.35 * maxf(_zoom - 1.0, 0.0)), CLOSE.z * _zoom)
 	_camera.position = _focus + off
 	_camera.look_at(_focus + Vector3(0, 0.9, 0), Vector3.UP)
+	if _cine > 0.001:
+		_camera.transform = _camera.transform.interpolate_with(_cine_xf, _cine)
 	var attrs := _camera.attributes as CameraAttributesPractical
 	if attrs:
-		attrs.dof_blur_far_distance = off.length() + 7.0 + _zoom * 4.0
+		attrs.dof_blur_far_distance = lerpf(off.length() + 7.0 + _zoom * 4.0, 400.0, _cine)
 
 
 func _process(delta: float) -> void:
@@ -272,6 +276,13 @@ func _process(delta: float) -> void:
 	_screen_marker.position = Vector2(60, 110)
 	_screen_marker.size = v - Vector2(120, 220)
 	_update_play_ui()
+
+
+## 연출 카메라: from 에서 at 을 바라보게 부드럽게 넘어감 (to = 1) / 돌아옴 (to = 0)
+func _cinematic(from: Vector3, at: Vector3, to: float, time: float) -> void:
+	if to > 0.0:
+		_cine_xf = Transform3D(Basis.looking_at(at - from, Vector3.UP), from)
+	create_tween().tween_property(self, "_cine", to, time).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
 
 
 func _move_camera(focus: Vector3, zoom: float, time: float) -> void:
