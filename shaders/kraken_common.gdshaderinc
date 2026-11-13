@@ -30,7 +30,7 @@ void kraken_skin(vec3 q, float nv, float belly, float t, out vec3 alb, out vec3 
 	float fres = pow(1.0 - clamp(nv, 0.0, 1.0), 2.2);
 	float n1 = kfbm(q * 1.3);
 	float vn = veins(q * 1.6);
-	float spots = smoothstep(0.74, 0.8, kn(q * 5.0 + 17.0)) * (1.0 - belly);
+	float spots = smoothstep(0.8, 0.86, kn(q * 5.0 + 17.0)) * (1.0 - belly);
 	float breathe = 0.55 + 0.45 * sin(t * 1.4 + n1 * 7.0);
 	// 속(어둡고 깊은 초록) → 가장자리(형광)
 	vec3 body = mix(deep, neon * 0.55, 0.25 + 0.35 * n1);
@@ -38,7 +38,7 @@ void kraken_skin(vec3 q, float nv, float belly, float t, out vec3 alb, out vec3 
 	alb = mix(body, vein_col * 0.5, vn * 0.6);
 	emi = neon * fres * 0.9
 		+ vein_col * vn * (0.35 + 0.25 * breathe)
-		+ vec3(0.7, 1.0, 0.25) * spots * breathe * 1.6
+		+ vec3(0.55, 1.0, 0.2) * spots * breathe * 0.9
 		+ neon * glow * (0.6 + fres);
 	// 가운데는 속이 비치고 가장자리 · 핏줄은 진함
 	alpha = clamp(mix(opacity * 0.7, 1.0, fres) + vn * 0.25 + spots * 0.3, 0.0, 1.0);

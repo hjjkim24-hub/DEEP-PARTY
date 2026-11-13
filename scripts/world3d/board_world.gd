@@ -1380,7 +1380,7 @@ func _kraken_lair(at: Vector2) -> void:
 		eye.height = 0.72
 		eye.radial_segments = 48
 		eye.rings = 24
-		var e := _mi(eye, em, Vector3(sd * 1.42, 0.6, 1.47), Basis(Vector3.UP, sd * 0.55), kraken_root)
+		var e := _mi(eye, em, Vector3(sd * 1.37, 0.6, 1.3), Basis(Vector3.UP, sd * 0.38), kraken_root)
 		kraken_eyes.append(e)
 	var gl := OmniLight3D.new()
 	gl.light_color = Color(0.45, 1.0, 0.35)
