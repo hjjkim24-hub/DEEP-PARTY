@@ -98,8 +98,8 @@ func _kraken_wakes() -> void:
 	await get_tree().create_timer(1.2, false).timeout
 	Audio.play("box_burst")
 	_shake_camera(0.5, 0.5)
-	shot_hint = "34_kraken_awakens"
 	await get_tree().create_timer(1.2, false).timeout
+	shot_hint = "34_kraken_awakens"
 	await _banner(tr("THE KRAKEN AWAKENS!"), tr("Dodge its tentacles. Last one standing wins!"), 1.8)
 	await _kraken_aim(1)
 
@@ -167,7 +167,7 @@ func _kraken_aim(r: int) -> void:
 	if picks.is_empty():
 		return
 	_follow = null
-	_move_camera(world.overview, world.overview_zoom * 0.95, 1.0)
+	_move_camera(world.overview, world.overview_zoom * 0.7, 1.0)
 	await get_tree().create_timer(1.0, false).timeout
 	for t in picks:
 		world.mark_danger(t)

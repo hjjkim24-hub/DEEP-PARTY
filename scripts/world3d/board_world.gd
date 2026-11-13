@@ -1348,41 +1348,66 @@ var kraken_root: Node3D
 
 
 func _kraken_lair(at: Vector2) -> void:
+	# 골짜기 속에 몸을 숨긴 크라켄: 머리(외투막) 꼭대기만 바위처럼 보이다가, 깨어나면 솟아올라 눈을 뜸
 	kraken_root = Node3D.new()
-	kraken_root.position = Vector3(at.x, natural_height(at.x, at.y), at.y)
+	kraken_root.position = Vector3(at.x, -4.6, at.y)
 	add_child(kraken_root)
-	# 골짜기 속에서 빛나는 두 눈
+	_ensure_skin()
+	var head_mat := _skin_mat.duplicate() as ShaderMaterial
+	head_mat.set_shader_parameter("belly_color", Color(0.5, 0.12, 0.2))
+	var mantle := SphereMesh.new()
+	mantle.radius = 3.0
+	mantle.height = 6.4
+	mantle.radial_segments = 40
+	mantle.rings = 24
+	var mm := _mi(mantle, head_mat, Vector3(0, 1.4, -0.6), Basis(Vector3(1, 0, 0), -0.35), kraken_root)
+	mm.scale = Vector3(1.25, 1.0, 1.05)
+	# 이마 주름 · 혹
+	for k in 7:
+		var b := SphereMesh.new()
+		b.radius = _rng.randf_range(0.45, 0.9)
+		b.height = b.radius * 1.6
+		var a := _rng.randf_range(-1.2, 1.2)
+		_mi(b, head_mat, Vector3(sin(a) * 2.6, 2.4 + _rng.randf_range(-0.6, 0.8), cos(a) * 1.6 - 0.6), Basis(), kraken_root)
+	# 눈: 노란 홍채 + 가로로 찢어진 동공 + 두툼한 눈꺼풀
 	for sd: float in [-1.0, 1.0]:
+		var lid := SphereMesh.new()
+		lid.radius = 0.95
+		lid.height = 1.3
+		_mi(lid, head_mat, Vector3(sd * 1.55, 0.95, 2.05), Basis(), kraken_root)
 		var eye := SphereMesh.new()
-		eye.radius = 0.9
-		eye.height = 1.1
+		eye.radius = 0.72
+		eye.height = 1.44
 		var em := StandardMaterial3D.new()
-		em.albedo_color = Color(1.0, 0.75, 0.15)
+		em.albedo_color = Color(1.0, 0.78, 0.2)
+		em.roughness = 0.05
 		em.emission_enabled = true
-		em.emission = Color(1.0, 0.6, 0.1)
-		em.emission_energy_multiplier = 1.2
-		var e := _mi(eye, em, Vector3(sd * 2.6, -2.2, 0.8), Basis(), kraken_root)
-		var pupil := _mi(_box(Vector3(0.18, 0.9, 0.2)), _mat(Color(0.05, 0.02, 0.02), 0.3), Vector3(sd * 2.6, -2.2, 1.65), Basis(), kraken_root)
+		em.emission = Color(1.0, 0.55, 0.08)
+		em.emission_energy_multiplier = 0.4
+		em.clearcoat_enabled = true
+		var e := _mi(eye, em, Vector3(sd * 1.55, 0.8, 2.4), Basis(), kraken_root)
+		var pupil := _mi(_box(Vector3(0.95, 0.16, 0.12)), _mat(Color(0.03, 0.01, 0.01), 0.2), Vector3(sd * 1.55, 0.8, 3.1), Basis(), kraken_root)
 		kraken_eyes.append(e)
 		kraken_eyes.append(pupil)
 	var gl := OmniLight3D.new()
 	gl.light_color = Color(1.0, 0.55, 0.2)
-	gl.light_energy = 2.0
-	gl.omni_range = 9.0
-	gl.position = Vector3(0, -1.0, 1.5)
+	gl.light_energy = 1.2
+	gl.omni_range = 8.0
+	gl.position = Vector3(0, 1.0, 4.0)
 	kraken_root.add_child(gl)
+	kraken_eyes.append(gl)
 	# 골짜기 가장자리에 걸쳐 늘어진 촉수들 (마디마디 가늘어짐)
-	var spots := [Vector3(-7.0, -0.6, 1.2), Vector3(-3.8, -0.6, 1.6), Vector3(4.2, -0.6, 1.6), Vector3(7.4, -0.6, 1.0)]
+	var spots := [Vector3(-6.0, 1.0, 1.6), Vector3(-3.2, 0.6, 2.4), Vector3(3.4, 0.6, 2.4), Vector3(6.2, 1.0, 1.6)]
 	for k in spots.size():
 		var tn := make_tentacle(10, 0.62, 0.95)
 		var arm: Node3D = tn["root"]
 		arm.position = spots[k]
-		var base_rot := Vector3(-0.9, (k - 1.5) * 0.35, 0.0)
+		var base_rot := Vector3(0.6, (k - 1.5) * 0.35, 0.0)
 		arm.rotation = base_rot
 		kraken_root.add_child(arm)
 		var segs: Array = tn["segs"]
 		for i in segs.size():
-			(segs[i] as Node3D).rotation = Vector3(0.22 + 0.05 * i, 0, (0.05 if k % 2 == 0 else -0.05) * i)
+			(segs[i] as Node3D).rotation = Vector3(0.2 + 0.04 * i, 0, (0.05 if k % 2 == 0 else -0.05) * i)
 		kraken_arms.append([arm, base_rot])
 	# 골짜기 둘레 부서진 바위 · 뼈
 	for k in 12:
@@ -1400,7 +1425,7 @@ var _skin_mat: ShaderMaterial
 var _sucker_mat: StandardMaterial3D
 
 
-func make_tentacle(n: int, r0: float, seg_len: float) -> Dictionary:
+func _ensure_skin() -> void:
 	if _skin_mat == null:
 		_skin_mat = ShaderMaterial.new()
 		_skin_mat.shader = KrakenSkin
@@ -1409,6 +1434,10 @@ func make_tentacle(n: int, r0: float, seg_len: float) -> Dictionary:
 		_sucker_mat.roughness = 0.25
 		_sucker_mat.rim_enabled = true
 		_sucker_mat.rim = 0.3
+
+
+func make_tentacle(n: int, r0: float, seg_len: float) -> Dictionary:
+	_ensure_skin()
 	var mat := _skin_mat.duplicate() as ShaderMaterial
 	var root := Node3D.new()
 	var segs := []
@@ -1500,12 +1529,22 @@ func mark_danger(i: int) -> void:
 		return
 	var top: Vector3 = spaces[i]["pos"]
 	var q := QuadMesh.new()
-	q.size = Vector2(TILE * 2.0, TILE * 2.0)
+	q.size = Vector2(TILE * 2.4, TILE * 2.4)
 	q.orientation = PlaneMesh.FACE_Y
 	var m := ShaderMaterial.new()
 	m.shader = DangerShader
 	var mark := _mi(q, m, top + Vector3(0, 0.06, 0))
 	mark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var lt := OmniLight3D.new()
+	lt.light_color = Color(1.0, 0.18, 0.1)
+	lt.light_energy = 0.0
+	lt.omni_range = 3.4
+	lt.position = Vector3(0, 0.9, 0)
+	mark.add_child(lt)
+	var lp := create_tween().set_loops()
+	lp.tween_property(lt, "light_energy", 2.6, 0.45).set_trans(Tween.TRANS_SINE)
+	lp.tween_property(lt, "light_energy", 1.0, 0.45).set_trans(Tween.TRANS_SINE)
+	mark.tree_exiting.connect(lp.kill)
 	m.set_shader_parameter("strength", 0.0)
 	create_tween().tween_method(func(v: float) -> void: m.set_shader_parameter("strength", v), 0.0, 1.0, 0.5)
 	# 칸 옆 땅 (길 바깥쪽)에서 촉수 끝이 삐죽
@@ -1703,16 +1742,19 @@ func kraken_awaken() -> void:
 	if kraken_root == null:
 		return
 	for e in kraken_eyes:
-		var mi := e as MeshInstance3D
-		if mi.material_override is StandardMaterial3D:
-			var m := mi.material_override as StandardMaterial3D
-			create_tween().tween_property(m, "emission_energy_multiplier", 6.0, 0.6)
+		if e is OmniLight3D:
+			create_tween().tween_property(e, "light_energy", 6.0, 0.8)
+		elif (e as MeshInstance3D).material_override is StandardMaterial3D:
+			var m := (e as MeshInstance3D).material_override as StandardMaterial3D
+			create_tween().tween_property(m, "emission_energy_multiplier", 5.0, 0.8)
+	_dust(kraken_root.position + Vector3(0, 4.6, 2.0), 2.0)
+	bubbles_at(kraken_root.position + Vector3(0, 4.6, 2.0), 60, 4.0, true)
 	var up := create_tween().set_parallel(true)
-	up.tween_property(kraken_root, "position:y", kraken_root.position.y + 3.0, 2.2).set_trans(Tween.TRANS_SINE)
+	up.tween_property(kraken_root, "position:y", 0.3, 2.2).set_trans(Tween.TRANS_SINE)
 	for a in kraken_arms:
 		var arm: Node3D = a[0]
 		var base: Vector3 = a[1]
-		up.tween_property(arm, "rotation", Vector3(-0.15, base.y * 1.4, base.z), 1.6).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		up.tween_property(arm, "rotation", Vector3(1.25, base.y * 1.5, base.z), 1.8).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	await up.finished
 
 

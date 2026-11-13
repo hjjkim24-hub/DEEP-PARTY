@@ -3,7 +3,7 @@ shader_type spatial;
 // 젖어서 번들거림(낮은 거칠기 + 가장자리 반사), 미세한 주름 노멀
 uniform vec3 back_color : source_color = vec3(0.42, 0.07, 0.16);
 uniform vec3 spot_color : source_color = vec3(0.2, 0.02, 0.07);
-uniform vec3 belly_color : source_color = vec3(0.95, 0.66, 0.6);
+uniform vec3 belly_color : source_color = vec3(0.84, 0.5, 0.48);
 uniform float glow = 0.0;          // 공격 직전 붉게 달아오름
 varying vec3 lpos;
 varying vec3 lnrm;
@@ -24,7 +24,7 @@ void vertex() {
 
 void fragment() {
 	// 배 쪽 = 모델 기준 +Z (빨판이 붙는 쪽)
-	float belly = smoothstep(0.1, 0.7, lnrm.z);
+	float belly = smoothstep(0.35, 0.85, lnrm.z);
 	float n1 = noise(lpos * 7.0);
 	float n2 = noise(lpos * 22.0);
 	float spots = smoothstep(0.62, 0.7, noise(lpos * 4.5 + 3.1));
