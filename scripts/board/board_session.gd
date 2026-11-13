@@ -19,6 +19,10 @@ const PirateFonts := preload("res://scripts/ui/pirate_fonts.gd")
 const CARD_TEX := preload("res://textures/tiles/card_chance.png")
 const COIN_TEX := preload("res://textures/ui/coin.png")
 const TROPHY_TEX := preload("res://textures/ui/trophy.png")
+const HEART_TEX := preload("res://textures/ui/coop/heart.png")
+const HEART_EMPTY_TEX := preload("res://textures/ui/coop/heart_empty.png")
+const POTION_TEX := preload("res://textures/ui/coop/potion.png")
+const SHIELD_TEX := preload("res://textures/ui/coop/shield.png")
 const GOLD := Color("ffcf4a")
 const DICE_ATLAS := preload("res://textures/dice/dice_atlas.png")
 const SHOP_TEX := {
@@ -88,6 +92,7 @@ var _shop_open := false
 var _shop_panel: Control
 var _shop_close: Button
 var _shop_buy: Button
+var _shop_buys: Array = []
 var _popup_root: Control
 
 # 규칙 상태
@@ -160,6 +165,9 @@ func _setup_pawns() -> void:
 	for d in list:
 		d["coins"] = Rules.START_COINS
 		d["trophies"] = 0
+		d["hearts"] = Rules.HEARTS_START
+		d["shield"] = 0
+		d["alive"] = true
 		d["team"] = ("A" if int(d["slot"]) < 2 else "B") if _team_mode() else ""
 	var spots: Array = world.start_spots(list.size())
 	for i in list.size():
@@ -182,6 +190,29 @@ func _setup_pawns() -> void:
 
 func _team_mode() -> bool:
 	return GameState.selected_mode == GameState.Mode.TEAM_2V2
+
+
+## 크라켄 생존전인지 (게임이 덮어씀). 트로피 대신 하트
+func survival() -> bool:
+	return false
+
+
+## 이름표 · 결과에 보이는 두 숫자
+func _stat_keys() -> Array:
+	return ["coins", "hearts"] if survival() else ["coins", "trophies"]
+
+
+func _stat_tex(key: String) -> Texture2D:
+	match key:
+		"coins":
+			return COIN_TEX
+		"hearts":
+			return HEART_TEX
+	return TROPHY_TEX
+
+
+func _alive_pawns() -> Array:
+	return _pawns.filter(func(q: Dictionary) -> bool: return bool(q.get("alive", true)))
 
 
 ## 사람 대신 알아서 하는 말인지 (CPU, 또는 자동 점검 중인 내 말)
@@ -535,9 +566,9 @@ func _make_chip(p: Dictionary) -> PanelContainer:
 	l.text = p["name"]
 	l.add_theme_font_size_override("font_size", 19)
 	h.add_child(l)
-	for k in ["coins", "trophies"]:
+	for k in _stat_keys():
 		var ic := TextureRect.new()
-		ic.texture = COIN_TEX if k == "coins" else TROPHY_TEX
+		ic.texture = _stat_tex(k)
 		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ic.custom_minimum_size = Vector2(24, 24)
@@ -550,14 +581,28 @@ func _make_chip(p: Dictionary) -> PanelContainer:
 		n.custom_minimum_size = Vector2(26, 0)
 		h.add_child(n)
 		p[k + "_label"] = n
+	# 방패 (생존전: 있을 때만 보임)
+	var sh := TextureRect.new()
+	sh.texture = SHIELD_TEX
+	sh.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	sh.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	sh.custom_minimum_size = Vector2(24, 24)
+	sh.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	sh.visible = false
+	h.add_child(sh)
+	p["shield_icon"] = sh
 	_refresh_chip(p)
 	return chip
 
 
 func _refresh_chip(p: Dictionary) -> void:
-	if p.has("coins_label"):
-		(p["coins_label"] as Label).text = str(p["coins"])
-		(p["trophies_label"] as Label).text = str(p["trophies"])
+	for k in _stat_keys():
+		if p.has(k + "_label"):
+			(p[k + "_label"] as Label).text = str(p[k])
+	if p.has("shield_icon"):
+		(p["shield_icon"] as Control).visible = int(p.get("shield", 0)) > 0
+	if p.has("chip") and not bool(p.get("alive", true)):
+		(p["chip"] as Control).modulate = Color(0.55, 0.45, 0.5, 0.75)
 
 
 ## 지금 차례인 사람 이름표만 또렷하게
@@ -566,6 +611,8 @@ func _highlight_chip(p: Dictionary) -> void:
 		var chip: PanelContainer = q["chip"]
 		var on: bool = q == p
 		chip.modulate = Color(1, 1, 1, 1.0 if on or p.is_empty() else 0.45)
+		if not bool(q.get("alive", true)):
+			chip.modulate = Color(0.55, 0.45, 0.5, 0.6)
 		chip.add_theme_stylebox_override("panel", _glass(Color(0.04, 0.3, 0.27, 0.85) if on else Color(0.02, 0.15, 0.14, 0.7),
 			Color(AQUA, 0.9 if on else 0.2), 2 if on else 1, 30))
 
@@ -758,7 +805,7 @@ func _spot_on(tile: int, p: Dictionary) -> Vector3:
 	var offs := [Vector3.ZERO, Vector3(0.6, 0, 0.35), Vector3(-0.6, 0, 0.35), Vector3(0, 0, -0.55)]
 	var k := 0
 	for q in _pawns:
-		if q != p and int(q["tile"]) == tile:
+		if q != p and int(q["tile"]) == tile and bool(q.get("alive", true)):
 			k += 1
 	return top + offs[k % offs.size()]
 
@@ -954,6 +1001,9 @@ func _spawn_trophy() -> void:
 # ── 칸 효과 ──────────────────────────────────────────────────
 func _tile_effect(p: Dictionary) -> void:
 	var tile: int = p["tile"]
+	if _tile_mods.get(tile, "") == "urchin":
+		await _urchin_trap(p)
+		return
 	if _tile_mods.has(tile):
 		var plus: bool = _tile_mods[tile] == "coin_plus"
 		Audio.play("toast")
@@ -971,6 +1021,77 @@ func _tile_effect(p: Dictionary) -> void:
 			await _open_shop(p)
 		_:
 			await _banner("...", tr("Nothing happens."), 0.6)
+
+
+## 성게 함정 칸에 멈춤 (생존전에서 크라켄이 만든 칸)
+func _urchin_trap(p: Dictionary) -> void:
+	Audio.play("remove")
+	await _banner(tr("SPIKED!"), tr("Sea urchin spines! -1 heart"), 0.5)
+	await _damage(p, 1)
+
+
+## 하트 잃기 (방패가 있으면 대신 깨짐). 0 이 되면 탈락
+func _damage(p: Dictionary, n: int) -> void:
+	if not bool(p.get("alive", true)):
+		return
+	var node: Node3D = p["node"]
+	if int(p.get("shield", 0)) > 0:
+		p["shield"] = int(p["shield"]) - 1
+		_refresh_chip(p)
+		Audio.play("toggle_off")
+		_float_text(p, tr("BLOCKED!"), Color("bfe9ff"), SHIELD_TEX)
+		world.bubbles_at(node.position + Vector3(0, 1.0, 0), 18, 0.6, true)
+		await get_tree().create_timer(0.7, false).timeout
+		return
+	p["hearts"] = maxi(0, int(p["hearts"]) - n)
+	_refresh_chip(p)
+	_pop(p["chip"])
+	Audio.play("remove")
+	_float_text(p, "-%d" % n, Color("ff6b6b"), HEART_TEX)
+	_shake_camera(0.35, 0.18)
+	var t := create_tween()
+	t.tween_property(node, "scale", Vector3(1.3, 0.6, 1.3) * PAWN_SCALE, 0.08)
+	t.tween_property(node, "scale", Vector3.ONE * PAWN_SCALE, 0.3).set_trans(Tween.TRANS_ELASTIC)
+	await get_tree().create_timer(0.8, false).timeout
+	if int(p["hearts"]) <= 0:
+		await _eliminate(p)
+
+
+func _heal(p: Dictionary, n: int) -> void:
+	var before: int = p["hearts"]
+	p["hearts"] = mini(Rules.HEARTS_MAX, before + n)
+	_refresh_chip(p)
+	_pop(p["chip"])
+	if int(p["hearts"]) > before:
+		Audio.play("add")
+		_float_text(p, "+%d" % (int(p["hearts"]) - before), Color("ff8fa3"), HEART_TEX)
+	else:
+		_float_text(p, tr("FULL"), Color("ff8fa3"), HEART_TEX)
+	await get_tree().create_timer(0.6, false).timeout
+
+
+## 하트 0: 촉수가 휘감아 바닷속으로 끌고 감 (게임이 덮어써서 승패 판정)
+func _eliminate(p: Dictionary) -> void:
+	p["alive"] = false
+	var node: Node3D = p["node"]
+	_follow = null
+	_move_camera(node.position + Vector3(0, 1.0, 0), 1.2, 0.6)
+	await get_tree().create_timer(0.6, false).timeout
+	await world.tentacle_drag(node)
+	_refresh_chip(p)
+	await _banner(tr("%s IS GONE!") % p["name"] if p["cpu"] else tr("YOU'RE GONE!"), tr("Now you serve the kraken..."), 1.2)
+
+
+## 화면 흔들기 (촉수가 내려칠 때)
+func _shake_camera(amount: float, time: float) -> void:
+	var t := create_tween()
+	var steps := int(time / 0.03)
+	for k in steps:
+		var f := 1.0 - float(k) / steps
+		t.tween_property(_camera, "h_offset", randf_range(-1, 1) * amount * f, 0.03)
+		t.parallel().tween_property(_camera, "v_offset", randf_range(-1, 1) * amount * f, 0.03)
+	t.tween_property(_camera, "h_offset", 0.0, 0.03)
+	t.parallel().tween_property(_camera, "v_offset", 0.0, 0.03)
 
 
 ## 포탈: 짝 포탈로
@@ -1063,6 +1184,9 @@ func _run_minigame(lander: Dictionary, trophy: bool) -> void:
 			if q == lander:
 				reward += Rules.MINIGAME_LANDER_BONUS
 			_add_coins(q, reward)
+	if survival() and order.size() > 0 and bool(order[0].get("alive", true)):
+		await get_tree().create_timer(0.4, false).timeout
+		await _heal(order[0], Rules.MINIGAME_WIN_HEAL)
 	await get_tree().create_timer(0.8, false).timeout
 
 
@@ -1153,7 +1277,7 @@ func _result_row(rank: int, q: Dictionary, reward: int, trophy: bool) -> HBoxCon
 
 # ── 찬스 카드 ────────────────────────────────────────────────
 func _draw_card(p: Dictionary) -> void:
-	var c: Dictionary = Rules.card(rig_card) if rig_card != "" else Rules.random_card(_rng)
+	var c: Dictionary = Rules.card(rig_card) if rig_card != "" else Rules.random_card(_rng, survival())
 	rig_card = ""
 	await _card_popup(c)
 	await _apply_card(p, String(c["id"]))
@@ -1173,6 +1297,12 @@ func _card_icon(id: String) -> Texture2D:
 			return BoardWorld.ICONS["coin_minus"]
 		"roll_again":
 			return DICE_ATLAS
+		"heal":
+			return HEART_TEX
+		"shield":
+			return SHIELD_TEX
+		"bait":
+			return BoardWorld.ICONS["boss"]
 	return COIN_TEX
 
 
@@ -1273,7 +1403,7 @@ func _card_popup(c: Dictionary) -> void:
 func _others(p: Dictionary) -> Array:
 	var out := []
 	for q in _pawns:
-		if q != p and (String(p["team"]) == "" or q["team"] != p["team"]):
+		if q != p and bool(q.get("alive", true)) and (String(p["team"]) == "" or q["team"] != p["team"]):
 			out.append(q)
 	return out
 
@@ -1310,6 +1440,20 @@ func _apply_card(p: Dictionary, id: String) -> void:
 				await _warp_to(p, t)
 				if t == world.trophy_tile:
 					await _offer_trophy(p)
+		"heal":
+			await _heal(p, 1)
+		"shield":
+			p["shield"] = int(p.get("shield", 0)) + 1
+			_refresh_chip(p)
+			Audio.play("toggle_on")
+			_float_text(p, "+1", Color("bfe9ff"), SHIELD_TEX)
+			await get_tree().create_timer(0.8, false).timeout
+		"bait":
+			var cands := _others(p)
+			if cands.is_empty():
+				return
+			var target: Dictionary = await _pick_player(p, cands, tr("Who do you throw the bait at?"), "hearts")
+			await _bait(target)
 		"trophy_minigame":
 			await _run_minigame(p, true)
 		"trophy_thief":
@@ -1325,6 +1469,11 @@ func _apply_card(p: Dictionary, id: String) -> void:
 			await get_tree().create_timer(0.3, false).timeout
 			_add_trophy(p, 1)
 			await get_tree().create_timer(0.8, false).timeout
+
+
+## 미끼: 그 사람 칸을 크라켄이 노림 (게임이 덮어씀)
+func _bait(_target: Dictionary) -> void:
+	pass
 
 
 ## 찬스 카드: 보드 곳곳에 +5 / -5 동전 칸이 생김
@@ -1381,12 +1530,20 @@ func _open_shop(p: Dictionary) -> void:
 	wall_box.add_child(_tex_rect(SHOP_TEX["wall"], Vector2.ZERO, Vector2(1100, 690)))
 	_shop_buy = null
 	# 진열칸 4개 (차양 아래로 다 보이게)
+	# 생존전: 물약(하트 +1) · 따개비 방패 / 그 외: 가끔 트로피
+	var goods := []
+	if survival():
+		goods = [{"id": "potion", "tex": POTION_TEX, "price": Rules.POTION_PRICE},
+			{"id": "shield", "tex": SHIELD_TEX, "price": Rules.SHIELD_PRICE}]
+	elif has_trophy:
+		goods = [{"id": "trophy", "tex": TROPHY_TEX, "price": Rules.SHOP_TROPHY_PRICE}]
+	_shop_buys = []
 	for k in 4:
 		var x := 60.0 + k * 260.0
 		wall_box.add_child(_tex_rect(SHOP_TEX["slot"], Vector2(x, 150), Vector2(200, 205)))
-		var trophy_slot := k == 0 and has_trophy
-		if trophy_slot:
-			var ic := _icon(TROPHY_TEX, 150)
+		var g: Dictionary = goods[k] if k < goods.size() else {}
+		if not g.is_empty():
+			var ic := _icon(g["tex"], 150)
 			ic.position = Vector2(x + 38, 180)
 			ic.size = Vector2(124, 124)
 			wall_box.add_child(ic)
@@ -1409,27 +1566,43 @@ func _open_shop(p: Dictionary) -> void:
 		price.add_theme_constant_override("separation", 6)
 		wall_box.add_child(price)
 		var pl := Label.new()
-		if trophy_slot:
+		if not g.is_empty():
 			price.add_child(_icon(COIN_TEX, 28))
-			pl.text = str(Rules.SHOP_TROPHY_PRICE)
+			pl.text = str(g["price"])
 		else:
 			pl.text = "SOON"
-		pl.add_theme_font_size_override("font_size", 24 if trophy_slot else 18)
+		pl.add_theme_font_size_override("font_size", 24 if not g.is_empty() else 18)
 		pl.add_theme_color_override("font_color", Color(0.28, 0.16, 0.08))
 		price.add_child(pl)
-		if trophy_slot:
+		if not g.is_empty():
 			var buy := _wood_button("BUY", Vector2(180, 60))
 			buy.position = Vector2(x + 10, 438)
-			buy.disabled = int(p["coins"]) < Rules.SHOP_TROPHY_PRICE
+			var cost: int = g["price"]
+			var gid: String = g["id"]
+			buy.disabled = int(p["coins"]) < cost or (gid == "potion" and int(p["hearts"]) >= Rules.HEARTS_MAX)
 			wall_box.add_child(buy)
-			_shop_buy = buy
+			_shop_buys.append([buy, gid])
+			if _shop_buy == null:
+				_shop_buy = buy
 			buy.pressed.connect(func() -> void:
 				if buy.disabled:
 					return
 				buy.disabled = true
 				buy.text = "SOLD"
-				_add_coins(p, -Rules.SHOP_TROPHY_PRICE)
-				_add_trophy(p, 1))
+				_add_coins(p, -cost)
+				match gid:
+					"trophy":
+						_add_trophy(p, 1)
+					"potion":
+						_heal(p, 1)
+					"shield":
+						p["shield"] = int(p.get("shield", 0)) + 1
+						_refresh_chip(p)
+				for bb in _shop_buys:
+					var other: Button = bb[0]
+					if not other.disabled and other.text != "SOLD":
+						var oc := Rules.POTION_PRICE if bb[1] == "potion" else Rules.SHIELD_PRICE
+						other.disabled = int(p["coins"]) < oc)
 	# 덧문 두 짝
 	var left := _tex_rect(SHOP_TEX["shutter"], Vector2.ZERO, Vector2(550, 690))
 	var right := _tex_rect(SHOP_TEX["shutter"], Vector2(550, 0), Vector2(550, 690))
@@ -1443,7 +1616,7 @@ func _open_shop(p: Dictionary) -> void:
 
 	# 계산대 + 안내 + 닫기
 	stall.add_child(_tex_rect(SHOP_TEX["counter"], Vector2(30, 780), Vector2(1180, 180)))
-	var msg := _outlined_label("More items are coming soon!", 26)
+	var msg := _outlined_label("Potions heal a heart · Shields block one hit" if survival() else "More items are coming soon!", 26)
 	msg.add_theme_color_override("font_color", Color(1.0, 0.95, 0.85))
 	msg.add_theme_color_override("font_outline_color", Color(0.25, 0.12, 0.05))
 	msg.position = Vector2(30, 818)
@@ -1523,9 +1696,14 @@ func _open_shop(p: Dictionary) -> void:
 	shot_hint = "45_shop_trophy" if has_trophy else "45_shop"
 	if _is_auto(p):
 		await get_tree().create_timer(1.4, false).timeout
-		if _shop_buy and not _shop_buy.disabled:
-			_shop_buy.pressed.emit()
-			await get_tree().create_timer(0.8, false).timeout
+		# CPU: 하트가 모자라면 물약, 아니면 방패
+		var want := "potion" if int(p.get("hearts", 3)) < Rules.HEARTS_MAX else "shield"
+		for bb in _shop_buys:
+			if bb[1] == want or bb[1] == "trophy":
+				var b0: Button = bb[0]
+				if not b0.disabled:
+					b0.pressed.emit()
+					await get_tree().create_timer(0.8, false).timeout
 		_close_shop()
 	while _shop_open:
 		await get_tree().process_frame
@@ -1733,8 +1911,8 @@ func _pick_player(p: Dictionary, cands: Array, prompt: String, by: String) -> Di
 		n.custom_minimum_size = Vector2(170, 0)
 		n.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		h.add_child(n)
-		for key in ["coins", "trophies"]:
-			h.add_child(_icon(COIN_TEX if key == "coins" else TROPHY_TEX, 26))
+		for key in _stat_keys():
+			h.add_child(_icon(_stat_tex(key), 26))
 			var m := Label.new()
 			m.text = str(q[key])
 			m.custom_minimum_size = Vector2(44, 0)
@@ -1764,11 +1942,11 @@ func _pick_player(p: Dictionary, cands: Array, prompt: String, by: String) -> Di
 
 
 ## 원하는 칸 고르기 (순간이동 카드): 보드 전체를 보여주고 칸을 클릭
-func _pick_tile(p: Dictionary) -> int:
+func _pick_tile(p: Dictionary, text: String = "", auto_tile: int = -1, shot: String = "47_pick_tile") -> int:
 	_follow = null
 	_move_camera(world.overview, world.overview_zoom * 1.06, 1.0)
 	await get_tree().create_timer(1.0, false).timeout
-	var prompt := _outlined_label(tr("Click the space you want to warp to!"), 34)
+	var prompt := _outlined_label(text if text != "" else tr("Click the space you want to warp to!"), 34)
 	prompt.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	prompt.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	prompt.grow_horizontal = Control.GROW_DIRECTION_BOTH
@@ -1788,10 +1966,10 @@ func _pick_tile(p: Dictionary) -> int:
 	_pick_marker.visible = false
 	_picked_tile = -1
 	_hover_tile = -1
-	shot_hint = "47_pick_tile"
+	shot_hint = shot
 	if _is_auto(p):
 		await get_tree().create_timer(1.2, false).timeout
-		var t := world.trophy_tile
+		var t := auto_tile if auto_tile >= 0 else world.trophy_tile
 		if t < 0 or t == int(p["tile"]):
 			var pool: Array = world.regular_tiles()
 			t = pool[_rng.randi() % pool.size()]
@@ -1849,6 +2027,17 @@ func _show_pick_marker(i: int) -> void:
 # ── 결과 화면 ────────────────────────────────────────────────
 func _ranking() -> Array:
 	var order := _pawns.duplicate()
+	if survival():
+		# 오래 살아남은 순 (탈락 라운드가 늦을수록 위) → 하트 → 동전
+		order.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			var la := 999 if bool(a["alive"]) else int(a.get("out_round", 0))
+			var lb := 999 if bool(b["alive"]) else int(b.get("out_round", 0))
+			if la != lb:
+				return la > lb
+			if int(a["hearts"]) != int(b["hearts"]):
+				return int(a["hearts"]) > int(b["hearts"])
+			return int(a["coins"]) > int(b["coins"]))
+		return order
 	order.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		if _team_trophies(a) != _team_trophies(b):
 			return _team_trophies(a) > _team_trophies(b)
@@ -1904,8 +2093,10 @@ func _show_results() -> void:
 		n.custom_minimum_size = Vector2(200, 0)
 		n.add_theme_font_size_override("font_size", 24)
 		row.add_child(n)
-		for key in ["trophies", "coins"]:
-			row.add_child(_icon(TROPHY_TEX if key == "trophies" else COIN_TEX, 30))
+		var keys := _stat_keys().duplicate()
+		keys.reverse()
+		for key in keys:
+			row.add_child(_icon(_stat_tex(key), 30))
 			var m := Label.new()
 			m.text = str(q[key])
 			m.custom_minimum_size = Vector2(50, 0)

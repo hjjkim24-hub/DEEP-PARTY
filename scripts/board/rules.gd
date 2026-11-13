@@ -29,6 +29,23 @@ const COIN_SPACE_AMOUNT := 5
 const COIN_SPACES_PER_CARD := 3
 const STEAL_COINS := 5
 
+## ── 크라켄 생존전 (개인전 · 2대2) ───────────────────────────
+## 각자 하트 3개. 라운드가 끝날 때마다 크라켄이 움직여요:
+##   1) 지난 라운드에 노려 둔 칸을 촉수로 내려침 → 그 칸에 서 있으면 하트 -1 (방패가 막아 줌)
+##      내려친 칸은 성게 가시가 박힌 함정 칸이 됨 (멈추면 하트 -1)
+##   2) 탈락한 사람(크라켄의 부하)이 노릴 칸을 하나씩 고름
+##   3) 크라켄이 다음에 내려칠 칸을 새로 노림 (붉게 빛남 → 한 라운드 안에 피해야 함). 라운드가 갈수록 많아짐
+## 마지막까지 살아남은 사람(팀)이 승리. ROUND_LIMIT 까지 가면 하트 → 동전 순.
+const HEARTS_START := 3
+const HEARTS_MAX := 3
+const KRAKEN_TARGETS_BASE := 2      ## 첫 라운드에 노리는 칸 수
+const KRAKEN_TARGETS_GROW := 0.5    ## 라운드마다 늘어나는 수
+const KRAKEN_TARGETS_MAX := 9
+const KRAKEN_AIM_AT_PAWN := 0.6     ## 이 확률로 누군가 서 있는 칸 근처를 노림
+const POTION_PRICE := 12            ## 상점: 하트 +1
+const SHIELD_PRICE := 8             ## 상점: 다음 피해 한 번 막기
+const MINIGAME_WIN_HEAL := 1        ## 미니게임 1등은 하트 +1
+
 ## 찬스 카드 (weight 가 클수록 자주 나옴)
 const CARDS := [
 	{"id": "coins5", "weight": 22, "title": "+5 COINS", "text": "Get 5 coins."},
@@ -40,7 +57,12 @@ const CARDS := [
 	{"id": "warp", "weight": 4, "title": "WARP", "text": "Warp to any space you like!"},
 	{"id": "trophy_minigame", "weight": 4, "title": "TROPHY MINIGAME", "text": "Everyone plays a minigame. The winner gets a trophy!"},
 	{"id": "trophy_thief", "weight": 3, "title": "TROPHY THIEF", "text": "Steal a trophy from a player of your choice!"},
+	{"id": "heal", "weight": 8, "survival": true, "title": "SEA MEDIC", "text": "Get back 1 heart."},
+	{"id": "shield", "weight": 8, "survival": true, "title": "BARNACLE SHIELD", "text": "Blocks the next hit you take."},
+	{"id": "bait", "weight": 6, "survival": true, "title": "KRAKEN BAIT", "text": "The kraken will strike next to a player of your choice!"},
 ]
+## 생존전에서 빠지는 카드 (트로피용)
+const TROPHY_CARDS := ["trophy_minigame", "trophy_thief"]
 
 
 static func card(id: String) -> Dictionary:
@@ -50,13 +72,20 @@ static func card(id: String) -> Dictionary:
 	return CARDS[0]
 
 
-static func random_card(rng: RandomNumberGenerator) -> Dictionary:
-	var total := 0
+static func random_card(rng: RandomNumberGenerator, survival: bool = false) -> Dictionary:
+	var deck := []
 	for c in CARDS:
+		if survival and c["id"] in TROPHY_CARDS:
+			continue
+		if not survival and c.get("survival", false):
+			continue
+		deck.append(c)
+	var total := 0
+	for c in deck:
 		total += int(c["weight"])
 	var r := rng.randi_range(1, total)
-	for c in CARDS:
+	for c in deck:
 		r -= int(c["weight"])
 		if r <= 0:
 			return c
-	return CARDS[0]
+	return deck[0]

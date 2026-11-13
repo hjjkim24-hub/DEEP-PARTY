@@ -38,6 +38,8 @@ const RockShader := preload("res://shaders/reef_rock.gdshader")
 const BrainShader := preload("res://shaders/brain_coral.gdshader")
 const SkyShader := preload("res://shaders/underwater_sky.gdshader")
 const FAN_TEX := preload("res://textures/decor/sea_fan.png")
+const KrakenSkin := preload("res://shaders/kraken_skin.gdshader")
+const DangerShader := preload("res://shaders/danger_mark.gdshader")
 const ICONS := {
 	"plain": preload("res://textures/tiles/icon_plain.png"),
 	"chance": preload("res://textures/tiles/icon_chance.png"),
@@ -48,6 +50,12 @@ const ICONS := {
 	"start": preload("res://textures/tiles/icon_start.png"),
 	"coin_plus": preload("res://textures/tiles/icon_coin_plus.png"),
 	"coin_minus": preload("res://textures/tiles/icon_coin_minus.png"),
+	"treasure": preload("res://textures/tiles/icon_treasure.png"),
+	"supply": preload("res://textures/tiles/icon_supply.png"),
+	"urchin": preload("res://textures/tiles/icon_urchin.png"),
+	"whirlpool": preload("res://textures/tiles/icon_whirlpool.png"),
+	"heal": preload("res://textures/tiles/icon_heal.png"),
+	"boss": preload("res://textures/tiles/icon_boss.png"),
 }
 const BORDER_TEX := preload("res://textures/tiles/icon_border.png")
 const CHANCE_CARD_TEX := preload("res://textures/tiles/card_chance.png")
@@ -56,19 +64,27 @@ const TILE_COLORS := {
 	"portal": Color(0.58, 0.38, 0.92), "shop": Color(0.94, 0.43, 0.56),
 	"junction": Color(0.8, 0.82, 0.77), "start": Color(0.5, 0.64, 0.62),
 	"coin_plus": Color(0.3, 0.76, 0.4), "coin_minus": Color(0.86, 0.3, 0.32),
+	"treasure": Color(0.96, 0.74, 0.22), "supply": Color(0.62, 0.44, 0.26), "urchin": Color(0.48, 0.2, 0.52),
+	"whirlpool": Color(0.16, 0.48, 0.78), "heal": Color(0.36, 0.8, 0.74), "boss": Color(0.3, 0.06, 0.12),
 }
 const INK_COLORS := {
 	"plain": Color(1, 1, 1), "chance": Color(1.0, 0.98, 0.9), "minigame": Color(0.95, 0.98, 1.0),
 	"portal": Color(1, 1, 1), "shop": Color(1.0, 0.96, 0.97),
 	"junction": Color(0.84, 0.63, 0.2), "start": Color(0.84, 0.63, 0.2),
 	"coin_plus": Color(1, 1, 1), "coin_minus": Color(1, 1, 1),
+	"treasure": Color(1.0, 0.98, 0.9), "supply": Color(1.0, 0.93, 0.8), "urchin": Color(1.0, 0.9, 1.0),
+	"whirlpool": Color(0.9, 0.98, 1.0), "heal": Color(1, 1, 1), "boss": Color(1.0, 0.82, 0.3),
 }
 ## 범례 순서 + 화면에 보일 이름 (번역 키)
 const KIND_ORDER := ["plain", "chance", "minigame", "portal", "shop"]
 const KIND_NAMES := {
 	"plain": "Plain", "chance": "Chance", "minigame": "Minigame", "portal": "Portal", "shop": "Shop",
 	"coin_plus": "Lucky +5", "coin_minus": "Trap -5",
+	"treasure": "Treasure", "supply": "Supply Crate", "urchin": "Sea Urchin", "whirlpool": "Whirlpool",
+	"heal": "Air Bubble", "boss": "Kraken's Lair",
 }
+## 협동 원정 범례 순서
+const COOP_KIND_ORDER := ["plain", "treasure", "supply", "heal", "shop", "urchin", "whirlpool", "boss"]
 
 const BoardMaps := preload("res://scripts/world3d/board_maps.gd")
 const STEP := 0.5             ## 바닥 격자 간격
@@ -164,7 +180,7 @@ func _node_at(p: Vector3, kind: String, yaw: float) -> int:
 		var q: Vector3 = spaces[i]["base"]
 		if Vector2(q.x - p.x, q.z - p.z).length() < 0.5:
 			return i
-	spaces.append({"base": p, "kind": kind, "links": [], "yaw": yaw, "bridge": false})
+	spaces.append({"base": p, "kind": kind, "links": [], "next": [], "yaw": yaw, "bridge": false})
 	return spaces.size() - 1
 
 
@@ -228,7 +244,13 @@ func _build_spaces() -> void:
 					p.y = dh
 			var kind := "space"
 			if j != 0 and j != n:
-				kind = kinds[k] if k < kinds.size() else fill[(k + ri * 3) % fill.size()]
+				if k < kinds.size():
+					kind = kinds[k]
+				elif r.has("fill"):
+					var rf: Array = r["fill"]
+					kind = rf[k % rf.size()]
+				else:
+					kind = fill[(k + ri * 3) % fill.size()]
 				k += 1
 			elif j == n and r.has("end"):
 				kind = r["end"]
@@ -246,10 +268,12 @@ func _build_spaces() -> void:
 			if not spaces[a]["links"].has(b):
 				spaces[a]["links"].append(b)
 				spaces[b]["links"].append(a)
+			if not spaces[a]["next"].has(b):
+				spaces[a]["next"].append(b)      # 한 방향 길 (협동 원정: route 순서대로만 앞으로)
 	for sp in spaces:
 		if sp["kind"] == "space":
 			sp["kind"] = "junction" if sp["links"].size() > 2 else "plain"
-		if sp["kind"] != "start" and sp["links"].size() > 2:
+		if sp["kind"] != "start" and sp["kind"] != "boss" and sp["links"].size() > 2:
 			sp["kind"] = "junction"
 			sp["yaw"] = 0.0
 		var top_h: float = PLAZA * 0.0 + (0.5 if sp["kind"] == "start" else TILE_H)
@@ -981,6 +1005,8 @@ func _landmarks() -> void:
 				_whale(lm["at"], lm["dir"])
 			"clam":
 				_giant_clam(lm["at"])
+			"kraken_lair":
+				_kraken_lair(lm["at"])
 			"village":
 				_village(lm["at"])
 			"lighthouse":
@@ -1312,6 +1338,382 @@ func _giant_clam(at: Vector2) -> void:
 	add_child(l)
 	bubbles_at(p + Vector3(0, 0.8, 0), 10, 0.4)
 	_block(Vector2(p.x, p.z), 3.0)
+
+
+# ── 크라켄 굴: 판 북쪽 끝 깊은 골짜기 속 빛나는 눈 + 잠든 촉수 ─────
+signal tentacle_slammed           ## 촉수가 칸을 내려친 순간
+var kraken_eyes: Array = []       ## 깨어날 때 연출용 (MeshInstance3D)
+var kraken_arms: Array = []       ## [Node3D 뿌리, 기본 회전]
+var kraken_root: Node3D
+
+
+func _kraken_lair(at: Vector2) -> void:
+	kraken_root = Node3D.new()
+	kraken_root.position = Vector3(at.x, natural_height(at.x, at.y), at.y)
+	add_child(kraken_root)
+	# 골짜기 속에서 빛나는 두 눈
+	for sd: float in [-1.0, 1.0]:
+		var eye := SphereMesh.new()
+		eye.radius = 0.9
+		eye.height = 1.1
+		var em := StandardMaterial3D.new()
+		em.albedo_color = Color(1.0, 0.75, 0.15)
+		em.emission_enabled = true
+		em.emission = Color(1.0, 0.6, 0.1)
+		em.emission_energy_multiplier = 1.2
+		var e := _mi(eye, em, Vector3(sd * 2.6, -2.2, 0.8), Basis(), kraken_root)
+		var pupil := _mi(_box(Vector3(0.18, 0.9, 0.2)), _mat(Color(0.05, 0.02, 0.02), 0.3), Vector3(sd * 2.6, -2.2, 1.65), Basis(), kraken_root)
+		kraken_eyes.append(e)
+		kraken_eyes.append(pupil)
+	var gl := OmniLight3D.new()
+	gl.light_color = Color(1.0, 0.55, 0.2)
+	gl.light_energy = 2.0
+	gl.omni_range = 9.0
+	gl.position = Vector3(0, -1.0, 1.5)
+	kraken_root.add_child(gl)
+	# 골짜기 가장자리에 걸쳐 늘어진 촉수들 (마디마디 가늘어짐)
+	var spots := [Vector3(-7.0, -0.6, 1.2), Vector3(-3.8, -0.6, 1.6), Vector3(4.2, -0.6, 1.6), Vector3(7.4, -0.6, 1.0)]
+	for k in spots.size():
+		var tn := make_tentacle(10, 0.62, 0.95)
+		var arm: Node3D = tn["root"]
+		arm.position = spots[k]
+		var base_rot := Vector3(-0.9, (k - 1.5) * 0.35, 0.0)
+		arm.rotation = base_rot
+		kraken_root.add_child(arm)
+		var segs: Array = tn["segs"]
+		for i in segs.size():
+			(segs[i] as Node3D).rotation = Vector3(0.22 + 0.05 * i, 0, (0.05 if k % 2 == 0 else -0.05) * i)
+		kraken_arms.append([arm, base_rot])
+	# 골짜기 둘레 부서진 바위 · 뼈
+	for k in 12:
+		var x := at.x + _rng.randf_range(-11, 11)
+		var z := at.y + _rng.randf_range(2.5, 4.5)
+		if _free_spot(x, z, 0.8):
+			_rock(Vector3(x, ground_height(x, z) - 0.3, z), _rng.randf_range(0.6, 1.3))
+			_block(Vector2(x, z), 1.0)
+
+
+## 촉수 하나: 마디(Node3D)를 이어 붙인 사슬. 마디마다 가늘어지는 몸통 + 배 쪽(+Z) 빨판 두 줄.
+## 각 마디는 부모 마디 끝(+Y)에 붙어서, 마디의 X 축 회전으로 말리고 펴짐.
+## 돌려줌: {"root": Node3D, "segs": [Node3D...], "mat": ShaderMaterial}
+var _skin_mat: ShaderMaterial
+var _sucker_mat: StandardMaterial3D
+
+
+func make_tentacle(n: int, r0: float, seg_len: float) -> Dictionary:
+	if _skin_mat == null:
+		_skin_mat = ShaderMaterial.new()
+		_skin_mat.shader = KrakenSkin
+		_sucker_mat = StandardMaterial3D.new()
+		_sucker_mat.albedo_color = Color(0.96, 0.74, 0.7)
+		_sucker_mat.roughness = 0.25
+		_sucker_mat.rim_enabled = true
+		_sucker_mat.rim = 0.3
+	var mat := _skin_mat.duplicate() as ShaderMaterial
+	var root := Node3D.new()
+	var segs := []
+	var parent: Node3D = root
+	var r := r0
+	for i in n:
+		var seg := Node3D.new()
+		seg.position = Vector3(0, seg_len if i > 0 else 0.0, 0)
+		parent.add_child(seg)
+		var r1 := r * 0.86
+		var c := CylinderMesh.new()
+		c.top_radius = r1
+		c.bottom_radius = r
+		c.height = seg_len * 1.04
+		c.radial_segments = 16
+		c.rings = 2
+		var body := MeshInstance3D.new()
+		body.mesh = c
+		body.material_override = mat
+		body.position = Vector3(0, seg_len * 0.5, 0)
+		seg.add_child(body)
+		# 마디 이음새가 매끈하게 공 하나
+		var j := SphereMesh.new()
+		j.radius = r
+		j.height = r * 2.0
+		j.radial_segments = 16
+		j.rings = 8
+		var jm := MeshInstance3D.new()
+		jm.mesh = j
+		jm.material_override = mat
+		seg.add_child(jm)
+		# 빨판 두 줄 (가운데 오목)
+		for q in 2:
+			for sx: float in [-1.0, 1.0]:
+				var sk := CylinderMesh.new()
+				sk.top_radius = r * 0.28
+				sk.bottom_radius = r * 0.34
+				sk.height = r * 0.18
+				sk.radial_segments = 12
+				var sm := MeshInstance3D.new()
+				sm.mesh = sk
+				sm.material_override = _sucker_mat
+				var y := seg_len * (0.25 + q * 0.5)
+				var rr := lerpf(r, r1, y / seg_len)
+				sm.position = Vector3(sx * rr * 0.42, y, rr * 0.86)
+				sm.rotation = Vector3(PI / 2, 0, -sx * 0.45)
+				seg.add_child(sm)
+				var hole := SphereMesh.new()
+				hole.radius = r * 0.14
+				hole.height = r * 0.1
+				var hm := MeshInstance3D.new()
+				hm.mesh = hole
+				hm.material_override = _mat(Color(0.45, 0.12, 0.16), 0.5)
+				hm.position = sm.position + Vector3(0, 0, r * 0.09)
+				hm.rotation = sm.rotation
+				seg.add_child(hm)
+		segs.append(seg)
+		parent = seg
+		r = r1
+	# 뾰족한 끝
+	var tip := CylinderMesh.new()
+	tip.top_radius = 0.0
+	tip.bottom_radius = r
+	tip.height = seg_len * 0.9
+	var tm := MeshInstance3D.new()
+	tm.mesh = tip
+	tm.material_override = mat
+	tm.position = Vector3(0, seg_len + seg_len * 0.45, 0)
+	parent.add_child(tm)
+	return {"root": root, "segs": segs, "mat": mat}
+
+
+## 촉수 자세: 뿌리를 axis 축으로 pitch 만큼 기울이고, 마디마다 curl 만큼 더 말기 (+ 출렁임)
+func _pose_tentacle(tn: Dictionary, axis: Vector3, pitch: float, curl: float, wave: float, t: float) -> void:
+	(tn["root"] as Node3D).basis = Basis(axis, pitch)
+	var segs: Array = tn["segs"]
+	for i in segs.size():
+		var f := float(i) / segs.size()
+		var w := sin(t * 5.0 - i * 0.7) * wave * f
+		(segs[i] as Node3D).basis = Basis(axis, curl * (0.4 + f) + w)
+
+
+# ── 크라켄이 노린 칸 표시: 바닥에 번지는 붉은 빛 + 칸 옆 땅에서 꿈틀대는 촉수 끝 ──────────
+var _dangers := {}      ## 칸 → {"mark": MeshInstance3D, "tn": 촉수, "dir": 칸 쪽 방향, "root": 뿌리 위치, "t0": 시작 시간}
+
+
+func mark_danger(i: int) -> void:
+	if _dangers.has(i):
+		return
+	var top: Vector3 = spaces[i]["pos"]
+	var q := QuadMesh.new()
+	q.size = Vector2(TILE * 2.0, TILE * 2.0)
+	q.orientation = PlaneMesh.FACE_Y
+	var m := ShaderMaterial.new()
+	m.shader = DangerShader
+	var mark := _mi(q, m, top + Vector3(0, 0.06, 0))
+	mark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	m.set_shader_parameter("strength", 0.0)
+	create_tween().tween_method(func(v: float) -> void: m.set_shader_parameter("strength", v), 0.0, 1.0, 0.5)
+	# 칸 옆 땅 (길 바깥쪽)에서 촉수 끝이 삐죽
+	var side := Basis(Vector3.UP, float(spaces[i]["yaw"])).x
+	var best := top + side * 3.0
+	for sd: float in [1.0, -1.0]:
+		var c := top + side * sd * 3.0
+		if _free_spot(c.x, c.z, 0.3):
+			best = c
+			break
+	best.y = ground_height(best.x, best.z) - 0.25
+	var tn := make_tentacle(7, 0.32, 0.42)
+	var root: Node3D = tn["root"]
+	root.position = best + Vector3(0, -3.2, 0)
+	add_child(root)
+	var dir := Vector3(top.x - best.x, 0, top.z - best.z).normalized()
+	var axis := Vector3.UP.cross(dir).normalized()
+	_dangers[i] = {"mark": mark, "tn": tn, "dir": dir, "axis": axis, "root": best, "t0": _time}
+	_pose_tentacle(tn, axis, -0.15, -0.35, 0.3, _time)
+	create_tween().tween_property(root, "position:y", best.y, 0.7).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	bubbles_at(best, 14, 0.4, true)
+	_dust(best, 0.6)
+
+
+func danger_tiles() -> Array:
+	return _dangers.keys()
+
+
+func _clear_danger(i: int) -> void:
+	if not _dangers.has(i):
+		return
+	var d: Dictionary = _dangers[i]
+	_dangers.erase(i)
+	var mark: MeshInstance3D = d["mark"]
+	var m := mark.material_override as ShaderMaterial
+	var t := create_tween()
+	t.tween_method(func(v: float) -> void: m.set_shader_parameter("strength", v), 1.0, 0.0, 0.4)
+	t.tween_callback(mark.queue_free)
+
+
+## 노린 칸을 내려침: 촉수가 땅에서 솟구쳐 뒤로 젖혔다가 칸 위로 쾅. await 가능, 끝나면 들어감
+func tentacle_strike(i: int) -> void:
+	var top: Vector3 = spaces[i]["pos"]
+	var d: Dictionary
+	if _dangers.has(i):
+		d = _dangers[i]
+		(d["tn"]["root"] as Node3D).queue_free()
+	else:
+		var side := Basis(Vector3.UP, float(spaces[i]["yaw"])).x
+		var b := top + side * 3.0
+		b.y = ground_height(b.x, b.z) - 0.25
+		var dir0 := Vector3(top.x - b.x, 0, top.z - b.z).normalized()
+		d = {"root": b, "dir": dir0, "axis": Vector3.UP.cross(dir0).normalized()}
+	_clear_danger(i)
+	var base: Vector3 = d["root"]
+	var axis: Vector3 = d["axis"]
+	var tn := make_tentacle(8, 0.6, 0.64)
+	base.y = top.y + 0.05     # 눕혔을 때 칸 윗면에 걸치게
+	var root: Node3D = tn["root"]
+	root.position = base + Vector3(0, -6.0, 0)
+	add_child(root)
+	var mat: ShaderMaterial = tn["mat"]
+	# 1) 땅이 터지며 솟구침 (뒤로 젖혀 말림)
+	_dust(base, 1.2)
+	bubbles_at(base, 30, 0.8, true)
+	var rise := create_tween().set_parallel(true)
+	rise.tween_property(root, "position:y", base.y, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	rise.tween_method(func(f: float) -> void:
+		_pose_tentacle(tn, axis, lerpf(0.0, -0.35, f), lerpf(0.0, -0.32, f), 0.25, _time)
+		mat.set_shader_parameter("glow", f * 0.6), 0.0, 1.0, 0.55)
+	await rise.finished
+	# 2) 잠깐 버팀 (출렁)
+	var hold := create_tween()
+	hold.tween_method(func(f: float) -> void: _pose_tentacle(tn, axis, -0.35 - f * 0.12, -0.32 - f * 0.06, 0.35, _time), 0.0, 1.0, 0.32)
+	await hold.finished
+	# 3) 내려침: 칸 쪽으로 넘어지며 쫙 펴짐 (끝이 칸을 덮음)
+	var slam := create_tween()
+	slam.tween_method(func(f: float) -> void:
+		var e := f * f
+		_pose_tentacle(tn, axis, lerpf(-0.47, PI * 0.5 - 0.05, e), lerpf(-0.38, 0.02, e), 0.0, _time), 0.0, 1.0, 0.2)
+	await slam.finished
+	_dust(top, 1.6)
+	bubbles_at(top, 40, 1.0, true)
+	_impact_ring(top)
+	tentacle_slammed.emit()
+	# 4) 꿈틀대다가 땅속으로 쑥
+	var wr := create_tween()
+	wr.tween_method(func(f: float) -> void:
+		_pose_tentacle(tn, axis, PI * 0.5 - 0.05 - f * 0.2, 0.02 + sin(f * 9.0) * 0.04, 0.0, _time)
+		mat.set_shader_parameter("glow", 0.6 * (1.0 - f)), 0.0, 1.0, 0.5)
+	await wr.finished
+	var back := create_tween().set_parallel(true)
+	back.tween_method(func(f: float) -> void: _pose_tentacle(tn, axis, lerpf(PI * 0.5 - 0.25, 0.0, f), lerpf(0.0, -0.4, f), 0.2, _time), 0.0, 1.0, 0.35)
+	back.tween_property(root, "position:y", base.y - 7.0, 0.55).set_delay(0.2).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	back.finished.connect(root.queue_free)
+	_dust(base, 0.7)
+
+
+## 하트를 다 잃은 말: 촉수가 휘감아 땅속으로 끌고 감
+func tentacle_drag(node: Node3D) -> void:
+	var p := node.position
+	var side := Vector3(1, 0, 0.3).normalized()
+	var base := p + side * 1.7
+	base.y = ground_height(base.x, base.z) - 0.2
+	var dir := Vector3(p.x - base.x, 0, p.z - base.z).normalized()
+	var axis := Vector3.UP.cross(dir).normalized()
+	var tn := make_tentacle(9, 0.42, 0.55)
+	var root: Node3D = tn["root"]
+	root.position = base + Vector3(0, -5.0, 0)
+	add_child(root)
+	_dust(base, 1.0)
+	bubbles_at(base, 24, 0.7, true)
+	var rise := create_tween().set_parallel(true)
+	rise.tween_property(root, "position:y", base.y, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	rise.tween_method(func(f: float) -> void: _pose_tentacle(tn, axis, lerpf(0.0, 0.25, f), lerpf(0.0, 0.55, f), 0.15, _time), 0.0, 1.0, 0.5)
+	await rise.finished
+	# 휘감기 (말 쪽으로 감겨 들어감) + 말이 버둥
+	var wrap := create_tween().set_parallel(true)
+	wrap.tween_method(func(f: float) -> void: _pose_tentacle(tn, axis, 0.25 + f * 0.25, 0.55 + f * 0.55, 0.1, _time), 0.0, 1.0, 0.45)
+	wrap.tween_property(node, "rotation:z", 0.35, 0.12)
+	await wrap.finished
+	var wig := create_tween().set_loops(3)
+	wig.tween_property(node, "rotation:z", -0.3, 0.08)
+	wig.tween_property(node, "rotation:z", 0.3, 0.08)
+	await get_tree().create_timer(0.5, false).timeout
+	# 끌고 내려감
+	bubbles_at(p, 40, 1.0, true)
+	_dust(p, 1.4)
+	var down := create_tween().set_parallel(true)
+	down.tween_property(root, "position:y", base.y - 7.0, 0.8).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	down.tween_property(node, "position", base + Vector3(0, -4.0, 0), 0.75).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	down.tween_property(node, "rotation:y", node.rotation.y + TAU * 1.5, 0.75)
+	await down.finished
+	node.visible = false
+	root.queue_free()
+
+
+## 모래 먼지가 확 퍼짐
+func _dust(p: Vector3, amount: float) -> void:
+	var cp := CPUParticles3D.new()
+	cp.one_shot = true
+	cp.amount = int(40 * amount)
+	cp.lifetime = 1.6
+	cp.explosiveness = 0.9
+	cp.direction = Vector3.UP
+	cp.spread = 80.0
+	cp.initial_velocity_min = 1.0 * amount
+	cp.initial_velocity_max = 3.2 * amount
+	cp.gravity = Vector3(0, -0.6, 0)
+	cp.damping_min = 1.5
+	cp.damping_max = 2.5
+	cp.scale_amount_min = 0.6
+	cp.scale_amount_max = 1.8
+	var q := QuadMesh.new()
+	q.size = Vector2(0.7, 0.7)
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.72, 0.68, 0.56, 0.5)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.vertex_color_use_as_albedo = true
+	q.material = m
+	cp.mesh = q
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 0.75))
+	g.set_color(1, Color(1, 1, 1, 0.0))
+	cp.color_ramp = g
+	cp.position = p + Vector3(0, 0.2, 0)
+	add_child(cp)
+	cp.emitting = true
+	cp.finished.connect(cp.queue_free)
+
+
+## 내려친 자리에서 퍼지는 충격파 고리
+func _impact_ring(p: Vector3) -> void:
+	var t := TorusMesh.new()
+	t.inner_radius = 0.9
+	t.outer_radius = 1.1
+	t.rings = 32
+	t.ring_segments = 6
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.85, 0.95, 1.0, 0.6)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var mi := _mi(t, m, p + Vector3(0, 0.1, 0))
+	mi.scale = Vector3(0.5, 0.3, 0.5)
+	var tw := create_tween().set_parallel(true)
+	tw.tween_property(mi, "scale", Vector3(4.5, 0.15, 4.5), 0.6).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	tw.tween_property(m, "albedo_color:a", 0.0, 0.6)
+	tw.finished.connect(mi.queue_free)
+
+
+## 크라켄이 깨어남: 눈이 번쩍, 촉수가 솟아오름 (await 가능)
+func kraken_awaken() -> void:
+	if kraken_root == null:
+		return
+	for e in kraken_eyes:
+		var mi := e as MeshInstance3D
+		if mi.material_override is StandardMaterial3D:
+			var m := mi.material_override as StandardMaterial3D
+			create_tween().tween_property(m, "emission_energy_multiplier", 6.0, 0.6)
+	var up := create_tween().set_parallel(true)
+	up.tween_property(kraken_root, "position:y", kraken_root.position.y + 3.0, 2.2).set_trans(Tween.TRANS_SINE)
+	for a in kraken_arms:
+		var arm: Node3D = a[0]
+		var base: Vector3 = a[1]
+		up.tween_property(arm, "rotation", Vector3(-0.15, base.y * 1.4, base.z), 1.6).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	await up.finished
 
 
 # ── 더 많은 볼거리 (가라앉은 섬) ─────────────────────────────
@@ -2670,6 +3072,14 @@ func _process(delta: float) -> void:
 		cup.position.y = 2.6 + sin(_time * 2.2) * 0.18
 	for r in _rotors:
 		(r[0] as Node3D).rotation.y += delta * float(r[1])
+	for i in _dangers:
+		var dd: Dictionary = _dangers[i]
+		var dn: Dictionary = dd["tn"]
+		if is_instance_valid(dn["root"]):
+			_pose_tentacle(dn, dd["axis"], -0.15 + sin(_time * 1.3 + i) * 0.12, -0.35 + sin(_time * 2.1 + i) * 0.2, 0.35, _time)
+	for k in kraken_arms.size():
+		var arm: Node3D = kraken_arms[k][0]
+		arm.rotation.z = sin(_time * 0.7 + k * 1.3) * 0.12
 	for g in _glows:
 		(g[0] as StandardMaterial3D).emission_energy_multiplier = float(g[1]) * (0.75 + 0.25 * sin(_time * 1.7 + float(g[2])))
 	for j in _jellies:

@@ -154,6 +154,7 @@ static func _sunken_island() -> Dictionary:
 			{"c": Vector2(-14, -38.5), "r": Vector2(7.0, 4.6), "depth": 8.0},
 			{"c": Vector2(12, -40.5), "r": Vector2(6.5, 4.2), "depth": 8.0},
 			{"c": Vector2(10.5, 20.8), "r": Vector2(4.2, 3.2), "depth": 7.0},
+			{"c": Vector2(0, -47.2), "r": Vector2(8.5, 1.9), "depth": 9.0},     # 크라켄 굴
 		],
 		"volcanoes": [{"at": Vector2(47, -38), "r": 10.0, "h": 8.0}],
 		"arches": [
@@ -178,6 +179,7 @@ static func _sunken_island() -> Dictionary:
 			{"type": "obelisk", "at": Vector2(-9, 12)},
 			{"type": "obelisk", "at": Vector2(9, 11)},
 			{"type": "clam", "at": Vector2(-18, 29.5)},
+			{"type": "kraken_lair", "at": Vector2(0, -46.6)},
 		],
 		"decor_zones": [[Vector2(0, -3), 7.0, 22], [Vector2(-28, 10), 5.0, 8], [Vector2(28, 10), 5.0, 8],
 			[Vector2(-24, -18), 5.0, 10], [Vector2(24, -18), 5.0, 10], [Vector2(-40, 40), 4.0, 10], [Vector2(40, 30), 4.0, 8],
@@ -211,3 +213,4 @@ static func _sunken_island() -> Dictionary:
 		"overview_zoom": 7.2,
 		"fog": 0.006,
 	}
+
