@@ -1354,39 +1354,34 @@ func _kraken_lair(at: Vector2) -> void:
 	add_child(kraken_root)
 	_ensure_skin()
 	var head_mat := _skin_mat.duplicate() as ShaderMaterial
-	head_mat.set_shader_parameter("belly_color", Color(0.5, 0.12, 0.2))
-	var mantle := SphereMesh.new()
-	mantle.radius = 3.0
-	mantle.height = 6.4
-	mantle.radial_segments = 40
-	mantle.rings = 24
-	var mm := _mi(mantle, head_mat, Vector3(0, 1.4, -0.6), Basis(Vector3(1, 0, 0), -0.35), kraken_root)
-	mm.scale = Vector3(1.25, 1.0, 1.05)
-	# 이마 주름 · 혹
-	for k in 7:
-		var b := SphereMesh.new()
-		b.radius = _rng.randf_range(0.45, 0.9)
-		b.height = b.radius * 1.6
-		var a := _rng.randf_range(-1.2, 1.2)
-		_mi(b, head_mat, Vector3(sin(a) * 2.6, 2.4 + _rng.randf_range(-0.6, 0.8), cos(a) * 1.6 - 0.6), Basis(), kraken_root)
-	# 눈: 노란 홍채 + 가로로 찢어진 동공 + 두툼한 눈꺼풀
+	head_mat.set_shader_parameter("belly_color", Color(0.36, 0.08, 0.12))
+	head_mat.set_shader_parameter("rough_min", 0.42)
+	head_mat.set_shader_parameter("rough_max", 0.62)
+	head_mat.set_shader_parameter("scale", 0.35)
+	# 외투막: 뒤로 늘어진 주머니 모양 (울퉁불퉁 + 주름)
+	var mm := _mi(_flesh_mesh(21, 0.14, 0.012), head_mat, Vector3(0, 2.2, -1.8), Basis(Vector3(1, 0, 0), -0.75), kraken_root)
+	mm.scale = Vector3(2.7, 4.2, 2.6)
+	# 머리(눈이 붙은 부분): 넓적하고 낮음
+	var hd := _mi(_flesh_mesh(22, 0.1, 0.008), head_mat, Vector3(0, 0.5, 0.9), Basis(), kraken_root)
+	hd.scale = Vector3(2.9, 1.7, 2.3)
+	# 눈: 두툼한 눈두덩 속 노란 홍채 + 가로로 찢어진 동공 (번들거리는 막)
 	for sd: float in [-1.0, 1.0]:
-		var lid := SphereMesh.new()
-		lid.radius = 0.95
-		lid.height = 1.3
-		_mi(lid, head_mat, Vector3(sd * 1.55, 0.95, 2.05), Basis(), kraken_root)
+		var lid := _mi(_flesh_mesh(30 + int(sd), 0.08, 0.004), head_mat, Vector3(sd * 1.6, 1.3, 2.3), Basis(), kraken_root)
+		lid.scale = Vector3(0.95, 0.8, 0.8)
 		var eye := SphereMesh.new()
-		eye.radius = 0.72
-		eye.height = 1.44
+		eye.radius = 0.5
+		eye.height = 1.0
 		var em := StandardMaterial3D.new()
-		em.albedo_color = Color(1.0, 0.78, 0.2)
-		em.roughness = 0.05
+		em.albedo_color = Color(0.85, 0.62, 0.12)
+		em.roughness = 0.04
+		em.metallic_specular = 1.0
 		em.emission_enabled = true
-		em.emission = Color(1.0, 0.55, 0.08)
-		em.emission_energy_multiplier = 0.4
+		em.emission = Color(1.0, 0.5, 0.06)
+		em.emission_energy_multiplier = 0.15
 		em.clearcoat_enabled = true
-		var e := _mi(eye, em, Vector3(sd * 1.55, 0.8, 2.4), Basis(), kraken_root)
-		var pupil := _mi(_box(Vector3(0.95, 0.16, 0.12)), _mat(Color(0.03, 0.01, 0.01), 0.2), Vector3(sd * 1.55, 0.8, 3.1), Basis(), kraken_root)
+		em.clearcoat = 1.0
+		var e := _mi(eye, em, Vector3(sd * 1.6, 1.2, 2.75), Basis(), kraken_root)
+		var pupil := _mi(_rbox(Vector3(0.62, 0.11, 0.08), 0.04), _mat(Color(0.02, 0.01, 0.01), 0.1), Vector3(sd * 1.6, 1.2, 3.22), Basis(), kraken_root)
 		kraken_eyes.append(e)
 		kraken_eyes.append(pupil)
 	var gl := OmniLight3D.new()
@@ -1423,6 +1418,44 @@ func _kraken_lair(at: Vector2) -> void:
 ## 돌려줌: {"root": Node3D, "segs": [Node3D...], "mat": ShaderMaterial}
 var _skin_mat: ShaderMaterial
 var _sucker_mat: StandardMaterial3D
+
+
+## 울퉁불퉁한 살덩이 (구를 노이즈로 부풀림 + 주름). 이음새 없는 노멀
+func _flesh_mesh(seed: int, amp: float, wrinkle: float) -> ArrayMesh:
+	var fn := FastNoiseLite.new()
+	fn.seed = seed
+	fn.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	fn.fractal_octaves = 4
+	fn.frequency = 1.1
+	var sm := SphereMesh.new()
+	sm.radius = 1.0
+	sm.height = 2.0
+	sm.radial_segments = 64
+	sm.rings = 40
+	var arr := sm.get_mesh_arrays()
+	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	for i in verts.size():
+		var d := verts[i]
+		var k := 1.0 + fn.get_noise_3dv(d * 1.4) * amp + sin(d.y * 22.0 + fn.get_noise_3dv(d * 3.0) * 4.0) * wrinkle
+		verts[i] = d * k
+	var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+	var acc := {}
+	for t in range(0, idx.size(), 3):
+		var fnrm := (verts[idx[t + 1]] - verts[idx[t]]).cross(verts[idx[t + 2]] - verts[idx[t]])
+		for vi in [idx[t], idx[t + 1], idx[t + 2]]:
+			var key := Vector3i((verts[vi] * 1000.0).round())
+			acc[key] = (acc.get(key, Vector3.ZERO) as Vector3) + fnrm
+	var norms := PackedVector3Array()
+	norms.resize(verts.size())
+	for i in verts.size():
+		var nn: Vector3 = (acc[Vector3i((verts[i] * 1000.0).round())] as Vector3).normalized()
+		norms[i] = nn if nn.dot(verts[i]) >= 0.0 else -nn
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = norms
+	arr[Mesh.ARRAY_TANGENT] = null
+	var am := ArrayMesh.new()
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	return am
 
 
 func _ensure_skin() -> void:
@@ -1743,10 +1776,10 @@ func kraken_awaken() -> void:
 		return
 	for e in kraken_eyes:
 		if e is OmniLight3D:
-			create_tween().tween_property(e, "light_energy", 6.0, 0.8)
+			create_tween().tween_property(e, "light_energy", 2.5, 0.8)
 		elif (e as MeshInstance3D).material_override is StandardMaterial3D:
 			var m := (e as MeshInstance3D).material_override as StandardMaterial3D
-			create_tween().tween_property(m, "emission_energy_multiplier", 5.0, 0.8)
+			create_tween().tween_property(m, "emission_energy_multiplier", 0.9, 0.8)
 	_dust(kraken_root.position + Vector3(0, 4.6, 2.0), 2.0)
 	bubbles_at(kraken_root.position + Vector3(0, 4.6, 2.0), 60, 4.0, true)
 	var up := create_tween().set_parallel(true)
