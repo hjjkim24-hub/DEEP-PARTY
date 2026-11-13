@@ -38,7 +38,10 @@ const RockShader := preload("res://shaders/reef_rock.gdshader")
 const BrainShader := preload("res://shaders/brain_coral.gdshader")
 const SkyShader := preload("res://shaders/underwater_sky.gdshader")
 const FAN_TEX := preload("res://textures/decor/sea_fan.png")
-const KrakenSkin := preload("res://shaders/kraken_skin.gdshader")
+const KrakenArmShader := preload("res://shaders/kraken_arm.gdshader")
+const KrakenBodyShader := preload("res://shaders/kraken_body.gdshader")
+const KrakenEyeShader := preload("res://shaders/kraken_eye.gdshader")
+const KRAKEN_BODY := preload("res://models/kraken_body.obj")
 const DangerShader := preload("res://shaders/danger_mark.gdshader")
 const ICONS := {
 	"plain": preload("res://textures/tiles/icon_plain.png"),
@@ -1342,10 +1345,11 @@ func _giant_clam(at: Vector2) -> void:
 
 # ── 크라켄 굴: 판 북쪽 끝 깊은 골짜기 속 빛나는 눈 + 잠든 촉수 ─────
 signal tentacle_slammed           ## 촉수가 칸을 내려친 순간
-const KRAKEN_SCALE := 7.5
+const KRAKEN_SCALE := 8.0
 const KRAKEN_SLEEP_Y := -58.0      ## 잠들어 있을 때 (깊이 잠김)
-const KRAKEN_AWAKE_Y := -3.5       ## 깨어나면 (머리가 판 북쪽 끝에 걸림)
+const KRAKEN_AWAKE_Y := 0.5        ## 깨어나면 (머리가 판 북쪽 끝에 걸림)
 var kraken_coils: Array = []      ## [촉수, 기울일 축, 위상, 뿌리 깊이]
+var kraken_body_mat: ShaderMaterial
 var kraken_eyes: Array = []       ## 깨어날 때 연출용 (MeshInstance3D)
 var kraken_arms: Array = []       ## [Node3D 뿌리, 기본 회전]
 var kraken_root: Node3D
@@ -1355,46 +1359,34 @@ func _kraken_lair(at: Vector2) -> void:
 	# 골짜기 속에 몸을 숨긴 크라켄: 머리(외투막) 꼭대기만 바위처럼 보이다가, 깨어나면 솟아올라 눈을 뜸
 	# 판 북쪽 바깥 심연에 몸을 숨긴 거대 크라켄 (판만 한 크기). 처음엔 깊이 잠겨 있다가 솟아오름
 	kraken_root = Node3D.new()
-	kraken_root.position = Vector3(at.x, KRAKEN_SLEEP_Y, at.y - 24.0)
+	kraken_root.position = Vector3(at.x, KRAKEN_SLEEP_Y, at.y - 22.0)
 	kraken_root.scale = Vector3.ONE * KRAKEN_SCALE
 	add_child(kraken_root)
-	_ensure_skin()
-	var head_mat := _skin_mat.duplicate() as ShaderMaterial
-	head_mat.set_shader_parameter("belly_color", Color(0.2, 0.36, 0.1))
-	head_mat.set_shader_parameter("rough_min", 0.38)
-	head_mat.set_shader_parameter("rough_max", 0.6)
-	head_mat.set_shader_parameter("scale", 0.6)
-	# 외투막: 뒤로 늘어진 주머니 모양 (울퉁불퉁 + 주름)
-	var mm := _mi(_flesh_mesh(21, 0.14, 0.012), head_mat, Vector3(0, 2.2, -1.8), Basis(Vector3(1, 0, 0), -0.75), kraken_root)
-	mm.scale = Vector3(2.7, 4.2, 2.6)
-	# 머리(눈이 붙은 부분): 넓적하고 낮음
-	var hd := _mi(_flesh_mesh(22, 0.1, 0.008), head_mat, Vector3(0, 0.5, 0.9), Basis(), kraken_root)
-	hd.scale = Vector3(2.9, 1.7, 2.3)
-	# 눈: 두툼한 눈두덩 속 노란 홍채 + 가로로 찢어진 동공 (번들거리는 막)
+	# 몸통: 외투막 · 머리 · 눈두덩 · 팔 뿌리가 하나로 이어진 조각 (tools/make_kraken.py)
+	var bm := ShaderMaterial.new()
+	bm.shader = KrakenBodyShader
+	bm.set_shader_parameter("pattern_scale", 1.2)
+	var body := MeshInstance3D.new()
+	body.mesh = KRAKEN_BODY
+	body.material_override = bm
+	kraken_root.add_child(body)
+	kraken_body_mat = bm
+	# 눈: 눈두덩 구멍 속에 반쯤 묻힌 실제 문어 눈 (빛나지 않음)
+	var em := ShaderMaterial.new()
+	em.shader = KrakenEyeShader
 	for sd: float in [-1.0, 1.0]:
-		var lid := _mi(_flesh_mesh(30 + int(sd), 0.08, 0.004), head_mat, Vector3(sd * 1.6, 1.3, 2.3), Basis(), kraken_root)
-		lid.scale = Vector3(0.95, 0.8, 0.8)
 		var eye := SphereMesh.new()
-		eye.radius = 0.5
-		eye.height = 1.0
-		var em := StandardMaterial3D.new()
-		em.albedo_color = Color(0.95, 0.85, 0.15)
-		em.roughness = 0.04
-		em.metallic_specular = 1.0
-		em.emission_enabled = true
-		em.emission = Color(0.85, 1.0, 0.1)
-		em.emission_energy_multiplier = 0.15
-		em.clearcoat_enabled = true
-		em.clearcoat = 1.0
-		var e := _mi(eye, em, Vector3(sd * 1.6, 1.2, 2.75), Basis(), kraken_root)
-		var pupil := _mi(_rbox(Vector3(0.62, 0.11, 0.08), 0.04), _mat(Color(0.02, 0.01, 0.01), 0.1), Vector3(sd * 1.6, 1.2, 3.22), Basis(), kraken_root)
+		eye.radius = 0.36
+		eye.height = 0.72
+		eye.radial_segments = 48
+		eye.rings = 24
+		var e := _mi(eye, em, Vector3(sd * 1.42, 0.6, 1.47), Basis(Vector3.UP, sd * 0.55), kraken_root)
 		kraken_eyes.append(e)
-		kraken_eyes.append(pupil)
 	var gl := OmniLight3D.new()
-	gl.light_color = Color(0.6, 1.0, 0.25)
-	gl.light_energy = 1.2
-	gl.omni_range = 60.0
-	gl.position = Vector3(0, 1.0, 4.0)
+	gl.light_color = Color(0.45, 1.0, 0.35)
+	gl.light_energy = 0.0
+	gl.omni_range = 70.0
+	gl.position = Vector3(0, 1.5, 4.0)
 	kraken_root.add_child(gl)
 	kraken_eyes.append(gl)
 	# 독 안개: 머리 둘레로 피어오르는 초록 독기
@@ -1410,144 +1402,72 @@ func _kraken_lair(at: Vector2) -> void:
 			_block(Vector2(x, z), 1.0)
 
 
-## 촉수 하나: 마디(Node3D)를 이어 붙인 사슬. 마디마다 가늘어지는 몸통 + 배 쪽(+Z) 빨판 두 줄.
-## 각 마디는 부모 마디 끝(+Y)에 붙어서, 마디의 X 축 회전으로 말리고 펴짐.
-## 돌려줌: {"root": Node3D, "segs": [Node3D...], "mat": ShaderMaterial}
-var _skin_mat: ShaderMaterial
-var _sucker_mat: StandardMaterial3D
+## 촉수 하나: 길이 1 짜리 곧은 관을 셰이더가 휘게 만듦 (마디 없이 매끈). 뿌리에서 +Y 로 뻗고 dir 쪽(+Z)으로 휨
+## 돌려줌: {"root": MeshInstance3D, "mat": ShaderMaterial}
+var _tube: ArrayMesh
 
 
-## 울퉁불퉁한 살덩이 (구를 노이즈로 부풀림 + 주름). 이음새 없는 노멀
-func _flesh_mesh(seed: int, amp: float, wrinkle: float) -> ArrayMesh:
-	var fn := FastNoiseLite.new()
-	fn.seed = seed
-	fn.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	fn.fractal_octaves = 4
-	fn.frequency = 1.1
-	var sm := SphereMesh.new()
-	sm.radius = 1.0
-	sm.height = 2.0
-	sm.radial_segments = 64
-	sm.rings = 40
-	var arr := sm.get_mesh_arrays()
-	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
-	for i in verts.size():
-		var d := verts[i]
-		var k := 1.0 + fn.get_noise_3dv(d * 1.4) * amp + sin(d.y * 22.0 + fn.get_noise_3dv(d * 3.0) * 4.0) * wrinkle
-		verts[i] = d * k
-	var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
-	var acc := {}
-	for t in range(0, idx.size(), 3):
-		var fnrm := (verts[idx[t + 1]] - verts[idx[t]]).cross(verts[idx[t + 2]] - verts[idx[t]])
-		for vi in [idx[t], idx[t + 1], idx[t + 2]]:
-			var key := Vector3i((verts[vi] * 1000.0).round())
-			acc[key] = (acc.get(key, Vector3.ZERO) as Vector3) + fnrm
-	var norms := PackedVector3Array()
-	norms.resize(verts.size())
-	for i in verts.size():
-		var nn: Vector3 = (acc[Vector3i((verts[i] * 1000.0).round())] as Vector3).normalized()
-		norms[i] = nn if nn.dot(verts[i]) >= 0.0 else -nn
-	arr[Mesh.ARRAY_VERTEX] = verts
-	arr[Mesh.ARRAY_NORMAL] = norms
-	arr[Mesh.ARRAY_TANGENT] = null
-	var am := ArrayMesh.new()
-	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
-	return am
+func _tube_mesh() -> ArrayMesh:
+	if _tube:
+		return _tube
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rings := 90
+	var rad := 32
+	for j in rings + 1:
+		var y := float(j) / rings * 0.985
+		for k in rad + 1:
+			var a := float(k) / rad * TAU
+			st.set_normal(Vector3(sin(a), 0, cos(a)))
+			st.set_uv(Vector2(float(k) / rad, y))
+			st.add_vertex(Vector3(sin(a), y, cos(a)))
+	st.set_normal(Vector3.UP)
+	st.set_uv(Vector2(0.5, 1.0))
+	st.add_vertex(Vector3(0, 1.0, 0))
+	var apex := (rings + 1) * (rad + 1)
+	var w := rad + 1
+	for j in rings:
+		for k in rad:
+			var i0 := j * w + k
+			var i1 := i0 + 1
+			var i3 := i0 + w
+			var i2 := i3 + 1
+			st.add_index(i0); st.add_index(i2); st.add_index(i1)
+			st.add_index(i0); st.add_index(i3); st.add_index(i2)
+	for k in rad:
+		var i0 := rings * w + k
+		st.add_index(i0); st.add_index(apex); st.add_index(i0 + 1)
+	_tube = st.commit()
+	return _tube
 
 
-func _ensure_skin() -> void:
-	if _skin_mat == null:
-		_skin_mat = ShaderMaterial.new()
-		_skin_mat.shader = KrakenSkin
-		_sucker_mat = StandardMaterial3D.new()
-		_sucker_mat.albedo_color = Color(0.78, 0.86, 0.5)
-		_sucker_mat.roughness = 0.25
-		_sucker_mat.rim_enabled = true
-		_sucker_mat.rim = 0.3
+func make_tentacle(n: int, r0: float, seg_len: float, dir: Vector3 = Vector3(0, 0, 1)) -> Dictionary:
+	var length := n * seg_len
+	var mat := ShaderMaterial.new()
+	mat.shader = KrakenArmShader
+	mat.set_shader_parameter("arm_len", length)
+	mat.set_shader_parameter("radius", r0)
+	mat.set_shader_parameter("tip", 0.1)
+	mat.set_shader_parameter("segs", float(n))
+	mat.set_shader_parameter("pattern_scale", 1.6 / maxf(r0, 0.3))
+	var mi := MeshInstance3D.new()
+	mi.mesh = _tube_mesh()
+	mi.material_override = mat
+	mi.custom_aabb = AABB(Vector3(-length, -length, -length) * 1.1, Vector3(length, length, length) * 2.2)
+	var d := Vector3(dir.x, 0, dir.z)
+	if d.length() < 0.01:
+		d = Vector3(0, 0, 1)
+	mi.basis = Basis.looking_at(-d.normalized(), Vector3.UP)
+	return {"root": mi, "mat": mat}
 
 
-func make_tentacle(n: int, r0: float, seg_len: float) -> Dictionary:
-	_ensure_skin()
-	var mat := _skin_mat.duplicate() as ShaderMaterial
-	var root := Node3D.new()
-	var segs := []
-	var parent: Node3D = root
-	var r := r0
-	for i in n:
-		var seg := Node3D.new()
-		seg.position = Vector3(0, seg_len if i > 0 else 0.0, 0)
-		parent.add_child(seg)
-		var r1 := r * 0.86
-		var c := CylinderMesh.new()
-		c.top_radius = r1
-		c.bottom_radius = r
-		c.height = seg_len * 1.04
-		c.radial_segments = 16
-		c.rings = 2
-		var body := MeshInstance3D.new()
-		body.mesh = c
-		body.material_override = mat
-		body.position = Vector3(0, seg_len * 0.5, 0)
-		seg.add_child(body)
-		# 마디 이음새가 매끈하게 공 하나
-		var j := SphereMesh.new()
-		j.radius = r
-		j.height = r * 2.0
-		j.radial_segments = 16
-		j.rings = 8
-		var jm := MeshInstance3D.new()
-		jm.mesh = j
-		jm.material_override = mat
-		seg.add_child(jm)
-		# 빨판 두 줄 (가운데 오목)
-		for q in 2:
-			for sx: float in [-1.0, 1.0]:
-				var sk := CylinderMesh.new()
-				sk.top_radius = r * 0.28
-				sk.bottom_radius = r * 0.34
-				sk.height = r * 0.18
-				sk.radial_segments = 12
-				var sm := MeshInstance3D.new()
-				sm.mesh = sk
-				sm.material_override = _sucker_mat
-				var y := seg_len * (0.25 + q * 0.5)
-				var rr := lerpf(r, r1, y / seg_len)
-				sm.position = Vector3(sx * rr * 0.42, y, rr * 0.86)
-				sm.rotation = Vector3(PI / 2, 0, -sx * 0.45)
-				seg.add_child(sm)
-				var hole := SphereMesh.new()
-				hole.radius = r * 0.14
-				hole.height = r * 0.1
-				var hm := MeshInstance3D.new()
-				hm.mesh = hole
-				hm.material_override = _mat(Color(0.12, 0.22, 0.05), 0.5)
-				hm.position = sm.position + Vector3(0, 0, r * 0.09)
-				hm.rotation = sm.rotation
-				seg.add_child(hm)
-		segs.append(seg)
-		parent = seg
-		r = r1
-	# 뾰족한 끝
-	var tip := CylinderMesh.new()
-	tip.top_radius = 0.0
-	tip.bottom_radius = r
-	tip.height = seg_len * 0.9
-	var tm := MeshInstance3D.new()
-	tm.mesh = tip
-	tm.material_override = mat
-	tm.position = Vector3(0, seg_len + seg_len * 0.45, 0)
-	parent.add_child(tm)
-	return {"root": root, "segs": segs, "mat": mat}
-
-
-## 촉수 자세: 뿌리를 axis 축으로 pitch 만큼 기울이고, 마디마다 curl 만큼 더 말기 (+ 출렁임)
-func _pose_tentacle(tn: Dictionary, axis: Vector3, pitch: float, curl: float, wave: float, t: float) -> void:
-	(tn["root"] as Node3D).basis = Basis(axis, pitch)
-	var segs: Array = tn["segs"]
-	for i in segs.size():
-		var f := float(i) / segs.size()
-		var w := sin(t * 5.0 - i * 0.7) * wave * f
-		(segs[i] as Node3D).basis = Basis(axis, curl * (0.4 + f) + w)
+## 촉수 자세: 뿌리를 pitch 만큼 기울이고(dir 쪽 +), 끝으로 갈수록 curl 만큼 더 말기 (+ 출렁임)
+func _pose_tentacle(tn: Dictionary, _axis: Vector3, pitch: float, curl: float, wave: float, t: float) -> void:
+	var m: ShaderMaterial = tn["mat"]
+	m.set_shader_parameter("pitch", pitch)
+	m.set_shader_parameter("curl", curl)
+	m.set_shader_parameter("wave", wave)
+	m.set_shader_parameter("wtime", t)
 
 
 # ── 크라켄이 노린 칸 표시: 바닥에 번지는 붉은 빛 + 칸 옆 땅에서 꿈틀대는 촉수 끝 ──────────
@@ -1586,11 +1506,11 @@ func mark_danger(i: int) -> void:
 			best = c
 			break
 	best.y = ground_height(best.x, best.z) - 0.25
-	var tn := make_tentacle(7, 0.32, 0.42)
-	var root: Node3D = tn["root"]
-	root.position = best + Vector3(0, -3.2, 0)
-	add_child(root)
 	var dir := Vector3(top.x - best.x, 0, top.z - best.z).normalized()
+	var tn := make_tentacle(7, 0.5, 0.55, dir)
+	var root: Node3D = tn["root"]
+	root.position = best + Vector3(0, -4.5, 0)
+	add_child(root)
 	var axis := Vector3.UP.cross(dir).normalized()
 	_dangers[i] = {"mark": mark, "tn": tn, "dir": dir, "axis": axis, "root": best, "t0": _time}
 	_pose_tentacle(tn, axis, -0.15, -0.35, 0.3, _time)
@@ -1631,10 +1551,10 @@ func tentacle_strike(i: int) -> void:
 	_clear_danger(i)
 	var base: Vector3 = d["root"]
 	var axis: Vector3 = d["axis"]
-	var tn := make_tentacle(9, 0.95, 0.8)
-	base.y = top.y + 0.3      # 눕혔을 때 칸 윗면을 덮게
+	var tn := make_tentacle(9, 1.35, 1.2, d["dir"])
+	base.y = top.y + 0.5      # 눕혔을 때 칸 윗면을 덮게
 	var root: Node3D = tn["root"]
-	root.position = base + Vector3(0, -6.0, 0)
+	root.position = base + Vector3(0, -12.0, 0)
 	add_child(root)
 	var mat: ShaderMaterial = tn["mat"]
 	# 1) 땅이 터지며 솟구침 (뒤로 젖혀 말림)
@@ -1668,7 +1588,7 @@ func tentacle_strike(i: int) -> void:
 	await wr.finished
 	var back := create_tween().set_parallel(true)
 	back.tween_method(func(f: float) -> void: _pose_tentacle(tn, axis, lerpf(PI * 0.5 - 0.25, 0.0, f), lerpf(0.0, -0.4, f), 0.2, _time), 0.0, 1.0, 0.35)
-	back.tween_property(root, "position:y", base.y - 7.0, 0.55).set_delay(0.2).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	back.tween_property(root, "position:y", base.y - 13.0, 0.6).set_delay(0.2).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	back.finished.connect(root.queue_free)
 	_dust(base, 0.7)
 
@@ -1681,9 +1601,9 @@ func tentacle_drag(node: Node3D) -> void:
 	base.y = ground_height(base.x, base.z) - 0.2
 	var dir := Vector3(p.x - base.x, 0, p.z - base.z).normalized()
 	var axis := Vector3.UP.cross(dir).normalized()
-	var tn := make_tentacle(9, 0.42, 0.55)
+	var tn := make_tentacle(9, 0.6, 0.7, dir)
 	var root: Node3D = tn["root"]
-	root.position = base + Vector3(0, -5.0, 0)
+	root.position = base + Vector3(0, -7.0, 0)
 	add_child(root)
 	_dust(base, 1.0)
 	bubbles_at(base, 24, 0.7, true)
@@ -1704,7 +1624,7 @@ func tentacle_drag(node: Node3D) -> void:
 	bubbles_at(p, 40, 1.0, true)
 	_dust(p, 1.4)
 	var down := create_tween().set_parallel(true)
-	down.tween_property(root, "position:y", base.y - 7.0, 0.8).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	down.tween_property(root, "position:y", base.y - 9.0, 0.8).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	down.tween_property(node, "position", base + Vector3(0, -4.0, 0), 0.75).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	down.tween_property(node, "rotation:y", node.rotation.y + TAU * 1.5, 0.75)
 	await down.finished
@@ -1769,22 +1689,23 @@ func _impact_ring(p: Vector3) -> void:
 
 func _kraken_coils() -> void:
 	var defs := [
-		[Vector2(-half_w - 9.0, -half_d * 0.55), Vector2(0.2, 1.0)], [Vector2(half_w + 9.0, -half_d * 0.6), Vector2(-0.15, 1.0)],
-		[Vector2(-half_w - 11.0, half_d * 0.15), Vector2(0.1, 1.0)], [Vector2(half_w + 11.0, half_d * 0.05), Vector2(-0.1, -1.0)],
-		[Vector2(-half_w - 8.0, half_d * 0.85), Vector2(1.0, 0.25)], [Vector2(half_w + 8.0, half_d * 0.8), Vector2(-1.0, 0.3)],
-		[Vector2(-half_w * 0.55, -half_d - 10.0), Vector2(-1.0, 0.1)], [Vector2(half_w * 0.6, -half_d - 10.0), Vector2(1.0, 0.1)],
+		[Vector2(-half_w - 16.0, -half_d * 0.5), Vector2(0.15, 1.0)], [Vector2(half_w + 16.0, -half_d * 0.55), Vector2(-0.15, 1.0)],
+		[Vector2(-half_w - 18.0, half_d * 0.2), Vector2(0.1, 1.0)], [Vector2(half_w + 18.0, half_d * 0.1), Vector2(-0.1, -1.0)],
+		[Vector2(-half_w - 12.0, half_d + 14.0), Vector2(1.0, 0.2)], [Vector2(half_w + 12.0, half_d + 12.0), Vector2(-1.0, 0.25)],
+		[Vector2(-half_w * 0.7, -half_d - 16.0), Vector2(-1.0, 0.1)], [Vector2(half_w * 0.7, -half_d - 16.0), Vector2(1.0, 0.1)],
 	]
 	for k in defs.size():
 		var at: Vector2 = defs[k][0]
 		var dir2: Vector2 = (defs[k][1] as Vector2).normalized()
 		var dir := Vector3(dir2.x, 0, dir2.y)
 		var axis := Vector3.UP.cross(dir).normalized()
-		var tn := make_tentacle(13, 3.4 - (k % 3) * 0.4, 3.6)
+		var tn := make_tentacle(13, 5.2 - (k % 3) * 0.6, 5.4, dir)
+		tn["mat"].set_shader_parameter("pattern_scale", 0.35)
 		var root: Node3D = tn["root"]
 		root.position = Vector3(at.x, KRAKEN_SLEEP_Y, at.y)
 		add_child(root)
-		_poison_mist(root, Vector3(0, 4.0, 0), 2.5, 24)
-		kraken_coils.append([tn, axis, k * 1.7, -3.0 - (k % 2) * 2.0])
+		_poison_mist(root, Vector3(0, 0, 0), 4.0, 20)
+		kraken_coils.append([tn, axis, k * 1.7, -6.0 - (k % 2) * 3.0])
 		_pose_tentacle(tn, axis, -0.25, 0.27, 0.0, 0.0)
 
 
@@ -1830,10 +1751,11 @@ func kraken_awaken() -> void:
 		return
 	for e in kraken_eyes:
 		if e is OmniLight3D:
-			create_tween().tween_property(e, "light_energy", 2.5, 0.8)
-		elif (e as MeshInstance3D).material_override is StandardMaterial3D:
-			var m := (e as MeshInstance3D).material_override as StandardMaterial3D
-			create_tween().tween_property(m, "emission_energy_multiplier", 0.9, 0.8)
+			create_tween().tween_property(e, "light_energy", 2.2, 2.0)
+	if kraken_body_mat:
+		var g := create_tween()
+		g.tween_method(func(v: float) -> void: kraken_body_mat.set_shader_parameter("glow", v), 0.0, 0.8, 1.2)
+		g.tween_method(func(v: float) -> void: kraken_body_mat.set_shader_parameter("glow", v), 0.8, 0.0, 1.6)
 	var up := create_tween().set_parallel(true)
 	up.tween_property(kraken_root, "position:y", KRAKEN_AWAKE_Y, 3.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	for k in kraken_coils.size():
