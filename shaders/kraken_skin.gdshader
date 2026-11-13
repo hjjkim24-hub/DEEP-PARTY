@@ -1,13 +1,15 @@
 shader_type spatial;
 // 크라켄 피부: 등은 짙은 자줏빛 붉은색에 얼룩 반점, 배(빨판 쪽)는 연한 살구색,
 // 젖어서 번들거림(낮은 거칠기 + 가장자리 반사), 미세한 주름 노멀
-uniform vec3 back_color : source_color = vec3(0.34, 0.06, 0.12);
-uniform vec3 spot_color : source_color = vec3(0.2, 0.02, 0.07);
-uniform vec3 belly_color : source_color = vec3(0.84, 0.5, 0.48);
+uniform vec3 back_color : source_color = vec3(0.1, 0.24, 0.07);
+uniform vec3 spot_color : source_color = vec3(0.02, 0.07, 0.03);
+uniform vec3 belly_color : source_color = vec3(0.58, 0.72, 0.28);
 uniform float glow = 0.0;          // 공격 직전 붉게 달아오름
 uniform float rough_min = 0.22;
 uniform float rough_max = 0.4;
 uniform float scale = 1.0;         // 무늬 크기 (큰 몸통은 작게)
+uniform vec3 bio_color : source_color = vec3(0.55, 1.0, 0.15);   // 독이 차오른 반점 (스스로 빛남)
+uniform float bio = 1.0;
 varying vec3 lpos;
 varying vec3 lnrm;
 
@@ -48,5 +50,9 @@ void fragment() {
 	RIM = 0.3;
 	RIM_TINT = 0.4;
 	SSS_STRENGTH = 0.35;
-	EMISSION = vec3(1.0, 0.15, 0.1) * glow * (0.4 + 0.6 * (1.0 - belly));
+	// 독 반점: 등 쪽 둥근 반점이 숨 쉬듯 천천히 빛남
+	float dots = smoothstep(0.78, 0.84, noise(q * 9.0 + 17.0)) * (1.0 - belly);
+	float breathe = 0.55 + 0.45 * sin(TIME * 1.6 + n1 * 6.0);
+	ALBEDO = mix(ALBEDO, bio_color * 0.6, dots * 0.7);
+	EMISSION = bio_color * dots * breathe * bio * 1.4 + vec3(0.6, 1.0, 0.2) * glow * (0.4 + 0.6 * (1.0 - belly));
 }

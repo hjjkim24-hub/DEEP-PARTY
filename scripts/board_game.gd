@@ -90,15 +90,15 @@ func _kraken_wakes() -> void:
 		return
 	_follow = null
 	var lair := world.kraken_root.position
-	_move_camera(Vector3(lair.x, 0.0, lair.z + 1.5), 2.3, 1.6)
+	_move_camera(Vector3(lair.x, 6.0, -world.half_d + 2.0), 7.0, 1.6)
 	await get_tree().create_timer(1.6, false).timeout
 	Audio.play("box_rumble")
 	_shake_camera(0.25, 1.2)
 	world.kraken_awaken()
-	await get_tree().create_timer(1.2, false).timeout
+	await get_tree().create_timer(1.6, false).timeout
 	Audio.play("box_burst")
-	_shake_camera(0.5, 0.5)
-	await get_tree().create_timer(1.2, false).timeout
+	_shake_camera(0.6, 0.8)
+	await get_tree().create_timer(2.3, false).timeout
 	shot_hint = "34_kraken_awakens"
 	await _banner(tr("THE KRAKEN AWAKENS!"), tr("Dodge its tentacles. Last one standing wins!"), 1.8)
 	await _kraken_aim(1)
