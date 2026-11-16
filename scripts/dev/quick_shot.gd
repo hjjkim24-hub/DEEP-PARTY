@@ -51,6 +51,47 @@ func _run() -> void:
 	var w: Node = g.world
 	var sc: float = w.KRAKEN_SCALE
 	var eye: Vector3 = w.kraken_eye_pos()
+	# all: 볼거리마다 한 장씩 + 다리 · 계단
+	if "all" in _want:
+		for lm in w.cfg.get("landmarks", []):
+			var at: Vector2 = lm["at"]
+			var gy: float = w.ground_height(at.x, at.y)
+			var r: float = {"temple": 17.0, "shipwreck": 20.0, "whale": 15.0, "village": 15.0, "lighthouse": 15.0, "colossus": 11.0, "kraken_lair": 0.0}.get(String(lm["type"]), 9.0)
+			if r <= 0.0:
+				continue
+			g._cinematic(Vector3(at.x + r * 0.55, gy + r * 0.5, at.y + r * 0.8), Vector3(at.x, gy + r * 0.16, at.y), 1.0, 0.01)
+			await get_tree().create_timer(1.2).timeout
+			await _shot("lm_%s_%d" % [String(lm["type"]), int(at.x)])
+		var nb := 0
+		var ns := 0
+		for i in w.spaces.size():
+			var sp: Dictionary = w.spaces[i]
+			for j in sp["links"]:
+				if j < i:
+					continue
+				var a: Vector3 = sp["pos"]
+				var b2: Vector3 = w.spaces[j]["pos"]
+				var is_bridge: bool = sp.get("bridge", false) and w.spaces[j].get("bridge", false)
+				var is_stair: bool = absf(a.y - b2.y) > 1.2
+				if (is_bridge and nb < 3) or (is_stair and not is_bridge and ns < 3):
+					var mid := (a + b2) * 0.5
+					var side := (b2 - a).cross(Vector3.UP).normalized()
+					g._cinematic(mid + side * 5.5 + Vector3(0, 3.2, 0) + (b2 - a).normalized() * 2.5, mid, 1.0, 0.01)
+					await get_tree().create_timer(1.2).timeout
+					await _shot(("br_%d" % nb) if is_bridge else ("st_%d" % ns))
+					if is_bridge:
+						nb += 1
+					else:
+						ns += 1
+		for kind in ["portal", "shop", "chance"]:
+			var ks: Array = w.spaces_of_kind(kind)
+			if ks.size() > 0:
+				var tp2: Vector3 = w.spaces[int(ks[0])]["pos"]
+				g._cinematic(tp2 + Vector3(3.0, 3.0, 5.5), tp2 + Vector3(0, 1.0, 0), 1.0, 0.01)
+				await get_tree().create_timer(1.2).timeout
+				await _shot("k_" + kind)
+		get_tree().quit(0)
+		return
 	for s in _want:
 		match s:
 			"map":
