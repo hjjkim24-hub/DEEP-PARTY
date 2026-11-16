@@ -102,7 +102,11 @@ func _kraken_wakes() -> void:
 	await get_tree().create_timer(1.6, false).timeout
 	Audio.play("box_burst")
 	_shake_camera(0.6, 0.8)
-	await get_tree().create_timer(2.3, false).timeout
+	# 촉수들이 판을 콱 움켜쥠
+	await get_tree().create_timer(2.05, false).timeout
+	Audio.play("box_burst")
+	_shake_camera(0.9, 0.9)
+	await get_tree().create_timer(1.6, false).timeout
 	shot_hint = "34_kraken_awakens"
 	await _banner(tr("THE KRAKEN AWAKENS!"), tr("Dodge its tentacles. Last one standing wins!"), 1.8)
 	_cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 1.4)
@@ -263,8 +267,8 @@ func _debug_showcase() -> void:
 		await get_tree().create_timer(1.3, false).timeout
 		shot_hint = "35_kraken_eye"
 		await get_tree().create_timer(2.4, false).timeout
-		var c0: Node3D = world.kraken_coils[0][0]["root"]
-		_cinematic(c0.position + Vector3(30.0, 22.0, 40.0), c0.position + Vector3(0, 18.0, 15.0), 1.0, 1.0)
+		var c0: Node3D = world.kraken_coils[0]["tn"]["root"]
+		_cinematic(c0.position + Vector3(-38.0, 26.0, 46.0), c0.position + Vector3(4.0, 6.0, 14.0), 1.0, 1.0)
 		await get_tree().create_timer(1.3, false).timeout
 		shot_hint = "35b_kraken_coil"
 		await get_tree().create_timer(2.4, false).timeout

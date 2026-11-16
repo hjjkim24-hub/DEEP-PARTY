@@ -13,13 +13,17 @@ uniform float segs = 10.0;
 uniform float wave = 0.0;
 uniform float wtime = 0.0;
 uniform float sway = 0.0;           // 옆으로 살랑
+uniform float hook = 0.0;           // hook_at 근처에서 확 꺾임 (판 테두리를 넘어 움켜쥘 때)
+uniform float hook_at = 0.38;
+uniform float tipback = 0.0;        // 끝부분을 다시 펴서 판 위에 착 눌러 붙임
 varying float vs;                    // 뿌리부터 거리 (m)
 varying vec2 vring;                  // 둘레 좌표 (각도는 조각에서 계산 — 이음새 없게)
 varying float vrad;
 varying vec3 lp;
 
 float theta(float u) {
-	return pitch + curl * segs * (0.4 * u + 0.5 * u * u) + wave * sin(wtime * 5.0 - u * segs * 0.7) * u;
+	return pitch + curl * segs * (0.4 * u + 0.5 * u * u) + wave * sin(wtime * 5.0 - u * segs * 0.7) * u
+		+ hook * smoothstep(hook_at, hook_at + 0.22, u) - tipback * smoothstep(0.74, 1.0, u);
 }
 
 float rad_at(float u) {

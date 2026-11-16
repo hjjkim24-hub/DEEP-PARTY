@@ -1347,8 +1347,8 @@ func _giant_clam(at: Vector2) -> void:
 signal tentacle_slammed           ## 촉수가 칸을 내려친 순간
 const KRAKEN_SCALE := 8.0
 const KRAKEN_SLEEP_Y := -58.0      ## 잠들어 있을 때 (깊이 잠김)
-const KRAKEN_AWAKE_Y := 0.5        ## 깨어나면 (머리가 판 북쪽 끝에 걸림)
-var kraken_coils: Array = []      ## [촉수, 기울일 축, 위상, 뿌리 깊이]
+const KRAKEN_AWAKE_Y := 2.0        ## 깨어나면 (머리가 판 북쪽 끝에 걸림)
+var kraken_coils: Array = []      ## {tn, ph, y(뿌리 깊이), g(움켜쥔 정도), dir}
 var kraken_body_mat: ShaderMaterial
 var kraken_eyes: Array = []       ## 깨어날 때 연출용 (MeshInstance3D)
 var kraken_arms: Array = []       ## [Node3D 뿌리, 기본 회전]
@@ -1359,7 +1359,7 @@ func _kraken_lair(at: Vector2) -> void:
 	# 골짜기 속에 몸을 숨긴 크라켄: 머리(외투막) 꼭대기만 바위처럼 보이다가, 깨어나면 솟아올라 눈을 뜸
 	# 판 북쪽 바깥 심연에 몸을 숨긴 거대 크라켄 (판만 한 크기). 처음엔 깊이 잠겨 있다가 솟아오름
 	kraken_root = Node3D.new()
-	kraken_root.position = Vector3(at.x, KRAKEN_SLEEP_Y, at.y - 22.0)
+	kraken_root.position = Vector3(at.x, KRAKEN_SLEEP_Y, at.y - 17.5)
 	kraken_root.scale = Vector3.ONE * KRAKEN_SCALE
 	add_child(kraken_root)
 	# 몸통: 외투막 · 머리 · 눈두덩 · 팔 뿌리가 하나로 이어진 조각 (tools/make_kraken.py)
@@ -1687,26 +1687,56 @@ func _impact_ring(p: Vector3) -> void:
 	tw.finished.connect(mi.queue_free)
 
 
+## 판을 움켜쥔 촉수들: 판 바깥 깊은 곳에서 솟아 테두리를 넘어와 판 가장자리를 꽉 누름.
+## 모양(tools 로 맞춘 값, 크기 1 기준): 길이 40, 굵기 4, 뿌리는 테두리 9.1 바깥 · 5.9 아래, 끝은 판 안쪽 6
+const GRIP_LEN := 40.0
+const GRIP_R := 4.0
+const GRIP_OUT := 9.1
+const GRIP_DEPTH := 5.9
+const GRIP_POSE := {"pitch": -0.1, "curl": 0.6, "hook": 2.5, "tipback": 1.4}
+
+
 func _kraken_coils() -> void:
+	# [테두리 위 지점, 판 안쪽 방향, 크기]
 	var defs := [
-		[Vector2(-half_w - 16.0, -half_d * 0.5), Vector2(0.15, 1.0)], [Vector2(half_w + 16.0, -half_d * 0.55), Vector2(-0.15, 1.0)],
-		[Vector2(-half_w - 18.0, half_d * 0.2), Vector2(0.1, 1.0)], [Vector2(half_w + 18.0, half_d * 0.1), Vector2(-0.1, -1.0)],
-		[Vector2(-half_w - 12.0, half_d + 14.0), Vector2(1.0, 0.2)], [Vector2(half_w + 12.0, half_d + 12.0), Vector2(-1.0, 0.25)],
-		[Vector2(-half_w * 0.7, -half_d - 16.0), Vector2(-1.0, 0.1)], [Vector2(half_w * 0.7, -half_d - 16.0), Vector2(1.0, 0.1)],
+		[Vector2(-24.0, -half_d), Vector2(0.12, 1.0), 1.6], [Vector2(24.0, -half_d), Vector2(-0.12, 1.0), 1.6],
+		[Vector2(-half_w, -24.0), Vector2(1.0, 0.1), 1.3], [Vector2(-half_w, 20.0), Vector2(1.0, -0.15), 1.15],
+		[Vector2(half_w, -30.0), Vector2(-1.0, 0.15), 1.25], [Vector2(half_w, 14.0), Vector2(-1.0, 0.0), 1.35],
+		[Vector2(-30.0, half_d), Vector2(0.1, -1.0), 1.05], [Vector2(28.0, half_d), Vector2(-0.15, -1.0), 1.2],
 	]
 	for k in defs.size():
-		var at: Vector2 = defs[k][0]
+		var edge: Vector2 = defs[k][0]
 		var dir2: Vector2 = (defs[k][1] as Vector2).normalized()
+		var sz: float = defs[k][2]
 		var dir := Vector3(dir2.x, 0, dir2.y)
-		var axis := Vector3.UP.cross(dir).normalized()
-		var tn := make_tentacle(13, 5.2 - (k % 3) * 0.6, 5.4, dir)
-		tn["mat"].set_shader_parameter("pattern_scale", 0.35)
+		var tn := make_tentacle(1, GRIP_R * sz, GRIP_LEN * sz, dir)
+		var m: ShaderMaterial = tn["mat"]
+		m.set_shader_parameter("pattern_scale", 0.4 / sz)
+		m.set_shader_parameter("tip", 0.13)
+		m.set_shader_parameter("hook_at", 0.38)
 		var root: Node3D = tn["root"]
+		var at := edge - dir2 * GRIP_OUT * sz
 		root.position = Vector3(at.x, KRAKEN_SLEEP_Y, at.y)
 		add_child(root)
-		_poison_mist(root, Vector3(0, 0, 0), 4.0, 20)
-		kraken_coils.append([tn, axis, k * 1.7, -6.0 - (k % 2) * 3.0])
-		_pose_tentacle(tn, axis, -0.25, 0.27, 0.0, 0.0)
+		_poison_mist(root, Vector3(0, GRIP_DEPTH * sz, 0), 3.0 * sz, 14)
+		var hit := edge + dir2 * 5.0 * sz
+		kraken_coils.append({"tn": tn, "ph": k * 1.7, "y": -GRIP_DEPTH * sz, "g": 0.0, "dir": dir,
+			"hit": Vector3(hit.x, 0.3, hit.y)})
+		_pose_coil(kraken_coils[k], 0.0)
+
+
+## g = 0: 곧게 선 촉수, 1: 판을 움켜쥔 자세. 움켜쥔 채로 천천히 조였다 풀었다
+func _pose_coil(c: Dictionary, t: float) -> void:
+	var g: float = c["g"]
+	var ph: float = c["ph"]
+	var m: ShaderMaterial = c["tn"]["mat"]
+	var squeeze := sin(t * 0.45 + ph) * 0.5 + 0.5
+	m.set_shader_parameter("pitch", lerpf(sin(t * 0.6 + ph) * 0.12, GRIP_POSE["pitch"], g))
+	m.set_shader_parameter("curl", lerpf(0.15, GRIP_POSE["curl"], g))
+	m.set_shader_parameter("hook", GRIP_POSE["hook"] * g + squeeze * 0.07 * g)
+	m.set_shader_parameter("tipback", GRIP_POSE["tipback"] * g - squeeze * 0.06 * g)
+	m.set_shader_parameter("wave", 0.25 * (1.0 - g))
+	m.set_shader_parameter("wtime", t * 0.25 + ph)
 
 
 ## 초록 독 안개 (위로 피어오르며 흩어짐)
@@ -1758,9 +1788,17 @@ func kraken_awaken() -> void:
 		g.tween_method(func(v: float) -> void: kraken_body_mat.set_shader_parameter("glow", v), 0.8, 0.0, 1.6)
 	var up := create_tween().set_parallel(true)
 	up.tween_property(kraken_root, "position:y", KRAKEN_AWAKE_Y, 3.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	# 촉수들이 판 바깥에서 곧게 솟구쳤다가 → 테두리를 넘어 판을 콱 움켜쥠
 	for k in kraken_coils.size():
-		var root: Node3D = kraken_coils[k][0]["root"]
-		up.tween_property(root, "position:y", float(kraken_coils[k][3]), 2.4).set_delay(0.4 + k * 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		var c: Dictionary = kraken_coils[k]
+		var root: Node3D = c["tn"]["root"]
+		up.tween_property(root, "position:y", float(c["y"]), 2.0).set_delay(0.3 + k * 0.12).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+		var grab := create_tween()
+		grab.tween_interval(3.2 + k * 0.1)
+		grab.tween_method(func(v: float) -> void: c["g"] = v, 0.0, 1.0, 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		grab.tween_callback(func() -> void:
+			_dust(c["hit"], 1.6)
+			_impact_ring(c["hit"]))
 	await up.finished
 
 
@@ -3125,10 +3163,8 @@ func _process(delta: float) -> void:
 		var dn: Dictionary = dd["tn"]
 		if is_instance_valid(dn["root"]):
 			_pose_tentacle(dn, dd["axis"], -0.15 + sin(_time * 1.3 + i) * 0.12, -0.35 + sin(_time * 2.1 + i) * 0.2, 0.35, _time)
-	for k in kraken_coils.size():
-		var kc: Array = kraken_coils[k]
-		var ph: float = kc[2]
-		_pose_tentacle(kc[0], kc[1], -0.25 + sin(_time * 0.35 + ph) * 0.12, 0.27 + sin(_time * 0.5 + ph) * 0.04, 0.12, _time * 0.25 + ph)
+	for c: Dictionary in kraken_coils:
+		_pose_coil(c, _time)
 	if kraken_root:
 		kraken_root.rotation.y = sin(_time * 0.2) * 0.05
 	for k in kraken_arms.size():
