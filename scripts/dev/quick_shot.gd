@@ -56,7 +56,7 @@ func _run() -> void:
 			"map":
 				g._cinematic(Vector3(0, 0.95 * w.half_d + 40.0, w.half_d + 52.0), Vector3(0, 2.0, -w.half_d * 0.22), 1.0, 0.01)
 			"kraken":
-				g._cinematic(Vector3(eye.x + 10.0, 6.0, -w.half_d + 40.0), eye + Vector3(0, 4.0, -4.0), 1.0, 0.01)
+				g._cinematic(Vector3(eye.x - 16.0, 20.0, -w.half_d + 46.0), eye + Vector3(0, 2.0, -6.0), 1.0, 0.01)
 			"eye":
 				var e2 := eye + Vector3(1.37 * sc, 0, 0)
 				g._cinematic(e2 + Vector3(10.0, -4.0, 16.0), e2, 1.0, 0.01)

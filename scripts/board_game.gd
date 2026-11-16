@@ -93,7 +93,7 @@ func _kraken_wakes() -> void:
 	# 판 북쪽 끝에서 올려다보는 연출: 깊은 곳에서 거대한 머리와 눈이 솟아오름
 	var eye := world.kraken_eye_pos()
 	_move_camera(Vector3(lair.x, 6.0, -world.half_d + 2.0), 3.0, 1.6)
-	_cinematic(Vector3(eye.x + 10.0, 6.0, -world.half_d + 40.0), eye + Vector3(0, 4.0, -4.0), 1.0, 1.6)
+	_cinematic(Vector3(eye.x - 16.0, 20.0, -world.half_d + 46.0), eye + Vector3(0, 2.0, -6.0), 1.0, 1.6)
 	await get_tree().create_timer(1.6, false).timeout
 	Audio.play("box_rumble")
 	_shake_camera(0.25, 1.2)
