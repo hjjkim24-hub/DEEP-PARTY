@@ -242,10 +242,12 @@ func _aimable() -> Array:
 func _debug_showcase() -> void:
 	var me := _my_pawn()
 	_follow = null
-	_move_camera(world.overview, world.overview_zoom, 1.0)
+	# 맵 전체: 남쪽 하늘 높이에서 판 · 크라켄 · 둘러싼 촉수가 한 화면에
+	_cinematic(Vector3(0, 0.95 * world.half_d + 40.0, world.half_d + 52.0), Vector3(0, 2.0, -world.half_d * 0.22), 1.0, 1.0)
 	await get_tree().create_timer(1.4, false).timeout
 	shot_hint = "36_map_overview"
 	await get_tree().create_timer(3.2, false).timeout
+	_cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.5)
 	for lm in world.cfg.get("landmarks", []):
 		var at: Vector2 = lm["at"]
 		_move_camera(Vector3(at.x, world.ground_height(at.x, at.y), at.y), 2.0, 1.0)
