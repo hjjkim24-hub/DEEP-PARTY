@@ -117,9 +117,9 @@ void fragment() {
 		}
 		float off = pid * 7.3 + oid * 31.0;
 		float gr = noise2(vec2(pg * 1.1 + off, pc * 42.0 + off)) * 0.6 + noise2(vec2(pg * 3.5 + off, pc * 120.0)) * 0.4;
-		float lines = 0.5 + 0.5 * sin(pc * 95.0 + noise2(vec2(pg * 0.9 + off, pc * 6.0)) * 9.0);
+		float streaks = 0.5 + 0.5 * sin(pc * 95.0 + noise2(vec2(pg * 0.9 + off, pc * 6.0)) * 9.0);
 		float knot = smoothstep(0.1, 0.0, length(vec2((fract(pg / 2.3 + hash1(pid + oid * 9.0)) - 0.5) * 2.3, pc - (hash1(pid + 4.0 + oid) - 0.5) * 0.12)));
-		tint = (hash1(pid + oid * 17.0) - 0.5) * 0.9 + (gr - 0.5) * 0.7 + (lines - 0.5) * 0.35 - knot * 0.6;
+		tint = (hash1(pid + oid * 17.0) - 0.5) * 0.9 + (gr - 0.5) * 0.7 + (streaks - 0.5) * 0.35 - knot * 0.6;
 		if (sl <= 0.3) {
 			// 마구리 (잘린 면): 나이테
 			tint = sin(pc * 70.0) * 0.4 - 0.3;
