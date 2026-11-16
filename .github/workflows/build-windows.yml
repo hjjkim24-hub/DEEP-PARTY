@@ -92,5 +92,3 @@ jobs:
           body: "DeepParty.exe 를 받아서 더블클릭하면 바로 실행됩니다. (설치 필요 없음)"
           make_latest: true
           files: "build/DeepParty.exe"
-
-  # 실제 Godot 화면 스크린샷 (리눅스 가상 화면, 소프트웨어 렌더링)
