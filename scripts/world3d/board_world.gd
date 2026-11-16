@@ -23,6 +23,8 @@ extends Node3D
 const FloorShader := preload("res://shaders/sea_floor.gdshader")
 const SandAlbedo := preload("res://textures/seabed/sand_albedo.png")
 const SandNormal := preload("res://textures/seabed/sand_normal.png")
+const StoneAlbedo := preload("res://textures/seabed/stone_albedo.png")
+const StoneNormal := preload("res://textures/seabed/stone_normal.png")
 const RockAlbedo := preload("res://textures/seabed/rock_albedo.png")
 const RockNormal := preload("res://textures/seabed/rock_normal.png")
 const TileShader := preload("res://shaders/tile_top.gdshader")
@@ -477,6 +479,16 @@ func _mat(c: Color, rough: float = 0.8, metal: float = 0.0) -> StandardMaterial3
 	m.albedo_color = c
 	m.roughness = rough
 	m.metallic = metal
+	# 매끈하지 않은 재질(돌 · 회벽 · 나무)은 풍화된 표면 결을 입힘 (세 방향에서 — UV 없는 도형에도 고르게)
+	if rough >= 0.6 and metal < 0.5 and c.a >= 1.0:
+		m.albedo_texture = _mip_tex(StoneAlbedo)
+		m.normal_enabled = true
+		m.normal_texture = _mip_tex(StoneNormal)
+		m.normal_scale = 0.9
+		m.uv1_triplanar = true
+		m.uv1_triplanar_sharpness = 4.0
+		m.uv1_scale = Vector3.ONE * 0.4
+		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	_mats[key] = m
 	return m
 
@@ -713,8 +725,8 @@ func _tile_top_mat(kind: String) -> ShaderMaterial:
 	m.shader = TileShader
 	m.set_shader_parameter("tile_color", TILE_COLORS[kind])
 	m.set_shader_parameter("ink_color", INK_COLORS[kind])
-	m.set_shader_parameter("icon_tex", ICONS[kind])
-	m.set_shader_parameter("border_tex", BORDER_TEX)
+	m.set_shader_parameter("icon_tex", _mip_tex(ICONS[kind]))
+	m.set_shader_parameter("border_tex", _mip_tex(BORDER_TEX))
 	m.set_shader_parameter("icon_scale", 0.8 if kind == "start" else 0.62)
 	_mats[key] = m
 	return m
@@ -729,7 +741,8 @@ func _rbox(size: Vector3, r: float) -> ArrayMesh:
 
 
 func _tiles() -> void:
-	var foot_m := _mat(Color(0.6, 0.57, 0.5), 0.7)
+	var foot_m := _mat(Color(0.6, 0.57, 0.5), 0.8)
+	var foot2_m := _mat(Color(0.7, 0.67, 0.58), 0.75)
 	var gold := _mat(Color(0.95, 0.76, 0.34), 0.25, 0.85)
 	var stud := SphereMesh.new()
 	stud.radius = 0.08
@@ -757,12 +770,17 @@ func _tiles() -> void:
 		var glaze := _mat(body_c, 0.32)
 		glaze.clearcoat_enabled = true
 		glaze.clearcoat = 0.7
-		glaze.clearcoat_roughness = 0.15
+		glaze.clearcoat_roughness = 0.1
+		glaze.rim_enabled = true
+		glaze.rim = 0.25
 		sp["body_mi"] = _mi(_rbox(Vector3(size, TILE_H, size), 0.15), glaze, base + Vector3(0, TILE_H * 0.5, 0), b)
-		_mi(_rbox(Vector3(size + 0.36, 0.16, size + 0.36), 0.07), foot_m, base + Vector3(0, 0.08, 0), b)
+		# 받침돌 2 단 (넓고 낮은 단 + 칸 바로 아래 단) + 몸통 아래를 두른 금 띠
+		_mi(_rbox(Vector3(size + 0.5, 0.12, size + 0.5), 0.05), foot_m, base + Vector3(0, 0.04, 0), b)
+		_mi(_rbox(Vector3(size + 0.26, 0.14, size + 0.26), 0.06), foot2_m, base + Vector3(0, 0.13, 0), b)
+		_mi(_rbox(Vector3(size + 0.05, 0.07, size + 0.05), 0.03), gold, base + Vector3(0, 0.225, 0), b)
 		for cx in [-1.0, 1.0]:
 			for cz in [-1.0, 1.0]:
-				stud_x.append(Transform3D(Basis(), base + b * Vector3(cx * (size * 0.5 + 0.1), 0.17, cz * (size * 0.5 + 0.1))))
+				stud_x.append(Transform3D(Basis(), base + b * Vector3(cx * (size * 0.5 + 0.17), 0.11, cz * (size * 0.5 + 0.17))))
 		var plane := PlaneMesh.new()
 		plane.size = Vector2(size - 0.3, size - 0.3)
 		# 윗면은 칸과 같은 방향 (그림은 셰이더가 늘 똑바로 세워 줌)
@@ -907,17 +925,23 @@ func _gangway(p0: Vector3, p1: Vector3, y0: float, y1: float, bas: Basis, glen: 
 
 ## 험한 길: 울퉁불퉁한 바위 디딤돌이 칸 사이를 이어 줌 (높이 차가 크면 바위 계단)
 func _rough_link(p0: Vector3, p1: Vector3, y0: float, y1: float, bas: Basis, glen: float) -> void:
-	var n := maxi(2, int(ceil(glen / 0.75)))
+	# 칸 받침과 겹치지 않게 양 끝을 조금 띄우고, 칸 윗면보다 살짝 낮게
+	var inset := minf(0.3, glen * 0.2)
+	var dirv := (p1 - p0).normalized()
+	p0 += dirv * inset
+	p1 -= dirv * inset
+	glen = maxf(glen - inset * 2.0, 0.3)
+	var n := maxi(1, int(ceil(glen / 0.8)))
 	for s2 in n:
 		var f := (float(s2) + 0.5) / n
 		var pos := p0.lerp(p1, f)
-		var top := lerpf(y0, y1, f) - 0.04
+		var top := lerpf(y0, y1, f) - 0.16
 		var low := minf(natural_height(pos.x, pos.z), top - 0.3) - 0.2
 		var hgt := top - low
-		var w := _rng.randf_range(1.0, 1.6)
-		var dd := glen / n + _rng.randf_range(0.0, 0.25)
-		var jitter := bas.x * _rng.randf_range(-0.25, 0.25)
-		var b := bas.rotated(Vector3.UP, _rng.randf_range(-0.3, 0.3))
+		var w := _rng.randf_range(1.0, 1.45)
+		var dd := glen / n * _rng.randf_range(0.82, 0.96)
+		var jitter := bas.x * _rng.randf_range(-0.18, 0.18)
+		var b := bas.rotated(Vector3.UP, _rng.randf_range(-0.12, 0.12))
 		_mi(_rbox(Vector3(w, hgt, dd), 0.12), _rock_mat(s2 % 3), Vector3(pos.x, low + hgt * 0.5, pos.z) + jitter, b)
 
 
@@ -1747,6 +1771,24 @@ func _pose_coil(c: Dictionary, t: float) -> void:
 	m.set_shader_parameter("wtime", t * 0.25 + ph)
 
 
+## 가장자리가 부드럽게 사라지는 둥근 점 (입자가 네모로 보이지 않게)
+var _soft: GradientTexture2D
+func _soft_dot() -> GradientTexture2D:
+	if _soft == null:
+		var g := Gradient.new()
+		g.set_color(0, Color(1, 1, 1, 1))
+		g.add_point(0.5, Color(1, 1, 1, 0.35))
+		g.set_color(1, Color(1, 1, 1, 0))
+		_soft = GradientTexture2D.new()
+		_soft.gradient = g
+		_soft.fill = GradientTexture2D.FILL_RADIAL
+		_soft.fill_from = Vector2(0.5, 0.5)
+		_soft.fill_to = Vector2(1.0, 0.5)
+		_soft.width = 64
+		_soft.height = 64
+	return _soft
+
+
 ## 초록 독 안개 (위로 피어오르며 흩어짐)
 func _poison_mist(parent: Node3D, at: Vector3, spread: float, amount: int) -> void:
 	var cp := CPUParticles3D.new()
@@ -1765,7 +1807,8 @@ func _poison_mist(parent: Node3D, at: Vector3, spread: float, amount: int) -> vo
 	var q := QuadMesh.new()
 	q.size = Vector2(1.2, 1.2)
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.45, 0.95, 0.2, 0.22)
+	m.albedo_color = Color(0.45, 0.95, 0.2, 0.3)
+	m.albedo_texture = _soft_dot()
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES

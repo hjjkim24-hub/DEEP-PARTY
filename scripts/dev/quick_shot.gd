@@ -1,7 +1,7 @@
 extends Node
 ## 개발용: 보드 게임 화면 몇 장만 빨리 찍고 종료 (전체 투어는 30분, 이건 몇 분)
 ##   godot --path . -- --quick-shot=map,kraken --shots-dir=/절대/경로
-## 찍을 수 있는 장면: map(맵 전체), kraken(크라켄 정면), eye(눈 클로즈업), board(평소 게임 화면)
+## 찍을 수 있는 장면: map(맵 전체), kraken(크라켄 정면), eye(눈 클로즈업), tile(칸 가까이), village(마을), board(평소 게임 화면)
 
 var _dir := "user://shots"
 var _want: PackedStringArray = ["map"]
@@ -60,6 +60,12 @@ func _run() -> void:
 			"eye":
 				var e2 := eye + Vector3(1.37 * sc, 0, 0)
 				g._cinematic(e2 + Vector3(10.0, -4.0, 16.0), e2, 1.0, 0.01)
+			"tile":
+				var sp: Dictionary = w.spaces[int(w.spaces[w.start_index]["links"][0])]
+				var tp: Vector3 = sp["pos"]
+				g._cinematic(tp + Vector3(2.6, 2.4, 4.6), tp + Vector3(-0.6, 0.0, -0.8), 1.0, 0.01)
+			"village":
+				g._cinematic(Vector3(-30.0, 9.0, 10.0), Vector3(-36.0, 0.5, -1.0), 1.0, 0.01)
 			_:
 				g._cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.01)
 		await get_tree().create_timer(2.0).timeout

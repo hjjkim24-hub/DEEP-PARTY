@@ -1,5 +1,5 @@
 shader_type spatial;
-// 바다 밑 모래 바닥: 모래 결, 물결무늬, 비탈은 바위, 깊은 곳은 어둡게, 일렁이는 물빛
+// 바다 밑 모래 바닥: 모래 결, 불규칙한 둔덕, 비탈은 바위, 깊은 곳은 어둡게, 일렁이는 물빛
 uniform vec3 sand_a : source_color = vec3(0.6, 0.58, 0.47);
 uniform vec3 sand_b : source_color = vec3(0.43, 0.49, 0.4);
 uniform vec3 rock_c : source_color = vec3(0.38, 0.4, 0.38);
@@ -24,7 +24,7 @@ float noise(vec2 p) {
 float fbm(vec2 p) {
 	float v = 0.0;
 	float a = 0.5;
-	for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; }
+	for (int i = 0; i < 5; i++) { v += a * noise(p); p = mat2(vec2(1.6, 1.2), vec2(-1.2, 1.6)) * p + 3.7; a *= 0.5; }
 	return v;
 }
 // 자갈 무늬: 가장 가까운 점까지 거리 + 그 점의 번호
@@ -56,10 +56,12 @@ void vertex() {
 	wnorm = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 }
 
-// 모래 표면 높낮이 (물결 + 모래알) — 노멀을 흔들어 입체감
+// 모래 표면 높낮이: 줄무늬 없이 불규칙하게 쌓인 얕은 둔덕 + 발자국 같은 옴폭한 자국 + 모래알
 float sand_h(vec2 p) {
-	float r = sin(p.y * 2.4 + p.x * 0.7 + fbm(p * 0.25) * 7.0);
-	return r * 0.05 + noise(p * 7.0) * 0.018 + noise(p * 2.2) * 0.03;
+	vec2 w = p + vec2(noise(p * 0.35 + 3.0), noise(p * 0.35 - 5.0)) * 2.2;
+	float mound = fbm(w * 0.55);
+	float dimple = smoothstep(0.62, 0.8, noise(p * 1.7 + 21.0));
+	return mound * 0.16 - dimple * 0.035 + noise(p * 7.0) * 0.014 + noise(p * 2.6) * 0.03;
 }
 
 void fragment() {
@@ -69,9 +71,11 @@ void fragment() {
 	// 밝은 모래 자리, 초록 이끼 얼룩
 	c = mix(c, vec3(0.8, 0.76, 0.62), smoothstep(0.55, 0.75, fbm(p * 0.07 + 4.0)) * 0.6);
 	c = mix(c, vec3(0.32, 0.46, 0.3), smoothstep(0.62, 0.8, fbm(p * 0.1 - 7.0)) * 0.55);
-	float rip = sin(p.y * 2.4 + p.x * 0.7 + fbm(p * 0.25) * 7.0);
-	c *= 0.92 + 0.08 * rip;
-	c *= 0.9 + 0.2 * noise(p * 6.0);
+	// 고운 모래 · 굵은 모래가 섞인 얼룩, 바닥에 깔린 어두운 침전물
+	float coarse = smoothstep(0.45, 0.7, fbm(p * 0.9 + 13.0));
+	c *= mix(1.0, 0.9, coarse);
+	c = mix(c, c * vec3(0.8, 0.82, 0.8), smoothstep(0.6, 0.85, fbm(p * 0.33 + 31.0)) * 0.5);
+	c *= 0.93 + 0.14 * noise(p * 6.0);
 	// 다져진 길 + 군데군데 박힌 자갈
 	vec2 m = texture(path_mask, (p - board_rect.xy) / board_rect.zw).rg;
 	float edge = (fbm(p * 1.4 + 9.0) - 0.5) * 0.45;
@@ -111,12 +115,13 @@ void fragment() {
 	float hx = sand_h(p + vec2(e, 0.0));
 	float hz = sand_h(p + vec2(0.0, e));
 	vec2 g = vec2(hx - h0, hz - h0) / e * flatness * (1.0 - 0.6 * path);
-	vec3 wn = normalize(wnorm + vec3(-g.x, 0.0, -g.y) * 0.9 + vec3(tn.x, 0.0, -tn.y) * 0.9);
+	vec3 wn = normalize(wnorm + vec3(-g.x, 0.0, -g.y) * 1.1 + vec3(tn.x, 0.0, -tn.y) * 1.0);
 	NORMAL = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
-	// 물결 골은 살짝 어둡고 젖은 느낌
-	c *= 0.94 + 0.12 * smoothstep(-0.05, 0.05, h0);
+	// 낮은 곳은 살짝 어둡고 젖은 느낌
+	float low = smoothstep(0.1, 0.03, h0);
+	c *= 1.0 - 0.1 * low;
 	ALBEDO = c;
-	ROUGHNESS = mix(0.95, 0.75, smoothstep(0.02, -0.05, h0));
+	ROUGHNESS = mix(0.95, 0.8, low);
 	AO = 1.0 - 0.35 * m.g;
 	AO_LIGHT_AFFECT = 0.4;
 	// 모래알 반짝

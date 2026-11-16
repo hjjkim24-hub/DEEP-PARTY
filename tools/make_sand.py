@@ -45,17 +45,20 @@ col[..., 1] += tint * 0.012
 col[..., 2] -= tint * 0.01
 
 height = np.zeros((N, N))
-# 잔물결 (텍스처 안에 2.5 번 반복, 살짝 휘게)
-yy, xx = np.mgrid[0:N, 0:N] / N
-warp = wrap_noise(40) * 0.04
-rip = np.sin((yy + warp) * np.pi * 2 * 5 + np.sin(xx * np.pi * 2 * 2) * 0.6)
-height += (rip * 0.5 + 0.5) ** 1.6 * 0.35
-# 고운 모래알 질감
-height += wrap_noise(0.8) * 0.06 + wrap_noise(1.6) * 0.05
+# 줄무늬 물결 없이: 손으로 쓸어 놓은 듯 불규칙한 얕은 굴곡 + 군데군데 옴폭한 자국
+und = wrap_noise(60) * 0.55 + wrap_noise(26) * 0.35 + wrap_noise(11) * 0.2
+height += (und - und.min()) / (und.max() - und.min()) * 0.3
+pits = np.clip(wrap_noise(7) - 1.5, 0, None)
+height -= pits * 0.12
+# 고운 모래알 질감 (여러 굵기)
+height += wrap_noise(0.7) * 0.07 + wrap_noise(1.4) * 0.06 + wrap_noise(3.0) * 0.04
+# 젖은 곳 · 마른 곳 얼룩
+damp = wrap_noise(45)
+col *= (1.0 - np.clip(damp, 0, 2) * 0.035)[..., None]
 
 # 모래알 (수천 개)
 grain_cols = [(0.74, 0.7, 0.6), (0.58, 0.55, 0.46), (0.8, 0.77, 0.68), (0.5, 0.48, 0.42), (0.7, 0.62, 0.5)]
-for _ in range(9000):
+for _ in range(16000):
     c = grain_cols[rng.integers(len(grain_cols))]
     r = rng.uniform(0.8, 2.2)
     stamp(height, col, rng.integers(N), rng.integers(N), r, r * rng.uniform(0.6, 1.0), rng.uniform(0, np.pi), r * 0.12, c)
