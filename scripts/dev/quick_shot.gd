@@ -64,6 +64,12 @@ func _run() -> void:
 				var sp: Dictionary = w.spaces[int(w.spaces[w.start_index]["links"][0])]
 				var tp: Vector3 = sp["pos"]
 				g._cinematic(tp + Vector3(2.6, 2.4, 4.6), tp + Vector3(-0.6, 0.0, -0.8), 1.0, 0.01)
+			"temple":
+				g._cinematic(Vector3(9.0, 7.0, 12.0), Vector3(0.0, 2.5, -3.0), 1.0, 0.01)
+			"wreck":
+				g._cinematic(Vector3(-32.0, 11.0, 24.0), Vector3(-46.0, 2.0, 10.0), 1.0, 0.01)
+			"light":
+				g._cinematic(Vector3(24.0, 8.0, 14.0), Vector3(35.0, 5.0, 4.0), 1.0, 0.01)
 			"village":
 				g._cinematic(Vector3(-30.0, 9.0, 10.0), Vector3(-36.0, 0.5, -1.0), 1.0, 0.01)
 			_:

@@ -25,6 +25,7 @@ const SandAlbedo := preload("res://textures/seabed/sand_albedo.png")
 const SandNormal := preload("res://textures/seabed/sand_normal.png")
 const StoneAlbedo := preload("res://textures/seabed/stone_albedo.png")
 const StoneNormal := preload("res://textures/seabed/stone_normal.png")
+const StructShader := preload("res://shaders/structure.gdshader")
 const RockAlbedo := preload("res://textures/seabed/rock_albedo.png")
 const RockNormal := preload("res://textures/seabed/rock_normal.png")
 const TileShader := preload("res://shaders/tile_top.gdshader")
@@ -493,6 +494,24 @@ func _mat(c: Color, rough: float = 0.8, metal: float = 0.0) -> StandardMaterial3
 	return m
 
 
+## 구조물 · 장식품 재질 (shaders/structure.gdshader): 돌 결 + 종류별 무늬 + 이끼 · 물때
+const SKIND := {"stone": 0, "masonry": 1, "wood": 2, "roof": 3, "column": 4, "bone": 5, "paint": 6, "coral": 7, "clay": 8}
+func _smat(c: Color, kind: String, radial: float = 0.0, moss_amt: float = 0.6) -> ShaderMaterial:
+	var key := "s_%s_%s_%.2f_%.2f" % [c.to_html(), kind, radial, moss_amt]
+	if _mats.has(key):
+		return _mats[key]
+	var m := ShaderMaterial.new()
+	m.shader = StructShader
+	m.set_shader_parameter("base", c)
+	m.set_shader_parameter("kind", int(SKIND[kind]))
+	m.set_shader_parameter("radial", radial)
+	m.set_shader_parameter("moss", moss_amt)
+	m.set_shader_parameter("det_tex", _mip_tex(StoneAlbedo))
+	m.set_shader_parameter("det_nrm", _mip_tex(StoneNormal))
+	_mats[key] = m
+	return m
+
+
 func _mi(mesh: Mesh, mat: Material, pos: Vector3, basis_: Basis = Basis(), parent: Node = null) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
@@ -513,7 +532,8 @@ func _cyl(r_top: float, r_bot: float, h: float, segs: int = 24) -> CylinderMesh:
 	c.top_radius = r_top
 	c.bottom_radius = r_bot
 	c.height = h
-	c.radial_segments = segs
+	# 둥근 것은 각져 보이지 않게 (4 · 6 · 7 각처럼 일부러 각진 것은 그대로)
+	c.radial_segments = maxi(segs, 32) if segs >= 10 else segs
 	c.rings = 2
 	return c
 
@@ -1058,8 +1078,9 @@ func _landmarks() -> void:
 
 # ── 맵 볼거리: 신전 · 문 · 난파선 · 고래 뼈 · 거대 조개 ─────────
 func _temple(at: Vector2, r: float) -> void:
-	var stone := _mat(Color(0.76, 0.74, 0.66), 0.6)
-	var dark := _mat(Color(0.7, 0.68, 0.6), 0.6)
+	var stone := _smat(Color(0.76, 0.74, 0.66), "stone")
+	var col_m := _smat(Color(0.78, 0.76, 0.68), "column")
+	var dark := _smat(Color(0.7, 0.68, 0.6), "masonry")
 	var moss := _mat(Color(0.34, 0.58, 0.4), 0.9)
 	for q in 4:
 		var tops := []
@@ -1074,7 +1095,7 @@ func _temple(at: Vector2, r: float) -> void:
 			var hgt: float = [4.6, 4.6, 2.2, 3.4, 1.3][(q * 3 + k) % 5]
 			_mi(_rbox(Vector3(1.5, 0.4, 1.5), 0.06), dark, Vector3(x, y + 0.2, z))
 			# 홈 파인 기둥
-			_mi(_cyl(0.5, 0.56, hgt, 12), stone, Vector3(x, y + 0.4 + hgt * 0.5, z))
+			_mi(_cyl(0.5, 0.56, hgt, 12), col_m, Vector3(x, y + 0.4 + hgt * 0.5, z))
 			_mi(_cyl(0.53, 0.53, 0.07, 12), moss, Vector3(x, y + 0.4 + hgt, z), Basis(Vector3(1, 0, 0), 0.12))
 			if hgt > 4.0:
 				_mi(_rbox(Vector3(1.4, 0.35, 1.4), 0.05), stone, Vector3(x, y + 0.4 + hgt + 0.17, z))
@@ -1085,7 +1106,7 @@ func _temple(at: Vector2, r: float) -> void:
 				var fx := x + cos(a + 1.2) * 1.4
 				var fz := z + sin(a + 1.2) * 1.4
 				if _free_spot(fx, fz, 0.5):
-					_mi(_cyl(0.48, 0.48, 1.1, 12), stone, Vector3(fx, ground_height(fx, fz) + 0.45, fz), Basis(Vector3(0, 0, 1), PI / 2).rotated(Vector3.UP, a))
+					_mi(_cyl(0.48, 0.48, 1.1, 12), col_m, Vector3(fx, ground_height(fx, fz) + 0.45, fz), Basis(Vector3(0, 0, 1), PI / 2).rotated(Vector3.UP, a))
 					_block(Vector2(fx, fz), 0.8)
 			_block(Vector2(x, z), 1.0)
 		# 이웃한 두 기둥 위 들보
@@ -1123,7 +1144,7 @@ func _gate(at0: Vector2) -> void:
 	var gdir: Vector2 = snap[1]
 	var gside := Vector3(gdir.y, 0, -gdir.x)
 	var gb := Basis(Vector3.UP, atan2(gdir.x, gdir.y))
-	var stone := _mat(Color(0.74, 0.72, 0.64), 0.6)
+	var stone := _smat(Color(0.74, 0.72, 0.64), "masonry")
 	var gold := _mat(Color(0.95, 0.76, 0.34), 0.25, 0.85)
 	var top := 0.0
 	for side: float in [-1.0, 1.0]:
@@ -1165,9 +1186,9 @@ func _shipwreck(at: Vector2, length: float, deck: float) -> void:
 		length = Vector2(b.x - a.x, b.z - a.z).length() + 2.8
 	var bas := Basis(Vector3.UP, atan2(axis.x, axis.z))
 	var side := bas.x
-	var wood := _mat(Color(0.36, 0.24, 0.15), 0.8)
-	var dark := _mat(Color(0.2, 0.13, 0.09), 0.85)
-	var plank := _mat(Color(0.5, 0.36, 0.23), 0.75)
+	var wood := _smat(Color(0.36, 0.24, 0.15), "wood")
+	var dark := _smat(Color(0.2, 0.13, 0.09), "wood")
+	var plank := _smat(Color(0.5, 0.36, 0.23), "wood")
 	var moss := _mat(Color(0.3, 0.52, 0.36), 0.9)
 	var w := 5.8
 	var hull_h := deck + 0.9
@@ -1268,7 +1289,7 @@ func _shipwreck(at: Vector2, length: float, deck: float) -> void:
 
 
 func _whale(at: Vector2, dir: Vector2) -> void:
-	var bone := _mat(Color(0.84, 0.81, 0.73), 0.6)
+	var bone := _smat(Color(0.84, 0.81, 0.73), "bone")
 	var axis := Vector3(dir.x, 0, dir.y).normalized()
 	var side := Vector3(-axis.z, 0, axis.x)
 	var yaw := atan2(axis.x, axis.z)
@@ -1876,9 +1897,12 @@ func _light(p: Vector3, c: Color, energy: float, rng_: float) -> void:
 
 ## 무너진 바닷속 마을: 돌집 몇 채 + 우물 + 낮은 돌담
 func _village(at: Vector2) -> void:
-	var stone := _mat(Color(0.72, 0.68, 0.6), 0.8)
-	var stone2 := _mat(Color(0.6, 0.58, 0.52), 0.85)
-	var roof := _mat(Color(0.78, 0.38, 0.26), 0.7)
+	var stone := _smat(Color(0.72, 0.68, 0.6), "masonry")
+	var stone_r := _smat(Color(0.72, 0.68, 0.6), "masonry", 1.5)
+	var wood := _smat(Color(0.42, 0.28, 0.17), "wood")
+	var stone2 := _smat(Color(0.6, 0.58, 0.52), "stone")
+	var roof := _smat(Color(0.74, 0.36, 0.25), "roof", 0.0, 0.5)
+	var roof_r := _smat(Color(0.74, 0.36, 0.25), "roof", 1.2, 0.5)
 	var dark := _mat(Color(0.05, 0.07, 0.08), 1.0)
 	var moss := _mat(Color(0.32, 0.56, 0.38), 0.9)
 	# 우물
@@ -1886,12 +1910,12 @@ func _village(at: Vector2) -> void:
 	if wp.x != INF:
 		var ring := _cyl(1.0, 1.05, 0.9, 20)
 		ring.cap_top = false
-		var rm := stone.duplicate() as StandardMaterial3D
+		var rm := _mat(Color(0.72, 0.68, 0.6), 0.8).duplicate() as StandardMaterial3D
 		rm.cull_mode = BaseMaterial3D.CULL_DISABLED
 		_mi(ring, rm, wp + Vector3(0, 0.45, 0))
 		_mi(_cyl(0.9, 0.9, 0.05, 20), _glow_mat(Color(0.25, 0.85, 0.8), 1.2), wp + Vector3(0, 0.6, 0))
 		for sd: float in [-1.0, 1.0]:
-			_mi(_box(Vector3(0.16, 2.0, 0.16)), _mat(Color(0.45, 0.3, 0.18), 0.8), wp + Vector3(sd * 0.95, 1.0, 0))
+			_mi(_box(Vector3(0.16, 2.0, 0.16)), wood, wp + Vector3(sd * 0.95, 1.0, 0))
 		_mi(_box(Vector3(2.4, 0.12, 1.2)), roof, wp + Vector3(0, 2.05, 0), Basis(Vector3(1, 0, 0), 0.15))
 		_block(Vector2(wp.x, wp.z), 1.6)
 	# 돌집
@@ -1907,25 +1931,43 @@ func _village(at: Vector2) -> void:
 		var broken := k % 3 == 1
 		if round_:
 			var wall := _cyl(1.45, 1.55, wall_h, 18)
-			_mi(wall, stone, hp + Vector3(0, wall_h * 0.5, 0), b)
+			_mi(wall, stone_r, hp + Vector3(0, wall_h * 0.5, 0), b)
 		else:
 			_mi(_rbox(Vector3(2.8, wall_h, 2.6), 0.12), stone, hp + Vector3(0, wall_h * 0.5, 0), b)
-		# 문 · 창문
-		_mi(_rbox(Vector3(0.8, 1.3, 0.2), 0.08), dark, hp + b * Vector3(0, 0.65, 1.4), b)
+		# 바닥 돌 단
+		if round_:
+			_mi(_cyl(1.68, 1.72, 0.3, 18), stone2, hp + Vector3(0, 0.15, 0), b)
+		else:
+			_mi(_rbox(Vector3(3.05, 0.3, 2.85), 0.06), stone2, hp + Vector3(0, 0.15, 0), b)
+		# 문: 어두운 안쪽 + 돌 문틀 · 상인방 + 반쯤 열린 나무 문짝
+		var dz := 1.52 if round_ else 1.3
+		_mi(_rbox(Vector3(0.8, 1.3, 0.2), 0.04), dark, hp + b * Vector3(0, 0.65, dz - 0.02), b)
 		for sd: float in [-1.0, 1.0]:
-			_mi(_box(Vector3(0.12, 0.45, 0.45)), dark, hp + b * Vector3(sd * 1.42, wall_h * 0.62, 0), b)
+			_mi(_rbox(Vector3(0.18, 1.4, 0.3), 0.04), stone2, hp + b * Vector3(sd * 0.49, 0.7, dz), b)
+		_mi(_rbox(Vector3(1.3, 0.22, 0.34), 0.05), stone2, hp + b * Vector3(0, 1.5, dz), b)
+		_mi(_rbox(Vector3(0.74, 1.24, 0.07), 0.02), wood, hp + b * Vector3(-0.62, 0.64, dz + 0.42), b * Basis(Vector3.UP, -1.1))
+		# 창문: 어두운 안쪽 + 돌 창턱 + 나무 살
+		for sd: float in [-1.0, 1.0]:
+			var wx := sd * (1.5 if round_ else 1.38)
+			_mi(_box(Vector3(0.12, 0.45, 0.45)), dark, hp + b * Vector3(wx, wall_h * 0.62, 0), b)
+			_mi(_rbox(Vector3(0.24, 0.1, 0.66), 0.03), stone2, hp + b * Vector3(wx + sd * 0.03, wall_h * 0.62 - 0.28, 0), b)
+			_mi(_rbox(Vector3(0.22, 0.1, 0.66), 0.03), stone2, hp + b * Vector3(wx + sd * 0.03, wall_h * 0.62 + 0.28, 0), b)
+			_mi(_box(Vector3(0.05, 0.45, 0.05)), wood, hp + b * Vector3(wx + sd * 0.06, wall_h * 0.62, 0), b)
 		# 지붕 (몇 채는 무너짐)
 		if broken:
 			for q in 4:
 				var rp := hp + b * Vector3(_rng.randf_range(-1.6, 1.6), 0.15, _rng.randf_range(1.8, 2.6))
 				_mi(_box(Vector3(0.5, 0.3, 0.4)), stone2, rp, Basis(Vector3.UP, _rng.randf() * TAU))
-			_mi(_cyl(0.0, 1.0, 0.9, 12), roof, hp + Vector3(1.6, 0.35, -1.4), Basis(Vector3(0, 0, 1), 1.9))
+			_mi(_cyl(0.0, 1.0, 0.9, 12), roof_r, hp + Vector3(1.6, 0.35, -1.4), Basis(Vector3(0, 0, 1), 1.9))
 		elif round_:
-			_mi(_cyl(0.0, 1.85, 1.5, 18), roof, hp + Vector3(0, wall_h + 0.75, 0))
+			_mi(_cyl(0.0, 1.85, 1.5, 18), roof_r, hp + Vector3(0, wall_h + 0.75, 0))
 			_mi(_cyl(1.6, 1.6, 0.06, 18), moss, hp + Vector3(0, wall_h + 0.03, 0))
 		else:
 			for sd: float in [-1.0, 1.0]:
-				_mi(_box(Vector3(3.1, 0.14, 1.75)), roof, hp + b * Vector3(0, wall_h + 0.55, sd * 0.68), b * Basis(Vector3(1, 0, 0), -sd * 0.62))
+				_mi(_box(Vector3(3.3, 0.14, 1.95)), roof, hp + b * Vector3(0, wall_h + 0.5, sd * 0.74), b * Basis(Vector3(1, 0, 0), -sd * 0.62))
+				# 박공벽 (지붕 아래 세모난 벽) 대신 굵은 들보
+				_mi(_rbox(Vector3(0.16, 0.16, 2.9), 0.03), wood, hp + b * Vector3(sd * 1.3, wall_h + 0.08, 0), b)
+			_mi(_rbox(Vector3(3.4, 0.2, 0.2), 0.05), wood, hp + b * Vector3(0, wall_h + 1.08, 0), b)   # 용마루
 			_mi(_box(Vector3(0.6, 0.9, 0.6)), stone2, hp + b * Vector3(0.8, wall_h + 0.8, -0.5), b)   # 굴뚝
 		_block(Vector2(hp.x, hp.z), 2.3)
 	# 마을을 두른 낮은 돌담 (군데군데 무너짐)
@@ -1950,8 +1992,8 @@ func _lighthouse(at: Vector2) -> void:
 	root.position = p + Vector3(0, 0.6, 0)
 	root.rotation = Vector3(0.07, 0.4, -0.05)
 	add_child(root)
-	var white := _mat(Color(0.95, 0.94, 0.9), 0.5)
-	var red := _mat(Color(0.82, 0.18, 0.2), 0.5)
+	var white := _smat(Color(0.93, 0.92, 0.88), "paint", 0.0, 0.35)
+	var red := _smat(Color(0.74, 0.17, 0.18), "paint", 0.0, 0.35)
 	var dark := _mat(Color(0.12, 0.14, 0.16), 0.4, 0.5)
 	var h := 0.0
 	var r := 1.7
@@ -2022,7 +2064,7 @@ func _colossus(at: Vector2) -> void:
 	var p := _find_free(at.x, at.y, 3.6, 1.5)
 	if p.x == INF:
 		return
-	var stone := _mat(Color(0.66, 0.66, 0.6), 0.85)
+	var stone := _smat(Color(0.66, 0.66, 0.6), "stone", 0.0, 0.85)
 	var moss := _mat(Color(0.3, 0.52, 0.36), 0.95)
 	var root := Node3D.new()
 	root.position = p + Vector3(0, -0.4, 0)
@@ -2064,7 +2106,7 @@ func _giant_hand(at: Vector2) -> void:
 	var p := _find_free(at.x, at.y, 2.2, 1.0)
 	if p.x == INF:
 		return
-	var stone := _mat(Color(0.72, 0.7, 0.64), 0.8)
+	var stone := _smat(Color(0.72, 0.7, 0.64), "stone", 0.0, 0.8)
 	var root := Node3D.new()
 	root.position = p + Vector3(0, -0.3, 0)
 	root.rotation = Vector3(0.0, _rng.randf() * TAU, 0.15)
@@ -2190,8 +2232,8 @@ func _anchor(at: Vector2) -> void:
 
 ## 가라앉은 화물: 대포 · 나무통 · 상자
 func _cargo(at: Vector2) -> void:
-	var wood := _mat(Color(0.5, 0.34, 0.2), 0.8)
-	var dark := _mat(Color(0.3, 0.2, 0.12), 0.85)
+	var wood := _smat(Color(0.5, 0.34, 0.2), "wood")
+	var dark := _smat(Color(0.3, 0.2, 0.12), "wood")
 	var iron := _mat(Color(0.18, 0.18, 0.2), 0.45, 0.7)
 	var band := _mat(Color(0.35, 0.33, 0.3), 0.5, 0.6)
 	for k in 3:
@@ -2226,7 +2268,7 @@ func _obelisk(at: Vector2) -> void:
 	var p := _find_free(at.x, at.y, 1.0, 1.0)
 	if p.x == INF:
 		return
-	var stone := _mat(Color(0.3, 0.34, 0.38), 0.6)
+	var stone := _smat(Color(0.3, 0.34, 0.38), "stone", 0.0, 0.35)
 	var b := Basis(Vector3.UP, PI / 4 + _rng.randf_range(-0.2, 0.2))
 	_mi(_rbox(Vector3(2.0, 0.5, 2.0), 0.08), stone, p + Vector3(0, 0.25, 0), b)
 	_mi(_cyl(0.55, 0.85, 5.5, 4), stone, p + Vector3(0, 0.5 + 2.75, 0), b)
@@ -2354,8 +2396,8 @@ func _rock(p: Vector3, r: float) -> void:
 
 
 func _coral(p: Vector3, c: Color, size: float) -> void:
-	var m := _mat(c, 0.7)
-	var tip := _mat(c.lightened(0.25), 0.6)
+	var m := _smat(c, "coral")
+	var tip := _smat(c.lightened(0.25), "coral")
 	var stack := [[p, Vector3.UP, 0.9 * size, 0.13 * size, 3]]
 	for k in 2:
 		stack.append([p, Vector3(_rng.randf_range(-0.5, 0.5), 1.0, _rng.randf_range(-0.5, 0.5)).normalized(), 0.8 * size, 0.11 * size, 3])
@@ -2383,7 +2425,7 @@ func _coral(p: Vector3, c: Color, size: float) -> void:
 
 
 func _sponge(p: Vector3, c: Color) -> void:
-	var m := _mat(c, 0.85)
+	var m := _smat(c, "coral")
 	var inner := _mat(c.darkened(0.6), 0.9)
 	for k in _rng.randi_range(3, 5):
 		var off := Vector3(_rng.randf_range(-0.5, 0.5), 0, _rng.randf_range(-0.5, 0.5))
@@ -2433,13 +2475,13 @@ func _brain(p: Vector3, c: Color, size: float) -> void:
 
 ## 탁자산호 (줄기 위에 넓적한 판)
 func _table_coral(p: Vector3, c: Color, size: float) -> void:
-	var m := _mat(c, 0.55)
+	var m := _smat(c, "coral")
 	var h := 0.9 * size
 	_mi(_cyl(0.12 * size, 0.2 * size, h, 10), m, p + Vector3(0, h * 0.5, 0))
 	for k in 2:
 		var r := (1.0 - k * 0.35) * size
 		var plate := _cyl(r, r * 0.92, 0.1, 20)
-		_mi(plate, m if k == 0 else _mat(c.lightened(0.2), 0.5), p + Vector3(_rng.randf_range(-0.2, 0.2), h + k * 0.35, _rng.randf_range(-0.2, 0.2)),
+		_mi(plate, m if k == 0 else _smat(c.lightened(0.2), "coral"), p + Vector3(_rng.randf_range(-0.2, 0.2), h + k * 0.35, _rng.randf_range(-0.2, 0.2)),
 			Basis(Vector3(1, 0, 0), _rng.randf_range(-0.12, 0.12)))
 
 
@@ -2478,9 +2520,10 @@ func _anemone(p: Vector3, c: Color) -> void:
 func _amphora(p: Vector3, tipped: bool) -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var prof := [Vector2(0.0, 0.0), Vector2(0.18, 0.02), Vector2(0.34, 0.25), Vector2(0.38, 0.5), Vector2(0.3, 0.8),
+	var prof := [Vector2(0.0, 0.0), Vector2(0.1, 0.0), Vector2(0.17, 0.02), Vector2(0.24, 0.1), Vector2(0.3, 0.2), Vector2(0.35, 0.32), Vector2(0.38, 0.44),
+		Vector2(0.385, 0.54), Vector2(0.36, 0.66), Vector2(0.31, 0.77), Vector2(0.23, 0.87), Vector2(0.16, 0.94),
 		Vector2(0.13, 0.98), Vector2(0.12, 1.15), Vector2(0.19, 1.22)]
-	var n := 16
+	var n := 32
 	for i in prof.size() - 1:
 		var a: Vector2 = prof[i]
 		var b: Vector2 = prof[i + 1]
@@ -2506,7 +2549,7 @@ func _amphora(p: Vector3, tipped: bool) -> void:
 	var b := Basis(Vector3.UP, _rng.randf() * TAU)
 	if tipped:
 		b = b * Basis(Vector3(0, 0, 1), PI / 2 - 0.15)
-	var mi := _mi(st.commit(), _mat(Color(0.78, 0.45, 0.3), 0.7), p + (Vector3(0, 0.35, 0) if tipped else Vector3.ZERO), b)
+	var mi := _mi(st.commit(), _smat(Color(0.78, 0.45, 0.3), "clay"), p + (Vector3(0, 0.35, 0) if tipped else Vector3.ZERO), b)
 	mi.scale = Vector3.ONE * 1.3
 
 
@@ -2516,7 +2559,7 @@ func _treasure(p: Vector3) -> void:
 	root.position = p
 	root.rotation.y = _rng.randf_range(-0.6, 0.6)
 	add_child(root)
-	var wood := _mat(Color(0.45, 0.27, 0.15), 0.7)
+	var wood := _smat(Color(0.45, 0.27, 0.15), "wood", 0.0, 0.3)
 	var gold := _mat(Color(1.0, 0.8, 0.3), 0.2, 0.9)
 	_mi(_rbox(Vector3(1.6, 0.9, 1.0), 0.06), wood, Vector3(0, 0.45, 0), Basis(), root)
 	for x in [-0.6, 0.0, 0.6]:
@@ -3065,8 +3108,8 @@ func _shop_stall(i: int) -> void:
 	var root := Node3D.new()
 	root.transform = Transform3D(b, at)
 	add_child(root)
-	var wood := _mat(Color(0.55, 0.36, 0.22), 0.75)
-	var light_wood := _mat(Color(0.78, 0.6, 0.4), 0.6)
+	var wood := _smat(Color(0.55, 0.36, 0.22), "wood", 0.0, 0.15)
+	var light_wood := _smat(Color(0.78, 0.6, 0.4), "wood", 0.0, 0.1)
 	var pink := _mat(Color(0.94, 0.43, 0.56), 0.55)
 	var cream := _mat(Color(0.99, 0.95, 0.88), 0.55)
 	# 받침 + 계산대
