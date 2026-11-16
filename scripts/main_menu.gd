@@ -39,7 +39,7 @@ const BOARDS := [
 	{
 		"id": "sunken_island",
 		"name": "SUNKEN ISLAND",
-		"desc": "Islands scattered across the seabed. Roll the dice, hop from island to island and win minigames to come out on top!",
+		"desc": "A sunken island in the grip of a giant kraken. Roll the dice, dodge its tentacles and be the last one standing!",
 		"tags": ["1-4 PLAYERS", "ALL MODES"],
 		"box": preload("res://textures/boards/sunken_island_box.png"),
 		"locked": false,
@@ -70,10 +70,15 @@ const COLUMN_WIDTH := 660     ## 왼쪽 메뉴 영역 폭
 const PEARL := Color("eafffa")
 const AQUA := Color("7ff0db")
 const DEEP := Color("05302c")
-const GLASS := Color(0.02, 0.17, 0.16, 0.52)
-const GLASS_HOVER := Color(0.08, 0.40, 0.36, 0.58)
-const GLASS_PRESSED := Color(0.03, 0.26, 0.24, 0.7)
-const GLASS_BORDER := Color(0.65, 1.0, 0.92, 0.22)
+const GLASS := Color(0.01, 0.13, 0.13, 0.64)
+const GLASS_HOVER := Color(0.05, 0.34, 0.31, 0.76)
+const GLASS_PRESSED := Color(0.02, 0.22, 0.2, 0.82)
+const GLASS_BORDER := Color(0.65, 1.0, 0.92, 0.26)
+## 가장 중요한 버튼(시작 · 플레이)에만 쓰는 따뜻한 금빛 — 청록 화면에서 한눈에 띄게
+const GOLD := Color("ffc857")
+const GOLD_LIGHT := Color("ffe2a0")
+const GOLD_DEEP := Color("e9ab3a")
+const GOLD_INK := Color("3a2406")
 const TEXT_DIM := Color(0.75, 0.95, 0.9, 0.78)
 
 const MENU_ITEMS := [
@@ -86,14 +91,15 @@ const MENU_ITEMS := [
 
 ## mode 값은 GameState.Mode 와 같아요 (0 개인전, 1 팀전, 2 협동)
 const MODE_CARDS := [
-	{"mode": 0, "title": "FREE-FOR-ALL", "desc": "Every player for themselves.\nOnly one takes the crown!"},
-	{"mode": 1, "title": "2 VS 2", "desc": "Team up in pairs and\noutplay the other side!"},
+	{"mode": 0, "title": "FREE-FOR-ALL", "desc": "Dodge the kraken's tentacles.\nLast one standing wins!"},
+	{"mode": 1, "title": "2 VS 2", "desc": "Survive the kraken in pairs.\nThe last team standing wins!"},
 	{"mode": 2, "title": "CO-OP", "desc": "All four work together\nto clear every minigame!"},
 ]
 
 var _bg
 var _logo
 var _spaced_font: FontVariation
+var _body_font: FontVariation      ## 설명 글: 제목보다 가늘게 (읽기 편하게)
 var _pages := {}
 var _current := ""
 var _busy := false
@@ -196,12 +202,15 @@ func _build_theme() -> void:
 	_spaced_font = FontVariation.new()
 	_spaced_font.base_font = UIFont
 	_spaced_font.spacing_glyph = 3
+	_body_font = FontVariation.new()
+	_body_font.base_font = UIFont
+	_body_font.variation_embolden = -0.55
 
 
 ## 메뉴 글씨가 잘 보이도록 왼쪽을 살짝 어둡게
 func _build_left_shade(parent: Control) -> void:
 	var g := Gradient.new()
-	g.set_color(0, Color(0.0, 0.07, 0.06, 0.62))
+	g.set_color(0, Color(0.0, 0.06, 0.06, 0.74))
 	g.set_color(1, Color(0.0, 0.07, 0.06, 0.0))
 	g.set_offset(1, 1.0)
 	var tex := GradientTexture2D.new()
@@ -217,7 +226,7 @@ func _build_left_shade(parent: Control) -> void:
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	shade.name = "LeftShade"
 	parent.add_child(shade)
-	shade.anchor_right = 0.55
+	shade.anchor_right = 0.62
 	shade.anchor_bottom = 1.0
 
 
@@ -270,6 +279,8 @@ func _build_main_page(parent: Control) -> Control:
 	col.add_child(box)
 	for item in MENU_ITEMS:
 		var b := _make_glass_button(item["text"], Vector2(440, 74), 28)
+		if item["id"] == "play":
+			_style_accent(b, false)
 		b.pressed.connect(_on_menu_pressed.bind(item["id"], b))
 		box.add_child(b)
 		_main_buttons.append(b)
@@ -366,22 +377,41 @@ func _make_primary_button(text: String, min_size: Vector2) -> Button:
 	var b := _make_glass_button(text, min_size, 22)
 	b.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	b.set_meta("pivot_left", false)
-	var on := _glass_box(Color(AQUA, 0.92), AQUA, 1)
-	var on_h := _glass_box(Color("a6f7e8"), Color.WHITE, 1)
+	_style_accent(b, true)
+	return b
+
+
+## 금빛 강조 버튼 꾸미기 (가장 중요한 버튼 하나에만). centered: 글씨를 가운데에 둘 때 여백을 좁게
+func _style_accent(b: Button, centered: bool) -> void:
+	var on := _glass_box(GOLD, GOLD_LIGHT, 2)
+	on.shadow_color = Color(1.0, 0.7, 0.2, 0.3)
+	on.shadow_size = 14
+	on.shadow_offset = Vector2(0, 3)
+	var on_h := _glass_box(GOLD_LIGHT, Color.WHITE, 2)
+	on_h.shadow_color = Color(1.0, 0.78, 0.3, 0.5)
+	on_h.shadow_size = 22
+	on_h.shadow_offset = Vector2(0, 3)
+	var down := _glass_box(GOLD_DEEP, GOLD_LIGHT, 2)
 	var off := _glass_box(Color(0.02, 0.12, 0.11, 0.45), Color(AQUA, 0.12), 1)
-	for box in [on, on_h, off]:
-		box.content_margin_left = 16
-		box.content_margin_right = 16
+	if centered:
+		for box: StyleBoxFlat in [on, on_h, down, off]:
+			box.content_margin_left = 16
+			box.content_margin_right = 16
 	b.add_theme_stylebox_override("normal", on)
 	b.add_theme_stylebox_override("hover", on_h)
-	b.add_theme_stylebox_override("pressed", on)
-	b.add_theme_stylebox_override("hover_pressed", on_h)
+	b.add_theme_stylebox_override("pressed", down)
+	b.add_theme_stylebox_override("hover_pressed", down)
 	b.add_theme_stylebox_override("disabled", off)
-	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	var ring := StyleBoxFlat.new()
+	ring.draw_center = false
+	ring.set_border_width_all(3)
+	ring.border_color = Color.WHITE
+	ring.set_corner_radius_all(16)
+	ring.anti_aliasing = true
+	b.add_theme_stylebox_override("focus", ring)
 	for key in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
-		b.add_theme_color_override(key, DEEP)
+		b.add_theme_color_override(key, GOLD_INK)
 	b.add_theme_color_override("font_disabled_color", Color(PEARL, 0.3))
-	return b
 
 
 func _open_lobby(mode: int) -> void:
@@ -423,8 +453,10 @@ func _make_slot(i: int, p: Dictionary, cpu_no: int, team: bool) -> PanelContaine
 	var card := PanelContainer.new()
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	var bg := _glass_box(Color(0.02, 0.15, 0.14, 0.74) if filled else Color(0.02, 0.12, 0.11, 0.55),
-		Color(AQUA, 0.3) if kind == "host" else (GLASS_BORDER if filled else Color(AQUA, 0.12)), 2 if kind == "host" else 1, 24)
+	# 자리 주인의 말 색으로 테두리를 둘러 누구 자리인지 한눈에
+	var pcol := GameState.player_color(i)
+	var bg := _glass_box(Color(0.01, 0.13, 0.13, 0.8) if filled else Color(0.02, 0.12, 0.11, 0.5),
+		Color(pcol, 0.7) if filled else Color(AQUA, 0.12), 2 if filled else 1, 24)
 	bg.set_content_margin_all(22)
 	card.add_theme_stylebox_override("panel", bg)
 
@@ -445,7 +477,6 @@ func _make_slot(i: int, p: Dictionary, cpu_no: int, team: bool) -> PanelContaine
 	badge.add_theme_font_size_override("font_size", 18)
 	badge.add_theme_color_override("font_color", DEEP if filled else Color(PEARL, 0.4))
 	var bs := StyleBoxFlat.new()
-	var pcol := GameState.player_color(i)
 	bs.bg_color = Color(pcol, 0.95) if filled else Color(1, 1, 1, 0.06)
 	bs.set_corner_radius_all(26)
 	badge.add_theme_stylebox_override("normal", bs)
@@ -623,6 +654,7 @@ func _build_board_page(parent: Control) -> Control:
 	_board_desc = Label.new()
 	_board_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_board_desc.custom_minimum_size = Vector2(600, 0)
+	_board_desc.add_theme_font_override("font", _body_font)
 	_board_desc.add_theme_font_size_override("font_size", 24)
 	_board_desc.add_theme_color_override("font_color", TEXT_DIM)
 	_board_desc.add_theme_constant_override("line_spacing", 6)
@@ -1650,6 +1682,20 @@ func _glass_box(bg: Color, border: Color, border_w: int, radius: int = 16) -> St
 	s.content_margin_top = 8
 	s.content_margin_bottom = 8
 	s.anti_aliasing = true
+	s.corner_detail = 10
+	# 유리판이 배경에서 살짝 떠 보이게 부드러운 그림자
+	s.shadow_color = Color(0.0, 0.05, 0.05, 0.32)
+	s.shadow_size = 10
+	s.shadow_offset = Vector2(0, 4)
+	return s
+
+
+## 마우스를 올렸을 때: 아쿠아 테두리 + 은은한 빛 번짐
+func _glass_hover_box(radius: int = 16) -> StyleBoxFlat:
+	var s := _glass_box(GLASS_HOVER, Color(AQUA, 0.75), 2, radius)
+	s.shadow_color = Color(AQUA, 0.26)
+	s.shadow_size = 18
+	s.shadow_offset = Vector2.ZERO
 	return s
 
 
@@ -1677,7 +1723,7 @@ func _make_glass_button(text: String, min_size: Vector2, font_size: int) -> Butt
 	for key in ["font_hover_color", "font_focus_color", "font_pressed_color", "font_hover_pressed_color"]:
 		b.add_theme_color_override(key, PEARL)
 	b.add_theme_stylebox_override("normal", _glass_box(GLASS, GLASS_BORDER, 1))
-	b.add_theme_stylebox_override("hover", _glass_box(GLASS_HOVER, Color(AQUA, 0.45), 1))
+	b.add_theme_stylebox_override("hover", _glass_hover_box())
 	b.add_theme_stylebox_override("pressed", _glass_box(GLASS_PRESSED, Color(AQUA, 0.6), 1))
 	b.add_theme_stylebox_override("hover_pressed", _glass_box(GLASS_PRESSED, Color(AQUA, 0.6), 1))
 	b.add_theme_stylebox_override("focus", _focus_ring(16))
@@ -1692,7 +1738,7 @@ func _make_mode_card(data: Dictionary) -> Button:
 	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	b.focus_mode = Control.FOCUS_ALL
 	b.add_theme_stylebox_override("normal", _glass_box(GLASS, GLASS_BORDER, 1, 20))
-	b.add_theme_stylebox_override("hover", _glass_box(GLASS_HOVER, Color(AQUA, 0.45), 1, 20))
+	b.add_theme_stylebox_override("hover", _glass_hover_box(20))
 	b.add_theme_stylebox_override("pressed", _glass_box(GLASS_PRESSED, Color(AQUA, 0.6), 1, 20))
 	b.add_theme_stylebox_override("focus", _focus_ring(20))
 	b.set_meta("pivot_left", true)
@@ -1730,12 +1776,16 @@ func _make_mode_card(data: Dictionary) -> Button:
 	title.add_theme_font_override("font", _spaced_font)
 	title.add_theme_font_size_override("font_size", 38)
 	title.add_theme_color_override("font_color", PEARL)
+	title.add_theme_color_override("font_shadow_color", Color(0, 0.05, 0.05, 0.4))
+	title.add_theme_constant_override("shadow_offset_y", 3)
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	texts.add_child(title)
 
 	var desc := Label.new()
 	desc.text = data["desc"]
-	desc.add_theme_font_size_override("font_size", 21)
+	desc.add_theme_font_override("font", _body_font)
+	desc.add_theme_font_size_override("font_size", 22)
+	desc.add_theme_constant_override("line_spacing", 4)
 	desc.add_theme_color_override("font_color", TEXT_DIM)
 	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	texts.add_child(desc)
