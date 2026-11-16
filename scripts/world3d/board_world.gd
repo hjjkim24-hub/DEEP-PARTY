@@ -1345,9 +1345,10 @@ func _giant_clam(at: Vector2) -> void:
 
 # ── 크라켄 굴: 판 북쪽 끝 깊은 골짜기 속 빛나는 눈 + 잠든 촉수 ─────
 signal tentacle_slammed           ## 촉수가 칸을 내려친 순간
-const KRAKEN_SCALE := 8.0
-const KRAKEN_SLEEP_Y := -58.0      ## 잠들어 있을 때 (깊이 잠김)
-const KRAKEN_AWAKE_Y := 2.0        ## 깨어나면 (머리가 판 북쪽 끝에 걸림)
+const KRAKEN_SCALE := 10.0
+const KRAKEN_TILT := 0.35          ## 앞으로 숙인 각도 (판을 내려다보게)
+const KRAKEN_SLEEP_Y := -75.0      ## 잠들어 있을 때 (깊이 잠김)
+const KRAKEN_AWAKE_Y := 15.0        ## 깨어나면: 판 북쪽 끝 위로 몸을 숙여 판을 내려다봄
 var kraken_coils: Array = []      ## {tn, ph, y(뿌리 깊이), g(움켜쥔 정도), dir}
 var kraken_body_mat: ShaderMaterial
 var kraken_eyes: Array = []       ## 깨어날 때 연출용 (MeshInstance3D)
@@ -1359,8 +1360,8 @@ func _kraken_lair(at: Vector2) -> void:
 	# 골짜기 속에 몸을 숨긴 크라켄: 머리(외투막) 꼭대기만 바위처럼 보이다가, 깨어나면 솟아올라 눈을 뜸
 	# 판 북쪽 바깥 심연에 몸을 숨긴 거대 크라켄 (판만 한 크기). 처음엔 깊이 잠겨 있다가 솟아오름
 	kraken_root = Node3D.new()
-	kraken_root.position = Vector3(at.x, KRAKEN_SLEEP_Y, at.y - 17.5)
-	kraken_root.scale = Vector3.ONE * KRAKEN_SCALE
+	kraken_root.position = Vector3(at.x, KRAKEN_SLEEP_Y, at.y - 17.0)
+	kraken_root.basis = Basis(Vector3.RIGHT, KRAKEN_TILT).scaled(Vector3.ONE * KRAKEN_SCALE)
 	add_child(kraken_root)
 	# 몸통: 외투막 · 머리 · 눈두덩 · 팔 뿌리가 하나로 이어진 조각 (tools/make_kraken.py)
 	var bm := ShaderMaterial.new()
@@ -1688,21 +1689,22 @@ func _impact_ring(p: Vector3) -> void:
 
 
 ## 판을 움켜쥔 촉수들: 판 바깥 깊은 곳에서 솟아 테두리를 넘어와 판 가장자리를 꽉 누름.
-## 모양(tools 로 맞춘 값, 크기 1 기준): 길이 40, 굵기 4, 뿌리는 테두리 9.1 바깥 · 5.9 아래, 끝은 판 안쪽 6
-const GRIP_LEN := 40.0
-const GRIP_R := 4.0
-const GRIP_OUT := 9.1
-const GRIP_DEPTH := 5.9
-const GRIP_POSE := {"pitch": -0.1, "curl": 0.6, "hook": 2.5, "tipback": 1.4}
+## 모양(크기 1 기준): 길이 44, 굵기 4.4, 뿌리는 테두리 10.3 바깥 · 6.9 아래, 끝은 판 안쪽 10 까지 착 붙음
+const GRIP_LEN := 44.0
+const GRIP_R := 4.4
+const GRIP_OUT := 10.3
+const GRIP_DEPTH := 6.9
+const GRIP_POSE := {"pitch": -0.15, "curl": 0.0, "hook": 2.6, "tipback": 0.9}
 
 
 func _kraken_coils() -> void:
 	# [테두리 위 지점, 판 안쪽 방향, 크기]
 	var defs := [
-		[Vector2(-24.0, -half_d), Vector2(0.12, 1.0), 1.6], [Vector2(24.0, -half_d), Vector2(-0.12, 1.0), 1.6],
-		[Vector2(-half_w, -24.0), Vector2(1.0, 0.1), 1.3], [Vector2(-half_w, 20.0), Vector2(1.0, -0.15), 1.15],
-		[Vector2(half_w, -30.0), Vector2(-1.0, 0.15), 1.25], [Vector2(half_w, 14.0), Vector2(-1.0, 0.0), 1.35],
-		[Vector2(-30.0, half_d), Vector2(0.1, -1.0), 1.05], [Vector2(28.0, half_d), Vector2(-0.15, -1.0), 1.2],
+		[Vector2(-26.0, -half_d), Vector2(0.2, 1.0), 1.5], [Vector2(26.0, -half_d), Vector2(-0.2, 1.0), 1.5],
+		[Vector2(-half_w, -30.0), Vector2(1.0, 0.15), 1.25], [Vector2(-half_w, 4.0), Vector2(1.0, -0.1), 1.1],
+		[Vector2(half_w, -22.0), Vector2(-1.0, 0.1), 1.2], [Vector2(half_w, 10.0), Vector2(-1.0, -0.05), 1.3],
+		[Vector2(-30.0, half_d), Vector2(0.15, -1.0), 1.0], [Vector2(22.0, half_d), Vector2(-0.1, -1.0), 1.15],
+		[Vector2(-half_w + 2.0, half_d - 2.0), Vector2(1.0, -1.0), 1.0], [Vector2(half_w - 2.0, half_d - 2.0), Vector2(-1.0, -1.0), 0.95],
 	]
 	for k in defs.size():
 		var edge: Vector2 = defs[k][0]
@@ -1713,16 +1715,22 @@ func _kraken_coils() -> void:
 		var m: ShaderMaterial = tn["mat"]
 		m.set_shader_parameter("pattern_scale", 0.4 / sz)
 		m.set_shader_parameter("tip", 0.13)
-		m.set_shader_parameter("hook_at", 0.38)
+		m.set_shader_parameter("hook_at", 0.32)
 		var root: Node3D = tn["root"]
 		var at := edge - dir2 * GRIP_OUT * sz
 		root.position = Vector3(at.x, KRAKEN_SLEEP_Y, at.y)
 		add_child(root)
 		_poison_mist(root, Vector3(0, GRIP_DEPTH * sz, 0), 3.0 * sz, 14)
-		var hit := edge + dir2 * 5.0 * sz
+		var hit := edge + dir2 * 7.0 * sz
 		kraken_coils.append({"tn": tn, "ph": k * 1.7, "y": -GRIP_DEPTH * sz, "g": 0.0, "dir": dir,
 			"hit": Vector3(hit.x, 0.3, hit.y)})
 		_pose_coil(kraken_coils[k], 0.0)
+
+
+## 크라켄 두 눈 사이 (깨어난 자세 기준) — 카메라 연출용
+func kraken_eye_pos() -> Vector3:
+	var p := Vector3(kraken_root.position.x, KRAKEN_AWAKE_Y, kraken_root.position.z)
+	return p + Basis(Vector3.RIGHT, KRAKEN_TILT).scaled(Vector3.ONE * KRAKEN_SCALE) * Vector3(0, 0.6, 1.3)
 
 
 ## g = 0: 곧게 선 촉수, 1: 판을 움켜쥔 자세. 움켜쥔 채로 천천히 조였다 풀었다
@@ -3166,7 +3174,7 @@ func _process(delta: float) -> void:
 	for c: Dictionary in kraken_coils:
 		_pose_coil(c, _time)
 	if kraken_root:
-		kraken_root.rotation.y = sin(_time * 0.2) * 0.05
+		kraken_root.basis = Basis(Vector3.UP, sin(_time * 0.2) * 0.05) * Basis(Vector3.RIGHT, KRAKEN_TILT + sin(_time * 0.31) * 0.03).scaled(Vector3.ONE * KRAKEN_SCALE)
 	for k in kraken_arms.size():
 		var arm: Node3D = kraken_arms[k][0]
 		arm.rotation.z = sin(_time * 0.7 + k * 1.3) * 0.12

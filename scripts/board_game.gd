@@ -91,10 +91,9 @@ func _kraken_wakes() -> void:
 	_follow = null
 	var lair := world.kraken_root.position
 	# 판 북쪽 끝에서 올려다보는 연출: 깊은 곳에서 거대한 머리와 눈이 솟아오름
-	var sc: float = world.KRAKEN_SCALE
-	var eye := Vector3(lair.x, world.KRAKEN_AWAKE_Y + 0.6 * sc, lair.z + 1.47 * sc)
+	var eye := world.kraken_eye_pos()
 	_move_camera(Vector3(lair.x, 6.0, -world.half_d + 2.0), 3.0, 1.6)
-	_cinematic(eye + Vector3(7.0, 4.0, 36.0), eye + Vector3(0, 7.0, -4.0), 1.0, 1.6)
+	_cinematic(Vector3(eye.x + 10.0, 6.0, -world.half_d + 40.0), eye + Vector3(0, 4.0, -4.0), 1.0, 1.6)
 	await get_tree().create_timer(1.6, false).timeout
 	Audio.play("box_rumble")
 	_shake_camera(0.25, 1.2)
@@ -260,10 +259,8 @@ func _debug_showcase() -> void:
 		await get_tree().create_timer(2.4, false).timeout
 	# 크라켄 얼굴 · 촉수 가까이
 	if world.kraken_root:
-		var kr := world.kraken_root.position
-		var sc: float = world.KRAKEN_SCALE
-		var eye := Vector3(kr.x + 1.42 * sc, kr.y + 0.6 * sc, kr.z + 1.47 * sc)
-		_cinematic(eye + Vector3(9.0, 2.0, 14.0), eye, 1.0, 1.0)
+		var eye := world.kraken_eye_pos() + Vector3(1.37 * world.KRAKEN_SCALE, 0, 0)
+		_cinematic(eye + Vector3(10.0, -4.0, 16.0), eye, 1.0, 1.0)
 		await get_tree().create_timer(1.3, false).timeout
 		shot_hint = "35_kraken_eye"
 		await get_tree().create_timer(2.4, false).timeout

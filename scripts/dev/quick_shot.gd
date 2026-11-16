@@ -50,17 +50,16 @@ func _run() -> void:
 	await get_tree().create_timer(3.0).timeout
 	var w: Node = g.world
 	var sc: float = w.KRAKEN_SCALE
-	var kr: Vector3 = w.kraken_root.position
+	var eye: Vector3 = w.kraken_eye_pos()
 	for s in _want:
 		match s:
 			"map":
 				g._cinematic(Vector3(0, 0.95 * w.half_d + 40.0, w.half_d + 52.0), Vector3(0, 2.0, -w.half_d * 0.22), 1.0, 0.01)
 			"kraken":
-				var eye := Vector3(kr.x, kr.y + 0.6 * sc, kr.z + 1.47 * sc)
-				g._cinematic(eye + Vector3(7.0, 4.0, 36.0), eye + Vector3(0, 7.0, -4.0), 1.0, 0.01)
+				g._cinematic(Vector3(eye.x + 10.0, 6.0, -w.half_d + 40.0), eye + Vector3(0, 4.0, -4.0), 1.0, 0.01)
 			"eye":
-				var e2 := Vector3(kr.x + 1.42 * sc, kr.y + 0.6 * sc, kr.z + 1.47 * sc)
-				g._cinematic(e2 + Vector3(9.0, 2.0, 14.0), e2, 1.0, 0.01)
+				var e2 := eye + Vector3(1.37 * sc, 0, 0)
+				g._cinematic(e2 + Vector3(10.0, -4.0, 16.0), e2, 1.0, 0.01)
 			_:
 				g._cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.01)
 		await get_tree().create_timer(2.0).timeout

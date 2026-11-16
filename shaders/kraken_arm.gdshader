@@ -23,7 +23,7 @@ varying vec3 lp;
 
 float theta(float u) {
 	return pitch + curl * segs * (0.4 * u + 0.5 * u * u) + wave * sin(wtime * 5.0 - u * segs * 0.7) * u
-		+ hook * smoothstep(hook_at, hook_at + 0.22, u) - tipback * smoothstep(0.74, 1.0, u);
+		+ hook * smoothstep(hook_at, hook_at + 0.22, u) - tipback * smoothstep(0.6, 1.0, u);
 }
 
 float rad_at(float u) {
