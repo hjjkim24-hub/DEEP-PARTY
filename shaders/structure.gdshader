@@ -1,6 +1,6 @@
 shader_type spatial;
 // 구조물 · 장식품 재질: 풍화된 돌 결(세 방향) 위에 종류별 무늬를 얹고, 이끼 · 물때 · 일렁이는 물빛을 더함
-// kind: 0 통돌, 1 쌓은 돌(줄눈), 2 나무 널, 3 기와, 4 홈 파인 기둥, 5 뼈, 6 벗겨진 칠, 7 산호, 8 토기
+// kind: 0 통돌, 1 쌓은 돌(줄눈), 2 나무 널, 3 기와, 4 홈 파인 기둥, 5 뼈, 6 벗겨진 칠, 7 산호, 8 토기, 9 녹슨 쇠
 render_mode specular_schlick_ggx;
 uniform vec3 base : source_color = vec3(0.7, 0.68, 0.6);
 uniform int kind = 0;
@@ -80,6 +80,7 @@ void fragment() {
 	float shade = 1.0;
 	float r = rough;
 	float moss_k = moss;
+	float metal = 0.0;
 
 	if (kind == 1) {
 		// 쌓은 돌: 줄마다 엇갈린 돌덩이 + 움푹한 줄눈
@@ -160,7 +161,7 @@ void fragment() {
 		// 산호: 오돌토돌한 폴립 + 밝은 끝 · 가장자리
 		det_k = 0.0;
 		vec3 q = lp * 34.0;
-		float polyp = smoothstep(0.35, 0.1, length(fract(q) - 0.5 + (vec3(hash3(floor(q)), hash3(floor(q) + 5.0), hash3(floor(q) + 9.0)) - 0.5) * 0.5));
+		float polyp = smoothstep(0.6, 0.78, noise3(q * 0.9) * 0.7 + noise3(q * 2.1 + 5.0) * 0.3);
 		float blot = fbm3(lp * 3.0);
 		c *= 0.82 + 0.3 * blot;
 		c = mix(c, min(c * 1.5 + 0.12, vec3(1.0)), polyp * 0.6);
@@ -183,6 +184,18 @@ void fragment() {
 		c = mix(c, vec3(0.88, 0.86, 0.8), barn);
 		bump += normalize(fract(q) - 0.5 + 1e-4) * barn * 0.6;
 		r = 0.7;
+		moss_k *= 0.5;
+	} else if (kind == 9) {
+		// 녹슨 쇠: 검은 쇠 위로 번진 붉은 녹 + 얽은 자국 + 따개비
+		float rs = fbm3(lp * 2.2) + (noise3(lp * 13.0) - 0.5) * 0.25;
+		float rk = smoothstep(0.32, 0.58, rs);
+		c = mix(c, vec3(0.4, 0.19, 0.1) * (0.7 + 0.6 * noise3(lp * 20.0)), rk);
+		c = mix(c, vec3(0.62, 0.34, 0.14), smoothstep(0.6, 0.8, rs) * 0.6);
+		vec3 q = lp * 11.0;
+		float barn = smoothstep(0.3, 0.2, length(fract(q) - 0.5)) * step(0.86, hash3(floor(q)));
+		c = mix(c, vec3(0.8, 0.79, 0.72), barn);
+		r = mix(0.5, 0.95, max(rk, barn));
+		metal = (1.0 - rk) * (1.0 - barn) * 0.65;
 		moss_k *= 0.5;
 	}
 
@@ -209,6 +222,7 @@ void fragment() {
 	ALBEDO = c;
 	ROUGHNESS = clamp(r + groove * 0.1, 0.05, 1.0);
 	SPECULAR = 0.4;
+	METALLIC = metal;
 	AO = 1.0 - groove * 0.5;
 	AO_LIGHT_AFFECT = 0.5;
 	vec3 n_local = normalize(nl + (bump - nl * dot(bump, nl)) * 0.7);

@@ -512,6 +512,39 @@ func _smat(c: Color, kind: String, radial: float = 0.0, moss_amt: float = 0.6) -
 	return m
 
 
+## 두 점을 잇는 막대 (밧줄 · 쇠막대)
+func _rod(a: Vector3, b: Vector3, r: float, mat: Material, parent: Node = null, segs: int = 6, r2: float = -1.0) -> void:
+	var d := b - a
+	var l := d.length()
+	if l < 0.001:
+		return
+	var y := d / l
+	var x := y.cross(Vector3(0, 0, 1) if absf(y.z) < 0.9 else Vector3(1, 0, 0)).normalized()
+	var z := x.cross(y)
+	_mi(_cyl(r if r2 < 0.0 else r2, r, l, segs), mat, (a + b) * 0.5, Basis(x, y, z), parent)
+
+
+## 세모 기둥 (박공벽): 길이 ln (x), 밑변 w (z), 높이 h (y)
+func _prism(w: float, h: float, ln: float) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var hx := ln * 0.5
+	var a0 := Vector3(-hx, 0, -w * 0.5)
+	var b0 := Vector3(-hx, 0, w * 0.5)
+	var c0 := Vector3(-hx, h, 0)
+	var a1 := Vector3(hx, 0, -w * 0.5)
+	var b1 := Vector3(hx, 0, w * 0.5)
+	var c1 := Vector3(hx, h, 0)
+	ReefKit._tri(st, a0, b0, c0, Vector3(-1, 0, 0))
+	ReefKit._tri(st, a1, b1, c1, Vector3(1, 0, 0))
+	ReefKit._tri(st, a0, c0, c1, Vector3(0, 0.5, -1))
+	ReefKit._tri(st, a0, c1, a1, Vector3(0, 0.5, -1))
+	ReefKit._tri(st, b0, c0, c1, Vector3(0, 0.5, 1))
+	ReefKit._tri(st, b0, c1, b1, Vector3(0, 0.5, 1))
+	st.generate_normals()
+	return st.commit()
+
+
 func _mi(mesh: Mesh, mat: Material, pos: Vector3, basis_: Basis = Basis(), parent: Node = null) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
@@ -896,12 +929,19 @@ func _connectors() -> void:
 					for e: float in [0.12, 0.88]:
 						var lp: Vector3 = p0.lerp(p1, e) + bas.x * 1.3
 						var gy := ground_height(lp.x, lp.z)
-						_mi(_cyl(0.11, 0.15, 0.7, 8), curb_m, Vector3(lp.x, gy + 0.35, lp.z))
-						_mi(_rbox(Vector3(0.34, 0.3, 0.34), 0.06), curb_m, Vector3(lp.x, gy + 0.85, lp.z))
+						# 돌 등불: 받침 · 기둥 · 불 놓는 단 · 네 기둥 사이 불빛 · 지붕
+						var lst := _smat(Color(0.56, 0.55, 0.5), "stone", 0.0, 0.5)
+						_mi(_rbox(Vector3(0.42, 0.12, 0.42), 0.03), lst, Vector3(lp.x, gy + 0.06, lp.z), bas)
+						_mi(_cyl(0.08, 0.12, 0.62, 10), lst, Vector3(lp.x, gy + 0.43, lp.z))
+						_mi(_rbox(Vector3(0.4, 0.07, 0.4), 0.02), lst, Vector3(lp.x, gy + 0.77, lp.z), bas)
+						for cx: float in [-1.0, 1.0]:
+							for cz: float in [-1.0, 1.0]:
+								_mi(_box(Vector3(0.05, 0.26, 0.05)), lst, Vector3(lp.x, gy + 0.93, lp.z) + bas * Vector3(cx * 0.15, 0, cz * 0.15), bas)
 						var orb := SphereMesh.new()
 						orb.radius = 0.1
 						orb.height = 0.2
-						_mi(orb, lantern_glow, Vector3(lp.x, gy + 0.85, lp.z))
+						_mi(orb, lantern_glow, Vector3(lp.x, gy + 0.92, lp.z))
+						_mi(_cyl(0.0, 0.36, 0.2, 4), lst, Vector3(lp.x, gy + 1.16, lp.z), bas * Basis(Vector3.UP, PI / 4))
 						_block(Vector2(lp.x, lp.z), 0.4)
 				continue
 			# 평평한 길: 다져진 길 자국은 바닥 셰이더가 그림. 여기엔 땅에 반쯤 묻힌 판석만 몇 개
@@ -965,19 +1005,47 @@ func _rough_link(p0: Vector3, p1: Vector3, y0: float, y1: float, bas: Basis, gle
 		_mi(_rbox(Vector3(w, hgt, dd), 0.12), _rock_mat(s2 % 3), Vector3(pos.x, low + hgt * 0.5, pos.z) + jitter, b)
 
 
-func _bridge(p0: Vector3, p1: Vector3, bas: Basis, glen: float, wood: Material, rope: Material) -> void:
-	var n := int(glen / 0.42)
-	for s in n:
-		var f := (float(s) + 0.5) / n
-		var pos := p0.lerp(p1, f)
-		var sag := sin(f * PI) * -0.25
-		_mi(_box(Vector3(1.7, 0.1, 0.34)), wood, Vector3(pos.x, pos.y + TILE_H - 0.1 + sag, pos.z), bas.rotated(Vector3.UP, 0.0))
-	for side in [-0.9, 0.9]:
-		var off: Vector3 = bas.x * side
-		for end in [p0, p1]:
-			_mi(_cyl(0.07, 0.08, 1.4, 8), wood, end + off + Vector3(0, TILE_H + 0.3, 0))
-		var mid: Vector3 = (p0 + p1) * 0.5 + off + Vector3(0, TILE_H + 0.7, 0)
-		_mi(_box(Vector3(0.05, 0.05, glen)), rope, mid, bas)
+func _bridge(p0: Vector3, p1: Vector3, bas: Basis, glen: float, _wood: Material, _rope: Material) -> void:
+	# 협곡을 건너는 나무다리: 굵은 들보 두 줄 위에 널을 깔고, 네 귀퉁이 말뚝 사이로 밧줄 난간이 늘어짐
+	var wd := _smat(Color(0.46, 0.32, 0.2), "wood", 0.0, 0.25)
+	var dk := _smat(Color(0.27, 0.18, 0.11), "wood", 0.0, 0.25)
+	var rp := _mat(Color(0.7, 0.6, 0.4), 0.9)
+	var top0 := p0 + Vector3(0, TILE_H - 0.14, 0)
+	var top1 := p1 + Vector3(0, TILE_H - 0.14, 0)
+	var pitch := -atan2(p1.y - p0.y, glen)
+	var pb := bas * Basis(Vector3(1, 0, 0), pitch)
+	var span := (top1 - top0).length()
+	var mid := (top0 + top1) * 0.5
+	for sd: float in [-0.5, 0.5]:
+		_mi(_rbox(Vector3(0.16, 0.18, span + 0.3), 0.03), dk, mid + bas.x * sd + Vector3(0, -0.12, 0), pb)
+	var n := maxi(3, int(round(span / 0.3)))
+	for k in n:
+		var f := (float(k) + 0.5) / n
+		var pos := top0.lerp(top1, f) + bas.x * _rng.randf_range(-0.03, 0.03)
+		var pw := 1.5 + _rng.randf_range(-0.07, 0.07)
+		_mi(_rbox(Vector3(pw, 0.07, span / n * 0.86), 0.02), wd if k % 3 != 1 else dk, pos + Vector3(0, _rng.randf_range(0.0, 0.012), 0),
+			pb * Basis(Vector3.UP, _rng.randf_range(-0.035, 0.035)))
+	for sd: float in [-0.84, 0.84]:
+		var tops := []
+		for e: float in [0.0, 1.0]:
+			var q := top0.lerp(top1, e) + bas.x * sd + bas.z * (0.1 if e < 0.5 else -0.1)
+			_mi(_cyl(0.075, 0.09, 1.15, 10), dk, q + Vector3(0, 0.32, 0), Basis(Vector3(0, 0, 1), sd * -0.04))
+			var cap := SphereMesh.new()
+			cap.radius = 0.1
+			cap.height = 0.16
+			_mi(cap, dk, q + Vector3(0, 0.91, 0))
+			_mi(_torus_mesh(0.09, 0.022), rp, q + Vector3(0, 0.74, 0))
+			_mi(_torus_mesh(0.09, 0.022), rp, q + Vector3(0, 0.36, 0))
+			tops.append(q)
+		# 밧줄 두 줄 (위 · 아래) — 가운데가 살짝 처짐
+		for rail: Array in [[0.74, 0.14], [0.36, 0.08]]:
+			var seg := 6
+			var prev: Vector3 = tops[0] + Vector3(0, float(rail[0]), 0)
+			for k in seg:
+				var t := float(k + 1) / seg
+				var nx: Vector3 = (tops[0] as Vector3).lerp(tops[1], t) + Vector3(0, float(rail[0]) - sin(t * PI) * float(rail[1]), 0)
+				_rod(prev, nx, 0.022, rp)
+				prev = nx
 
 
 # ── 볼거리 ───────────────────────────────────────────────────
@@ -1096,8 +1164,7 @@ func _temple(at: Vector2, r: float) -> void:
 			_mi(_rbox(Vector3(1.5, 0.4, 1.5), 0.06), dark, Vector3(x, y + 0.2, z))
 			# 홈 파인 기둥
 			_mi(_cyl(0.5, 0.56, hgt, 12), col_m, Vector3(x, y + 0.4 + hgt * 0.5, z))
-			_mi(_cyl(0.53, 0.53, 0.07, 12), moss, Vector3(x, y + 0.4 + hgt, z), Basis(Vector3(1, 0, 0), 0.12))
-			if hgt > 4.0:
+pass			if hgt > 4.0:
 				_mi(_rbox(Vector3(1.4, 0.35, 1.4), 0.05), stone, Vector3(x, y + 0.4 + hgt + 0.17, z))
 				tops.append(Vector3(x, y + 0.4 + hgt + 0.35, z))
 			else:
@@ -1964,10 +2031,11 @@ func _village(at: Vector2) -> void:
 			_mi(_cyl(1.6, 1.6, 0.06, 18), moss, hp + Vector3(0, wall_h + 0.03, 0))
 		else:
 			for sd: float in [-1.0, 1.0]:
-				_mi(_box(Vector3(3.3, 0.14, 1.95)), roof, hp + b * Vector3(0, wall_h + 0.5, sd * 0.74), b * Basis(Vector3(1, 0, 0), -sd * 0.62))
+				_mi(_box(Vector3(3.3, 0.14, 1.95)), roof, hp + b * Vector3(0, wall_h + 0.5, sd * 0.74), b * Basis(Vector3(1, 0, 0), sd * 0.62))
 				# 박공벽 (지붕 아래 세모난 벽) 대신 굵은 들보
 				_mi(_rbox(Vector3(0.16, 0.16, 2.9), 0.03), wood, hp + b * Vector3(sd * 1.3, wall_h + 0.08, 0), b)
 			_mi(_rbox(Vector3(3.4, 0.2, 0.2), 0.05), wood, hp + b * Vector3(0, wall_h + 1.08, 0), b)   # 용마루
+			_mi(_prism(2.6, 0.98, 2.76), stone, hp + b * Vector3(0, wall_h - 0.02, 0), b)             # 박공벽
 			_mi(_box(Vector3(0.6, 0.9, 0.6)), stone2, hp + b * Vector3(0.8, wall_h + 0.8, -0.5), b)   # 굴뚝
 		_block(Vector2(hp.x, hp.z), 2.3)
 	# 마을을 두른 낮은 돌담 (군데군데 무너짐)
@@ -2126,7 +2194,7 @@ func _giant_hand(at: Vector2) -> void:
 	var pearl := SphereMesh.new()
 	pearl.radius = 0.45
 	pearl.height = 0.9
-	_mi(pearl, _glow_mat(Color(0.9, 0.95, 1.0), 1.4), Vector3(0, 3.0, 0.85), Basis(), root)
+	_mi(pearl, _glow_mat(Color(0.82, 0.86, 0.95), 0.35), Vector3(0, 3.0, 0.85), Basis(), root)
 	_block(Vector2(p.x, p.z), 2.6)
 
 
@@ -2138,9 +2206,16 @@ func _crystals(at: Vector2) -> void:
 		if cp.x == INF:
 			continue
 		var col: Color = cols[c % cols.size()]
-		var m := _glow_mat(col, 1.6)
-		m.albedo_color = Color(col, 0.85)
+		# 수정: 스스로 하얗게 타지 않고, 매끈한 면에 빛이 맺히며 속이 살짝 비침
+		var m := _glow_mat(col.darkened(0.25), 0.45)
+		m.albedo_color = Color(col.darkened(0.15), 0.82)
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.roughness = 0.04
+		m.metallic = 0.25
+		m.metallic_specular = 1.0
+		m.rim_enabled = true
+		m.rim = 0.8
+		m.rim_tint = 0.4
 		var n := _rng.randi_range(4, 7)
 		for k in n:
 			var hgt := _rng.randf_range(0.9, 2.8) * (1.4 if k == 0 else 1.0)
@@ -2156,18 +2231,21 @@ func _crystals(at: Vector2) -> void:
 
 ## 뜨거운 물이 뿜어져 나오는 굴뚝
 func _vents(at: Vector2) -> void:
-	var rock := _mat(Color(0.22, 0.2, 0.2), 0.95)
+	var rock := _smat(Color(0.36, 0.32, 0.29), "stone", 0.0, 0.2)
 	for k in 4:
 		var vp := _find_free(at.x + _rng.randfn(0.0, 2.2), at.y + _rng.randfn(0.0, 2.2), 0.9, 1.0)
 		if vp.x == INF:
 			continue
 		var hgt := _rng.randf_range(1.5, 3.6)
-		var segs := 3
+		_rock(vp + Vector3(0, -0.25, 0), 1.25)
+		var segs := 6
 		for s2 in segs:
 			var f := float(s2) / segs
-			var r0 := lerpf(0.75, 0.3, f)
-			var r1 := lerpf(0.75, 0.3, f + 1.0 / segs)
-			_mi(_cyl(r1, r0, hgt / segs, 10), rock, vp + Vector3(_rng.randf_range(-0.08, 0.08), hgt * (f + 0.5 / segs), _rng.randf_range(-0.08, 0.08)))
+			var f1 := f + 1.0 / segs
+			# 아래는 넓게 퍼지고 마디마다 살짝 불룩한 굴뚝
+			var r0 := lerpf(0.3, 0.8, pow(1.0 - f, 1.6)) * (1.08 if s2 % 2 == 0 else 1.0)
+			var r1 := lerpf(0.3, 0.8, pow(1.0 - f1, 1.6))
+			_mi(_cyl(r1, r0, hgt / segs + 0.02, 14), rock, vp + Vector3(_rng.randf_range(-0.08, 0.08), hgt * (f + 0.5 / segs), _rng.randf_range(-0.08, 0.08)))
 		_mi(_cyl(0.28, 0.28, 0.06, 10), _glow_mat(Color(1.0, 0.5, 0.2), 2.5), vp + Vector3(0, hgt + 0.02, 0))
 		var smoke := bubbles_at(vp + Vector3(0, hgt + 0.2, 0), 26, 0.15)
 		smoke.initial_velocity_min = 1.4
@@ -2204,29 +2282,56 @@ func _anchor(at: Vector2) -> void:
 	var p := _find_free(at.x, at.y, 2.5, 1.5)
 	if p.x == INF:
 		return
-	var iron := _mat(Color(0.32, 0.3, 0.3), 0.6, 0.6)
-	var rust := _mat(Color(0.55, 0.3, 0.18), 0.85, 0.3)
+	var iron := _smat(Color(0.24, 0.23, 0.24), "iron", 0.0, 0.5)
 	var yaw := _rng.randf() * TAU
 	var root := Node3D.new()
-	root.position = p + Vector3(0, 0.35, 0)
-	root.rotation = Vector3(PI / 2 - 0.15, yaw, 0)   # 눕힘
+	root.position = p + Vector3(0, 0.3, 0)
+	root.rotation = Vector3(PI / 2 - 0.2, yaw, 0.12)   # 비스듬히 누워 반쯤 묻힘
 	add_child(root)
-	_mi(_cyl(0.28, 0.28, 6.0, 12), iron, Vector3(0, 0, 0), Basis(), root)                   # 몸대
-	_mi(_torus_mesh(0.7, 0.16), rust, Vector3(0, 3.6, 0), Basis(Vector3(1, 0, 0), PI / 2), root)   # 고리
-	_mi(_cyl(0.2, 0.2, 3.2, 10), iron, Vector3(0, 2.6, 0), Basis(Vector3(0, 0, 1), PI / 2), root)   # 가로대
+	# 몸대 (아래로 갈수록 굵음) + 고리 구멍 + 고리
+	_mi(_cyl(0.19, 0.27, 6.0, 14), iron, Vector3(0, 0, 0), Basis(), root)
+	_mi(_cyl(0.3, 0.3, 0.34, 14), iron, Vector3(0, 3.05, 0), Basis(Vector3(1, 0, 0), PI / 2), root)
+	_mi(_torus_mesh(0.62, 0.11), iron, Vector3(0, 3.7, 0), Basis(Vector3(1, 0, 0), PI / 2) * Basis(Vector3(0, 0, 1), 0.3), root)
+	# 가로대 (양 끝이 가늘고 둥근 마개)
 	for sd: float in [-1.0, 1.0]:
-		_mi(_cyl(0.24, 0.26, 2.6, 10), iron, Vector3(sd * 1.0, -2.6, 0), Basis(Vector3(0, 0, 1), sd * 0.9), root)   # 팔
-		_mi(_rbox(Vector3(0.9, 1.1, 0.2), 0.08), rust, Vector3(sd * 1.95, -1.9, 0), Basis(Vector3(0, 0, 1), sd * 0.5), root)   # 갈고리 날
-	_mi(_cyl(0.0, 0.3, 0.6, 10), iron, Vector3(0, -3.3, 0), Basis(Vector3(1, 0, 0), PI), root)
-	# 쇠사슬
+		_rod(Vector3(0, 2.5, 0), Vector3(0, 2.5, sd * 1.7), 0.2, iron, root, 12, 0.12)
+		var knob := SphereMesh.new()
+		knob.radius = 0.19
+		knob.height = 0.38
+		_mi(knob, iron, Vector3(0, 2.5, sd * 1.7), Basis(), root)
+	# 둥글게 휘어 올라간 팔 + 잎 모양 갈고리 날
+	var crown := SphereMesh.new()
+	crown.radius = 0.36
+	crown.height = 0.72
+	_mi(crown, iron, Vector3(0, -3.0, 0), Basis(), root)
+	for sd: float in [-1.0, 1.0]:
+		var prev := Vector3(0, -3.0, 0)
+		var steps := 7
+		for k in steps:
+			var t := 1.3 * float(k + 1) / steps
+			var nx := Vector3(sd * 2.0 * sin(t), -3.0 + 1.7 * (1.0 - cos(t)), 0)
+			var r0 := lerpf(0.27, 0.16, float(k) / steps)
+			var r1 := lerpf(0.27, 0.16, float(k + 1) / steps)
+			_rod(prev, nx, r0, iron, root, 12, r1)
+			var joint := SphereMesh.new()
+			joint.radius = r1
+			joint.height = r1 * 2.0
+			_mi(joint, iron, nx, Basis(), root)
+			prev = nx
+		var fluke := SphereMesh.new()
+		fluke.radius = 0.5
+		fluke.height = 1.0
+		var fm := _mi(fluke, iron, prev + Vector3(sd * -0.12, -0.1, 0), Basis(Vector3(0, 0, 1), sd * -0.5), root)
+		fm.scale = Vector3(0.62, 1.0, 0.16)
+	# 쇠사슬: 고리에서 풀려 모래 위에 늘어짐
 	var dir := Vector3(cos(yaw + 0.6), 0, sin(yaw + 0.6))
-	var cp := p + Basis(Vector3.UP, yaw) * Vector3(0, 0, 3.8)
+	var cp := p + Basis(Vector3.UP, yaw) * Vector3(0, 0, 3.9)
 	for k in 16:
-		var q := cp + dir * (k * 0.42) + Vector3(0, 0, sin(k * 0.5) * 0.4)
+		var q := cp + dir * (k * 0.4) + Vector3(-dir.z, 0, dir.x) * sin(k * 0.5) * 0.4
 		var gy := ground_height(q.x, q.z)
-		var link := _torus_mesh(0.22, 0.06)
-		var lb := Basis(Vector3.UP, atan2(dir.x, dir.z)) * (Basis(Vector3(0, 0, 1), PI / 2) if k % 2 == 0 else Basis())
-		_mi(link, rust, Vector3(q.x, gy + 0.12, q.z), lb * Basis(Vector3(1, 0, 0), PI / 2))
+		var link := _torus_mesh(0.2, 0.055)
+		var lb := Basis(Vector3.UP, atan2(dir.x, dir.z) + cos(k * 0.5) * 0.4) * (Basis(Vector3(0, 0, 1), PI / 2 - 0.5) if k % 2 == 0 else Basis())
+		_mi(link, iron, Vector3(q.x, gy + (0.14 if k % 2 == 0 else 0.05), q.z), lb * Basis(Vector3(1, 0, 0), PI / 2))
 	_block(Vector2(p.x, p.z), 3.5)
 
 
@@ -2234,7 +2339,7 @@ func _anchor(at: Vector2) -> void:
 func _cargo(at: Vector2) -> void:
 	var wood := _smat(Color(0.5, 0.34, 0.2), "wood")
 	var dark := _smat(Color(0.3, 0.2, 0.12), "wood")
-	var iron := _mat(Color(0.18, 0.18, 0.2), 0.45, 0.7)
+	var iron := _smat(Color(0.2, 0.2, 0.22), "iron", 0.0, 0.3)
 	var band := _mat(Color(0.35, 0.33, 0.3), 0.5, 0.6)
 	for k in 3:
 		var cp := _find_free(at.x + _rng.randfn(0.0, 3.0), at.y + _rng.randfn(0.0, 3.0), 1.3, 1.0)
@@ -2390,6 +2495,11 @@ func _rock_mesh() -> Mesh:
 
 
 func _rock(p: Vector3, r: float) -> void:
+	# 비탈에서는 낮은 쪽에 맞춰 묻음 (한쪽이 허공에 뜨지 않게)
+	var lo := p.y
+	for d: Vector2 in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+		lo = minf(lo, ground_height(p.x + d.x * r * 0.7, p.z + d.y * r * 0.7))
+	p.y = minf(p.y, lo + r * 0.12)
 	var mi := _mi(_rock_mesh(), _rock_mat(_rng.randi() % 3), p)
 	mi.scale = Vector3(r * _rng.randf_range(0.9, 1.3), r * _rng.randf_range(0.6, 0.85), r * _rng.randf_range(0.9, 1.2))
 	mi.rotation = Vector3(_rng.randf_range(-0.12, 0.12), _rng.randf() * TAU, _rng.randf_range(-0.12, 0.12))
@@ -3049,7 +3159,7 @@ func _portal_gate(i: int) -> void:
 	# 받침돌 두 개
 	var side := Basis(Vector3.UP, yaw).x
 	for sgn in [-1.0, 1.0]:
-		_mi(_box(Vector3(0.42, 0.34, 0.5)), _mat(Color(0.4, 0.34, 0.5), 0.7), top + side * (1.18 * sgn) + Vector3(0, 0.12, 0), Basis(Vector3.UP, yaw))
+		_mi(_rbox(Vector3(0.42, 0.34, 0.5), 0.09), _mat(Color(0.4, 0.34, 0.5), 0.45, 0.3), top + side * (1.18 * sgn) + Vector3(0, 0.12, 0), Basis(Vector3.UP, yaw))
 	# 고리 둘레 반짝이
 	var sparks := CPUParticles3D.new()
 	var sm := SphereMesh.new()
