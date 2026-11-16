@@ -58,6 +58,10 @@ func _ready() -> void:
 	if "--smoke-test" in OS.get_cmdline_user_args():
 		var tester: Node = load("res://scripts/dev/smoke_test.gd").new()
 		get_tree().root.add_child.call_deferred(tester)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--quick-shot"):
+			var qs: Node = load("res://scripts/dev/quick_shot.gd").new()
+			get_tree().root.add_child.call_deferred(qs)
 	if "--screenshot-tour" in OS.get_cmdline_user_args():
 		var tour: Node = load("res://scripts/dev/screenshot_tour.gd").new()
 		get_tree().root.add_child.call_deferred(tour)

@@ -1,0 +1,55 @@
+# 보드 게임 화면 몇 장만 빨리 찍기 (전체 투어 대신, 몇 분이면 끝남)
+#   gh workflow run quick-shot.yml -f shots=map,kraken
+# 결과는 ci-quick-shots 브랜치에 올라감
+name: Quick shot
+
+on:
+  workflow_dispatch:
+    inputs:
+      shots:
+        description: "map, kraken, eye, board (쉼표로 여러 개)"
+        default: "map"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: quick-shot
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: "4.3"
+
+jobs:
+  shot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install virtual display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri mesa-utils > /dev/null
+      - name: Download Godot
+        run: |
+          cd /tmp
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q "Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+      - name: Import
+        run: |
+          godot --headless --editor --path . --quit || true
+          godot --headless --editor --path . --quit || true
+      - name: Shoot
+        run: |
+          mkdir -p shots
+          xvfb-run -a -s "-screen 0 1920x1080x24" godot --path . --rendering-method gl_compatibility --rendering-driver opengl3 --resolution 1600x900 -- --quick-shot=${{ inputs.shots }} --shots-dir="$PWD/shots" 2>&1 | tee shot.log
+          ls -la shots
+      - name: Save to the ci-quick-shots branch
+        if: always()
+        run: |
+          cd shots
+          cp ../shot.log .
+          git init -q -b ci-quick-shots
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Quick shots for ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ci-quick-shots
