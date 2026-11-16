@@ -1,0 +1,55 @@
+# 게임 전체 자동 촬영 (메뉴 · 맵 · 크라켄 · 미니게임 수십 장, 약 30분).
+# 무료 사용 시간을 많이 쓰므로 자동으로 돌지 않음 — 요청할 때만 직접 실행:
+#   gh api -X POST repos/{owner}/{repo}/actions/workflows/full-tour.yml/dispatches -f ref=main
+# 결과는 ci-screenshots 브랜치에 올라감. 장면 몇 장만 필요하면 quick-shot.yml 을 쓸 것.
+name: Full screenshot tour
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: full-tour
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: "4.3"
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install virtual display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri mesa-utils > /dev/null
+      - name: Download Godot
+        run: |
+          cd /tmp
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q "Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+      - name: Import
+        run: |
+          godot --headless --editor --path . --quit || true
+          godot --headless --editor --path . --quit || true
+      - name: Screenshot tour
+        run: |
+          mkdir -p shots
+          xvfb-run -a -s "-screen 0 1920x1080x24" godot --path . --rendering-method gl_compatibility --rendering-driver opengl3 --resolution 1600x900 -- --screenshot-tour --shots-dir="$PWD/shots" 2>&1 | tee tour.log
+          ls -la shots
+      - name: Save screenshots to the ci-screenshots branch
+        if: always()
+        run: |
+          cd shots
+          cp ../tour.log .
+          git init -q -b ci-screenshots
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Screenshots for ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ci-screenshots

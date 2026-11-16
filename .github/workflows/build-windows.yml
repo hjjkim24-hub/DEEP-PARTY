@@ -3,6 +3,7 @@
 #  1) Godot + 내보내기 템플릿 + rcedit(exe 아이콘용) 받기
 #  2) exe 내보내기
 #  3) 자동 점검: 메뉴 화면들을 한 바퀴 돌려서 스크립트 오류가 있으면 중단
+#  (게임 전체 자동 촬영은 full-tour.yml 로 분리 — 요청할 때만 실행)
 #  4) Releases 에 올리기
 name: Build Windows exe
 
@@ -93,38 +94,3 @@ jobs:
           files: "build/DeepParty.exe"
 
   # 실제 Godot 화면 스크린샷 (리눅스 가상 화면, 소프트웨어 렌더링)
-  screenshots:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install virtual display
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri mesa-utils > /dev/null
-      - name: Download Godot
-        run: |
-          cd /tmp
-          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
-          unzip -q "Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
-          sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
-      - name: Import
-        run: |
-          godot --headless --editor --path . --quit || true
-          godot --headless --editor --path . --quit || true
-      - name: Screenshot tour
-        run: |
-          mkdir -p shots
-          xvfb-run -a -s "-screen 0 1920x1080x24" godot --path . --rendering-method gl_compatibility --rendering-driver opengl3 --resolution 1600x900 -- --screenshot-tour --shots-dir="$PWD/shots" 2>&1 | tee tour.log
-          ls -la shots
-      - name: Save screenshots to the ci-screenshots branch
-        if: always()
-        run: |
-          cd shots
-          cp ../tour.log .
-          git init -q -b ci-screenshots
-          git config user.name "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
-          git add -A
-          git commit -q -m "Screenshots for ${GITHUB_SHA}"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ci-screenshots
