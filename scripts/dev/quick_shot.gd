@@ -30,8 +30,67 @@ func _shot(shot_name: String) -> void:
 	print("SHOT: ", path, " ", img.get_size())
 
 
+## 메뉴 화면들 (메인 · 모드 · 로비 · 꾸미기 · 보드 선택 · 설정 · 튜토리얼 말풍선). lang = "en" / "ko"
+func _menus(lang: String) -> void:
+	Settings.language = lang
+	Settings.apply_language()
+	GameState.tutorial_active = false
+	# 매번 메인화면을 새로 띄움 (앞 언어에서 열어 둔 튜토리얼이 남지 않게)
+	var old := get_tree().current_scene
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+	while get_tree().current_scene == null or get_tree().current_scene == old or get_tree().current_scene.name != "MainMenu":
+		await get_tree().process_frame
+	var m: Node = get_tree().current_scene
+	await _wait_idle(m, "main", 7.0)
+	await _shot("m_%s_01_main" % lang)
+	m._show_page("mode")
+	await _wait_idle(m, "mode")
+	await _shot("m_%s_02_mode" % lang)
+	m._open_lobby(0)
+	await _wait_idle(m, "lobby")
+	m._lobby_add_cpu(1)
+	m._lobby_add_cpu(2)
+	await get_tree().create_timer(1.0).timeout
+	await _shot("m_%s_03_lobby" % lang)
+	m._lobby_customize()
+	await _wait_idle(m, "customize")
+	await _shot("m_%s_04_customize" % lang)
+	m._go_back()
+	await _wait_idle(m, "lobby")
+	m._on_lobby_start()
+	await _wait_idle(m, "board")
+	await _shot("m_%s_05_board" % lang)
+	m._go_back()
+	await _wait_idle(m, "lobby")
+	m._go_back()
+	await _wait_idle(m, "mode")
+	m._go_back()
+	await _wait_idle(m, "main")
+	m._show_page("settings")
+	await _wait_idle(m, "settings")
+	await _shot("m_%s_06_settings" % lang)
+	m._go_back()
+	await _wait_idle(m, "main")
+	m._start_tutorial()
+	await get_tree().create_timer(3.0).timeout
+	await _shot("m_%s_07_tutorial" % lang)
+
+
+func _wait_idle(m: Node, page: String, extra: float = 2.0) -> void:
+	var waited := 0.0
+	while (m._current != page or m._busy) and waited < 20.0:
+		await get_tree().process_frame
+		waited += get_process_delta_time()
+	await get_tree().create_timer(extra).timeout
+
+
 func _run() -> void:
 	await get_tree().create_timer(1.0, true, false, true).timeout
+	if "menus" in _want:
+		await _menus("en")
+		await _menus("ko")
+		get_tree().quit(0)
+		return
 	GameState.debug_autoplay = true
 	GameState.debug_auto_minigames = true
 	GameState.selected_mode = GameState.Mode.FREE_FOR_ALL

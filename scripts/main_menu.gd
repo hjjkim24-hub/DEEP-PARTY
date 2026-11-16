@@ -18,6 +18,8 @@ const UIFont := preload("res://fonts/PirataOne-Regular.ttf")
 const KoFont := preload("res://fonts/GowunBatang-Bold.ttf")
 ## Pirata One 은 폭이 좁고 글자가 작아 보여서, 같은 자리에서 글씨를 조금 키움
 const FONT_SCALE := 1.15
+## 이보다 작은 글씨는 해적 글씨 대신 고운바탕 (작으면 Pirata One 이 뭉쳐서 안 읽힘)
+const SMALL_TEXT := 30
 
 const GAME_TITLE := "DEEP\nPARTY"
 const GAME_SUBTITLE := "UP TO 4 PLAYERS  •  MINIGAME PARTY"
@@ -104,6 +106,7 @@ var _bg
 var _logo
 var _spaced_font: FontVariation
 var _body_font: FontVariation      ## 설명 글: 제목보다 가늘게 (읽기 편하게)
+var _small_font: FontVariation     ## 작은 글씨: 고운바탕 (영어 · 한글 모두)
 var _pages := {}
 var _current := ""
 var _busy := false
@@ -210,6 +213,9 @@ func _build_theme() -> void:
 	_body_font = FontVariation.new()
 	_body_font.base_font = UIFont
 	_body_font.spacing_glyph = 0
+	_small_font = FontVariation.new()
+	_small_font.base_font = KoFont
+	_small_font.spacing_glyph = 1
 
 
 ## 글씨 크기를 FONT_SCALE 만큼 키움 (지금 있는 글씨 + 나중에 새로 생기는 글씨 모두)
@@ -229,7 +235,10 @@ func _scale_font(c: Control) -> void:
 		return
 	c.set_meta("fs_done", true)
 	if c.has_theme_font_size_override("font_size"):
-		c.add_theme_font_size_override("font_size", int(round(c.get_theme_font_size("font_size") * FONT_SCALE)))
+		var sz := int(round(c.get_theme_font_size("font_size") * FONT_SCALE))
+		c.add_theme_font_size_override("font_size", sz)
+		if sz < SMALL_TEXT and (c is Label or c is Button or c is LineEdit or c is OptionButton):
+			c.add_theme_font_override("font", _small_font)
 
 
 ## 메뉴 글씨가 잘 보이도록 왼쪽을 살짝 어둡게
@@ -678,7 +687,8 @@ func _build_board_page(parent: Control) -> Control:
 	left.add_child(_board_tags)
 	_board_desc = Label.new()
 	_board_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_board_desc.custom_minimum_size = Vector2(600, 0)
+	_board_desc.custom_minimum_size = Vector2(560, 0)
+	_board_desc.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN   # 상자 그림을 침범하지 않게 폭 고정
 	_board_desc.add_theme_font_override("font", _body_font)
 	_board_desc.add_theme_font_size_override("font_size", 24)
 	_board_desc.add_theme_color_override("font_color", TEXT_DIM)

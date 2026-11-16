@@ -495,7 +495,7 @@ func _mat(c: Color, rough: float = 0.8, metal: float = 0.0) -> StandardMaterial3
 
 
 ## 구조물 · 장식품 재질 (shaders/structure.gdshader): 돌 결 + 종류별 무늬 + 이끼 · 물때
-const SKIND := {"stone": 0, "masonry": 1, "wood": 2, "roof": 3, "column": 4, "bone": 5, "paint": 6, "coral": 7, "clay": 8}
+const SKIND := {"stone": 0, "masonry": 1, "wood": 2, "roof": 3, "column": 4, "bone": 5, "paint": 6, "coral": 7, "clay": 8, "iron": 9}
 func _smat(c: Color, kind: String, radial: float = 0.0, moss_amt: float = 0.6) -> ShaderMaterial:
 	var key := "s_%s_%s_%.2f_%.2f" % [c.to_html(), kind, radial, moss_amt]
 	if _mats.has(key):
@@ -2300,8 +2300,9 @@ func _anchor(at: Vector2) -> void:
 	var iron := _smat(Color(0.24, 0.23, 0.24), "iron", 0.0, 0.5)
 	var yaw := _rng.randf() * TAU
 	var root := Node3D.new()
-	root.position = p + Vector3(0, 0.3, 0)
-	root.rotation = Vector3(PI / 2 - 0.2, yaw, 0.12)   # 비스듬히 누워 반쯤 묻힘
+	# 옆으로 쓰러진 닻: 몸대는 바닥에 눕고, 한쪽 갈고리는 모래에 박히고 다른 쪽은 위로 솟음
+	root.position = p + Vector3(0, 0.26, 0)
+	root.rotation = Vector3(0, yaw, PI / 2 - 0.06)
 	add_child(root)
 	# 몸대 (아래로 갈수록 굵음) + 고리 구멍 + 고리
 	_mi(_cyl(0.19, 0.27, 6.0, 14), iron, Vector3(0, 0, 0), Basis(), root)
@@ -2339,8 +2340,9 @@ func _anchor(at: Vector2) -> void:
 		var fm := _mi(fluke, iron, prev + Vector3(sd * -0.12, -0.1, 0), Basis(Vector3(0, 0, 1), sd * -0.5), root)
 		fm.scale = Vector3(0.62, 1.0, 0.16)
 	# 쇠사슬: 고리에서 풀려 모래 위에 늘어짐
-	var dir := Vector3(cos(yaw + 0.6), 0, sin(yaw + 0.6))
-	var cp := p + Basis(Vector3.UP, yaw) * Vector3(0, 0, 3.9)
+	var ring_at := Basis(Vector3.UP, yaw) * Vector3(-4.2, 0, 0)
+	var dir := (Basis(Vector3.UP, yaw + 0.5) * Vector3(-1, 0, 0)).normalized()
+	var cp := p + ring_at
 	for k in 16:
 		var q := cp + dir * (k * 0.4) + Vector3(-dir.z, 0, dir.x) * sin(k * 0.5) * 0.4
 		var gy := ground_height(q.x, q.z)
