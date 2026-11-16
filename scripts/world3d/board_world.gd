@@ -1164,7 +1164,7 @@ func _temple(at: Vector2, r: float) -> void:
 			_mi(_rbox(Vector3(1.5, 0.4, 1.5), 0.06), dark, Vector3(x, y + 0.2, z))
 			# 홈 파인 기둥
 			_mi(_cyl(0.5, 0.56, hgt, 12), col_m, Vector3(x, y + 0.4 + hgt * 0.5, z))
-pass			if hgt > 4.0:
+			if hgt > 4.0:
 				_mi(_rbox(Vector3(1.4, 0.35, 1.4), 0.05), stone, Vector3(x, y + 0.4 + hgt + 0.17, z))
 				tops.append(Vector3(x, y + 0.4 + hgt + 0.35, z))
 			else:
