@@ -65,7 +65,7 @@ func _run() -> void:
 				var tp: Vector3 = sp["pos"]
 				g._cinematic(tp + Vector3(2.6, 2.4, 4.6), tp + Vector3(-0.6, 0.0, -0.8), 1.0, 0.01)
 			"temple":
-				g._cinematic(Vector3(9.0, 7.0, 12.0), Vector3(0.0, 2.5, -3.0), 1.0, 0.01)
+				g._cinematic(Vector3(13.0, 11.0, 15.0), Vector3(0.0, 2.5, -2.0), 1.0, 0.01)
 			"wreck":
 				g._cinematic(Vector3(-32.0, 11.0, 24.0), Vector3(-46.0, 2.0, 10.0), 1.0, 0.01)
 			"light":

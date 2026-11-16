@@ -175,40 +175,56 @@ static func kelp_mesh(rng: RandomNumberGenerator, h: float) -> ArrayMesh:
 
 
 ## 말미잘 (촉수 여러 개를 한 덩어리로). UV.y: 0=뿌리 1=끝
-static func anemone_mesh(rng: RandomNumberGenerator, n: int = 26) -> ArrayMesh:
+static func anemone_mesh(rng: RandomNumberGenerator, n: int = 54) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	# 몸통
-	var col := 8
-	for j in col:
-		var a0 := TAU * j / col
-		var a1 := TAU * (j + 1) / col
-		var r0 := 0.32
-		var r1 := 0.4
-		var p00 := Vector3(cos(a0) * r0, 0, sin(a0) * r0)
-		var p01 := Vector3(cos(a1) * r0, 0, sin(a1) * r0)
-		var p10 := Vector3(cos(a0) * r1, 0.3, sin(a0) * r1)
-		var p11 := Vector3(cos(a1) * r1, 0.3, sin(a1) * r1)
-		var out := Vector3(cos((a0 + a1) * 0.5), 0, sin((a0 + a1) * 0.5))
-		_tri(st, p00, p01, p11, out)
-		_tri(st, p00, p11, p10, out)
-		_tri(st, Vector3(0, 0.3, 0), p10, p11, Vector3.UP)
-	# 촉수 (얇은 삼각기둥)
+	# 몸통: 통통한 기둥 (아래가 살짝 퍼지고 위가 오므라듦)
+	var prof := [Vector2(0.4, 0.0), Vector2(0.36, 0.06), Vector2(0.38, 0.16), Vector2(0.43, 0.26), Vector2(0.4, 0.34), Vector2(0.28, 0.39), Vector2(0.0, 0.4)]
+	var col := 20
+	for i in prof.size() - 1:
+		var pa: Vector2 = prof[i]
+		var pb: Vector2 = prof[i + 1]
+		for j in col:
+			var a0 := TAU * j / col
+			var a1 := TAU * (j + 1) / col
+			var p00 := Vector3(cos(a0) * pa.x, pa.y, sin(a0) * pa.x)
+			var p01 := Vector3(cos(a1) * pa.x, pa.y, sin(a1) * pa.x)
+			var p10 := Vector3(cos(a0) * pb.x, pb.y, sin(a0) * pb.x)
+			var p11 := Vector3(cos(a1) * pb.x, pb.y, sin(a1) * pb.x)
+			var out := Vector3(cos((a0 + a1) * 0.5), 0.3, sin((a0 + a1) * 0.5))
+			_tri(st, p00, p01, p11, out)
+			if pb.x > 0.001:
+				_tri(st, p00, p11, p10, out)
+	# 촉수: 바깥으로 휘어 늘어지는 가는 관 (끝으로 갈수록 가늘어짐)
 	for k in n:
 		var a := rng.randf() * TAU
-		var rr := rng.randf_range(0.05, 0.36)
-		var base := Vector3(cos(a) * rr, 0.3, sin(a) * rr)
-		var dir := (Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.3, 0.9) + Vector3.UP).normalized()
-		var ln := rng.randf_range(0.35, 0.6)
-		var tip := base + dir * ln
-		var w := 0.035
-		var side := dir.cross(Vector3.UP).normalized() * w
-		var side2 := dir.cross(side).normalized() * w
-		var ring := [base + side, base - side * 0.5 + side2, base - side * 0.5 - side2]
-		for q in 3:
-			var p0: Vector3 = ring[q]
-			var p1: Vector3 = ring[(q + 1) % 3]
-			_tri(st, p0, p1, tip, (p0 + p1) * 0.5 - base, [Vector2(0, 0.0), Vector2(0, 0.0), Vector2(0, 1.0)])
+		var rr := sqrt(rng.randf()) * 0.34
+		var base := Vector3(cos(a) * rr, 0.37, sin(a) * rr)
+		var outw := Vector3(cos(a), 0, sin(a))
+		var lean := 0.25 + rr * 2.2 + rng.randf_range(-0.15, 0.15)
+		var ln := rng.randf_range(0.4, 0.68)
+		var w := rng.randf_range(0.03, 0.042)
+		var segs := 4
+		var prev_c := base
+		var prev_r := w
+		for q in segs:
+			var t1 := float(q + 1) / segs
+			# 위로 뻗다가 바깥으로 휨
+			var c1 := base + Vector3.UP * ln * t1 * (1.0 - 0.3 * lean * t1) + outw * ln * lean * t1 * t1 * 0.8
+			var r1 := w * (1.0 - 0.75 * t1)
+			var axis := (c1 - prev_c).normalized()
+			var sx := axis.cross(outw + Vector3(0.01, 0.02, 0.03)).normalized()
+			var sy := axis.cross(sx).normalized()
+			for e in 4:
+				var e0 := TAU * e / 4.0
+				var e1 := TAU * (e + 1) / 4.0
+				var d0 := sx * cos(e0) + sy * sin(e0)
+				var d1 := sx * cos(e1) + sy * sin(e1)
+				var v0 := float(q) / segs
+				_tri(st, prev_c + d0 * prev_r, prev_c + d1 * prev_r, c1 + d1 * r1, d0 + d1, [Vector2(0, v0), Vector2(0, v0), Vector2(0, t1)])
+				_tri(st, prev_c + d0 * prev_r, c1 + d1 * r1, c1 + d0 * r1, d0 + d1, [Vector2(0, v0), Vector2(0, t1), Vector2(0, t1)])
+			prev_c = c1
+			prev_r = r1
 	return _finish(st)
 
 

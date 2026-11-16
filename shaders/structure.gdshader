@@ -65,7 +65,8 @@ void fragment() {
 	float ang = atan(lp.x, lp.z);
 	vec3 tu = vec3(cos(ang), 0.0, -sin(ang));
 	vec2 fc;
-	if (radial > 0.01) {
+	bool rad_on = radial > 0.01 && (kind == 3 || !top);    // 둥근 벽의 윗면은 평면 무늬로
+	if (rad_on) {
 		fc = vec2(ang * radial, lp.y);
 	} else if (top) {
 		fc = lp.xz;
@@ -86,7 +87,7 @@ void fragment() {
 		float bw = 0.95;
 		float row = floor(fc.y / bh);
 		float ux = fc.x / bw + 0.5 * mod(row, 2.0) + hash1(row) * 0.3;
-		if (radial > 0.01) {
+		if (rad_on) {
 			float cnt = max(floor(6.2832 * radial / bw), 4.0);
 			ux = ang / 6.2832 * cnt + 0.5 * mod(row, 2.0);
 		}
@@ -109,13 +110,13 @@ void fragment() {
 		moss_k *= 0.7;
 	} else if (kind == 3) {
 		// 기와: 줄마다 엇갈려 겹친 기와장
-		float th = 0.36;
-		float tw = 0.38;
+		float th = 0.3;
+		float tw = 0.3;
 		float vv = fc.y / th;
 		float row = floor(vv);
 		float fy = fract(vv);
 		float ux = fc.x / tw + 0.5 * mod(row, 2.0);
-		if (radial > 0.01) {
+		if (rad_on) {
 			float cnt = max(floor(6.2832 * radial / tw), 6.0);
 			ux = ang / 6.2832 * cnt + 0.5 * mod(row, 2.0);
 		}
