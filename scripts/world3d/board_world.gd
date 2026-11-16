@@ -512,6 +512,18 @@ func _smat(c: Color, kind: String, radial: float = 0.0, moss_amt: float = 0.6) -
 	return m
 
 
+## 통나무 · 통널 한 장 (틈 없이, 결이 axis 방향으로 흐름)
+func _wood(c: Color, axis: Vector3, moss_amt: float = 0.3) -> ShaderMaterial:
+	var key := "w_%s_%s_%.2f" % [c.to_html(), axis, moss_amt]
+	if _mats.has(key):
+		return _mats[key]
+	var m := _smat(c, "wood", 0.0, moss_amt).duplicate() as ShaderMaterial
+	m.set_shader_parameter("grain", axis)
+	m.set_shader_parameter("plank_w", 0.0)
+	_mats[key] = m
+	return m
+
+
 ## 두 점을 잇는 막대 (밧줄 · 쇠막대)
 func _rod(a: Vector3, b: Vector3, r: float, mat: Material, parent: Node = null, segs: int = 6, r2: float = -1.0) -> void:
 	var d := b - a
@@ -971,7 +983,7 @@ func _gangway(p0: Vector3, p1: Vector3, y0: float, y1: float, bas: Basis, glen: 
 	for s in n:
 		var f := (float(s) + 0.5) / n
 		var pos := p0.lerp(p1, f)
-		_mi(_box(Vector3(1.3, 0.08, glen / n * 0.85)), wood, Vector3(pos.x, lerpf(y0, y1, f), pos.z), pb)
+		_mi(_box(Vector3(1.3, 0.08, glen / n * 0.85)), _wood(Color(0.46, 0.32, 0.2), Vector3(1, 0, 0)), Vector3(pos.x, lerpf(y0, y1, f), pos.z), pb)
 	for sd: float in [-1.0, 1.0]:
 		var c := (p0 + p1) * 0.5 + bas.x * sd * 0.62
 		_mi(_box(Vector3(0.1, 0.12, Vector3(glen, y1 - y0, 0).length())), wood, Vector3(c.x, (y0 + y1) * 0.5 - 0.06, c.z), pb)
@@ -1007,8 +1019,10 @@ func _rough_link(p0: Vector3, p1: Vector3, y0: float, y1: float, bas: Basis, gle
 
 func _bridge(p0: Vector3, p1: Vector3, bas: Basis, glen: float, _wood: Material, _rope: Material) -> void:
 	# 협곡을 건너는 나무다리: 굵은 들보 두 줄 위에 널을 깔고, 네 귀퉁이 말뚝 사이로 밧줄 난간이 늘어짐
-	var wd := _smat(Color(0.46, 0.32, 0.2), "wood", 0.0, 0.25)
-	var dk := _smat(Color(0.27, 0.18, 0.11), "wood", 0.0, 0.25)
+	var wd := _wood(Color(0.5, 0.35, 0.22), Vector3(1, 0, 0), 0.2)      # 널: 다리를 가로질러 길게
+	var wd2 := _wood(Color(0.4, 0.27, 0.17), Vector3(1, 0, 0), 0.2)
+	var beam := _wood(Color(0.27, 0.18, 0.11), Vector3(0, 0, 1), 0.25)   # 들보: 다리 방향
+	var dk := _wood(Color(0.27, 0.18, 0.11), Vector3(0, 1, 0), 0.25)     # 말뚝: 세로
 	var rp := _mat(Color(0.7, 0.6, 0.4), 0.9)
 	var top0 := p0 + Vector3(0, TILE_H - 0.14, 0)
 	var top1 := p1 + Vector3(0, TILE_H - 0.14, 0)
@@ -1017,13 +1031,14 @@ func _bridge(p0: Vector3, p1: Vector3, bas: Basis, glen: float, _wood: Material,
 	var span := (top1 - top0).length()
 	var mid := (top0 + top1) * 0.5
 	for sd: float in [-0.5, 0.5]:
-		_mi(_rbox(Vector3(0.16, 0.18, span + 0.3), 0.03), dk, mid + bas.x * sd + Vector3(0, -0.12, 0), pb)
-	var n := maxi(3, int(round(span / 0.3)))
+		_mi(_rbox(Vector3(0.16, 0.18, span + 0.3), 0.03), beam, mid + bas.x * sd + Vector3(0, -0.12, 0), pb)
+	# 널: 가로로 긴 두툼한 널빤지를 틈을 조금씩 두고 촘촘히 (길이 · 두께 · 각도가 조금씩 다름)
+	var n := maxi(3, int(round(span / 0.34)))
 	for k in n:
 		var f := (float(k) + 0.5) / n
 		var pos := top0.lerp(top1, f) + bas.x * _rng.randf_range(-0.03, 0.03)
-		var pw := 1.5 + _rng.randf_range(-0.07, 0.07)
-		_mi(_rbox(Vector3(pw, 0.07, span / n * 0.86), 0.02), wd if k % 3 != 1 else dk, pos + Vector3(0, _rng.randf_range(0.0, 0.012), 0),
+		var pw := 1.62 + _rng.randf_range(-0.09, 0.09)
+		_mi(_rbox(Vector3(pw, 0.09, span / n * 0.9), 0.025), wd if k % 3 != 1 else wd2, pos + Vector3(0, _rng.randf_range(0.0, 0.012), 0),
 			pb * Basis(Vector3.UP, _rng.randf_range(-0.035, 0.035)))
 	for sd: float in [-0.84, 0.84]:
 		var tops := []
@@ -1299,7 +1314,7 @@ func _shipwreck(at: Vector2, length: float, deck: float) -> void:
 	var n := int(length / 0.55)
 	for k in n:
 		var f := (float(k) + 0.5) / n - 0.5
-		_mi(_box(Vector3(w - 0.5, 0.06, 0.5)), plank if k % 3 != 0 else wood, center + axis * (f * length) + Vector3(0, deck + 0.01, 0), bas)
+		_mi(_box(Vector3(w - 0.5, 0.06, 0.5)), _wood(Color(0.5, 0.36, 0.23), Vector3(1, 0, 0)) if k % 3 != 0 else _wood(Color(0.36, 0.24, 0.15), Vector3(1, 0, 0)), center + axis * (f * length) + Vector3(0, deck + 0.01, 0), bas)
 	# 난간 (군데군데 부서짐)
 	for sd: float in [-1.0, 1.0]:
 		var seg := 0.0

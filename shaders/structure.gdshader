@@ -6,6 +6,8 @@ uniform vec3 base : source_color = vec3(0.7, 0.68, 0.6);
 uniform int kind = 0;
 uniform float rough = 0.85;
 uniform float moss = 0.6;
+uniform vec3 grain = vec3(0.0, 0.0, 1.0);   // 나뭇결 방향 (로컬)
+uniform float plank_w = 0.3;                // 널 너비 (0 = 통널 한 장: 틈 없음)
 uniform float radial = 0.0;       // > 0: 둥근 벽 · 원뿔 지붕 (값 = 대략의 반지름)
 uniform sampler2D det_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D det_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
@@ -13,6 +15,7 @@ varying vec3 lp;
 varying vec3 ln;
 varying vec3 wpos;
 varying vec3 wn;
+varying float oid;      // 물체마다 다른 값 (널마다 색이 조금씩 다르게)
 
 float hash1(float n) { return fract(sin(n * 91.3458) * 47453.5453); }
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -44,6 +47,7 @@ void vertex() {
 	ln = NORMAL;
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	wn = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	oid = fract(sin(dot(MODEL_MATRIX[3].xyz, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
 }
 
 void fragment() {
@@ -98,16 +102,29 @@ void fragment() {
 		tint = hash2(vec2(floor(ux), row)) - 0.5;
 		shade = 0.94 + 0.1 * smoothstep(0.0, 0.14, d);
 	} else if (kind == 2) {
-		// 나무 널: 널 사이 틈 + 길게 흐르는 나뭇결 + 옹이
-		float pc = top ? fc.x : fc.y;
-		float pg = top ? fc.y : fc.x;
-		float pid = floor(pc / 0.3);
-		float pf = fract(pc / 0.3);
-		groove = 1.0 - smoothstep(0.02, 0.08, min(pf, 1.0 - pf));
-		float grain = noise2(vec2(pg * 1.3 + pid * 7.3, pc * 46.0)) * 0.6 + noise2(vec2(pg * 4.0 + pid * 3.1, pc * 110.0)) * 0.4;
-		float knot = smoothstep(0.16, 0.0, length(vec2(fract(pg / 1.9 + hash1(pid + 2.0)) - 0.5, (pf - 0.5) * 0.35)));
-		tint = (hash1(pid) - 0.5) * 0.7 + (grain - 0.5) * 0.7 - knot * 0.5;
-		det_k = 0.45;
+		// 나무: 결 방향(grain)으로 길게 흐르는 나뭇결 + 옹이. plank_w > 0 이면 결과 나란한 널 틈도 그림
+		vec3 gax = normalize(grain);
+		float pg = dot(lp, gax);
+		vec3 sdir = cross(nl, gax);
+		float sl = length(sdir);
+		float pc = sl > 0.3 ? dot(lp, sdir / sl) : length(lp - gax * pg);
+		float pid = 0.0;
+		float pf = 0.5;
+		if (plank_w > 0.001) {
+			pid = floor(pc / plank_w);
+			pf = fract(pc / plank_w);
+			groove = 1.0 - smoothstep(0.02, 0.08, min(pf, 1.0 - pf));
+		}
+		float off = pid * 7.3 + oid * 31.0;
+		float gr = noise2(vec2(pg * 1.1 + off, pc * 42.0 + off)) * 0.6 + noise2(vec2(pg * 3.5 + off, pc * 120.0)) * 0.4;
+		float lines = 0.5 + 0.5 * sin(pc * 95.0 + noise2(vec2(pg * 0.9 + off, pc * 6.0)) * 9.0);
+		float knot = smoothstep(0.1, 0.0, length(vec2((fract(pg / 2.3 + hash1(pid + oid * 9.0)) - 0.5) * 2.3, pc - (hash1(pid + 4.0 + oid) - 0.5) * 0.12)));
+		tint = (hash1(pid + oid * 17.0) - 0.5) * 0.9 + (gr - 0.5) * 0.7 + (lines - 0.5) * 0.35 - knot * 0.6;
+		if (sl <= 0.3) {
+			// 마구리 (잘린 면): 나이테
+			tint = sin(pc * 70.0) * 0.4 - 0.3;
+		}
+		det_k = 0.35;
 		moss_k *= 0.7;
 	} else if (kind == 3) {
 		// 기와: 줄마다 엇갈려 겹친 기와장
