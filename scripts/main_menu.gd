@@ -13,7 +13,11 @@ const ItemIcon := preload("res://scripts/ui/item_icon.gd")
 const BoardBoxView := preload("res://scripts/ui/board_box_view.gd")
 const TutorialOverlay := preload("res://scripts/ui/tutorial_overlay.gd")
 const TUTORIAL_BOARD_SCENE := "res://scenes/tutorial_board.tscn"
-const UIFont := preload("res://fonts/Poppins-Bold.ttf")
+## 메뉴 글씨: 영어 Pirata One (인게임과 같은 해적 깃발 글씨) + 한글 고운바탕 Bold
+const UIFont := preload("res://fonts/PirataOne-Regular.ttf")
+const KoFont := preload("res://fonts/GowunBatang-Bold.ttf")
+## Pirata One 은 폭이 좁고 글자가 작아 보여서, 같은 자리에서 글씨를 조금 키움
+const FONT_SCALE := 1.15
 
 const GAME_TITLE := "DEEP\nPARTY"
 const GAME_SUBTITLE := "UP TO 4 PLAYERS  •  MINIGAME PARTY"
@@ -154,6 +158,7 @@ var _fade: ColorRect
 
 func _ready() -> void:
 	_build_theme()
+	_watch_font_sizes()
 
 	_bg = BackgroundScene.instantiate()
 	add_child(_bg)
@@ -190,21 +195,41 @@ func _ready() -> void:
 func _build_theme() -> void:
 	var th := Theme.new()
 	th.default_font = UIFont
-	th.default_font_size = 28
+	th.default_font_size = int(28 * FONT_SCALE)
 	th.set_color("font_color", "Label", PEARL)
 	theme = th
 	var fb := SystemFont.new()
 	fb.font_names = PackedStringArray(FALLBACK_FONTS)
 	fb.font_weight = 700
 	var ui_font: Font = UIFont
-	var fbs: Array[Font] = [fb]
+	var fbs: Array[Font] = [KoFont, fb]
 	ui_font.fallbacks = fbs
 	_spaced_font = FontVariation.new()
 	_spaced_font.base_font = UIFont
-	_spaced_font.spacing_glyph = 3
+	_spaced_font.spacing_glyph = 1
 	_body_font = FontVariation.new()
 	_body_font.base_font = UIFont
-	_body_font.variation_embolden = -0.55
+	_body_font.spacing_glyph = 0
+
+
+## 글씨 크기를 FONT_SCALE 만큼 키움 (지금 있는 글씨 + 나중에 새로 생기는 글씨 모두)
+func _watch_font_sizes() -> void:
+	var tree := get_tree()
+	var cb := func(n: Node) -> void:
+		if is_instance_valid(n) and n is Control and is_ancestor_of(n):
+			(func() -> void: _scale_font(n as Control)).call_deferred()
+	tree.node_added.connect(cb)
+	tree_exiting.connect(func() -> void:
+		if tree.node_added.is_connected(cb):
+			tree.node_added.disconnect(cb))
+
+
+func _scale_font(c: Control) -> void:
+	if not is_instance_valid(c) or c.has_meta("fs_done"):
+		return
+	c.set_meta("fs_done", true)
+	if c.has_theme_font_size_override("font_size"):
+		c.add_theme_font_size_override("font_size", int(round(c.get_theme_font_size("font_size") * FONT_SCALE)))
 
 
 ## 메뉴 글씨가 잘 보이도록 왼쪽을 살짝 어둡게

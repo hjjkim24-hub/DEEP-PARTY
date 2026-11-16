@@ -26,7 +26,7 @@ signal step_done
 
 const QuadShader := preload("res://shaders/spotlight_quad.gdshader")
 
-const UIFont := preload("res://fonts/Poppins-Bold.ttf")
+const UIFont := preload("res://fonts/PirataOne-Regular.ttf")   ## 글씨체는 부모 화면의 테마를 따름
 const PEARL := Color("eafffa")
 const AQUA := Color("7ff0db")
 const DEEP := Color("05302c")

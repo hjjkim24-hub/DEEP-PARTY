@@ -1,12 +1,12 @@
 extends RefCounted
 ## 게임 안 글씨: 해적 보드게임 느낌
 ##   제목·큰 글씨  = Pirata One (해적 깃발 같은 굵은 고딕 글씨) + 금박 재질 + 짙은 갈색 테두리 + 그림자
-##   보통 글씨     = Almendra Bold (옛날 항해 지도 같은 글씨) + 잉크 결 + 갈색 테두리
-##   한글          = 고운바탕 Bold (옛 인쇄물 느낌, 두 글씨 모두의 대신 글씨)
-## 메인화면은 그대로 Poppins.
+##   보통 글씨     = 같은 Pirata One + 잉크 결 + 갈색 테두리
+##   한글          = 고운바탕 Bold (옛 인쇄물 느낌, 대신 글씨)
+## 메인화면도 같은 글씨 (Pirata One + 고운바탕 Bold).
 
 const TITLE := preload("res://fonts/PirataOne-Regular.ttf")
-const BODY := preload("res://fonts/Almendra-Bold.ttf")
+const BODY := TITLE
 const KO := preload("res://fonts/GowunBatang-Bold.ttf")
 const TextShader := preload("res://shaders/pirate_text.gdshader")
 const TITLE_SIZE := 34      ## 이 크기 이상 글씨는 제목 글씨로
@@ -14,10 +14,7 @@ const INK := Color(0.17, 0.09, 0.04)
 
 
 static func body() -> Font:
-	var f: FontFile = BODY
-	if f.fallbacks.is_empty():
-		f.fallbacks = [KO]
-	return f
+	return title()
 
 
 static func title() -> Font:
