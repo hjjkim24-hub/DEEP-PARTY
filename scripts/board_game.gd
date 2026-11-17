@@ -339,10 +339,34 @@ func _wrap_words(text: String, font: Font, fs: int, width: float) -> String:
 	return "\n".join(lines)
 
 
+## 행동마다 오라 색 (촉수 폭풍 초록 · 독 가시 보라 · 상점 주황 · 크라켄의 배 검붉은색)
+const KRAKEN_AURA := {
+	"barrage": Color(0.4, 1.0, 0.3), "spines": Color(0.72, 0.3, 1.0),
+	"surge": Color(1.0, 0.55, 0.12), "belly": Color(0.5, 0.02, 0.04),
+}
+const CardAuraShader := preload("res://shaders/card_aura.gdshader")
+const KCARD_SIZE := Vector2(400, 580)
+const KCARD_COUNT := 7        ## 돌아가는 카드 수
+
+
+func _kraken_card_back() -> Panel:
+	var back := Panel.new()
+	back.size = KCARD_SIZE
+	back.pivot_offset = KCARD_SIZE * 0.5
+	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	back.add_theme_stylebox_override("panel", _kraken_card_frame(KCARD_SIZE))
+	var bw := _kraken_card_window(KRAKEN_CARD_BACK, KCARD_SIZE - Vector2(44, 44), 16)
+	bw.position = Vector2(22, 22)
+	back.add_child(bw)
+	return back
+
+
+## 크라켄 행동 카드 뽑기: 뒷면 카드들이 둥글게 돌며(반시계) 점점 느려지다 멈춤 → 뽑힌 카드만 앞으로 와서 뒤집힘 + 행동 색 오라
 func _kraken_card(a: String) -> void:
 	var data: Dictionary = KRAKEN_CARDS[a]
+	var aura_col: Color = KRAKEN_AURA.get(a, KCARD_NEON)
 	var v := get_viewport().get_visible_rect().size
-	var size := Vector2(400, 580)
+	var size := KCARD_SIZE
 	var holder := Control.new()
 	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	holder.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -352,26 +376,97 @@ func _kraken_card(a: String) -> void:
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	holder.add_child(dim)
-	var center := Vector2(v.x * 0.5 - size.x * 0.5, v.y * 0.5 - size.y * 0.5)
-	# 뒷면: 크라켄의 눈
-	var back := Panel.new()
-	back.size = size
-	back.pivot_offset = size * 0.5
-	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	back.add_theme_stylebox_override("panel", _kraken_card_frame(size))
-	back.position = Vector2(center.x, v.y + 60)
-	back.rotation = -0.25
-	holder.add_child(back)
-	var bw := _kraken_card_window(KRAKEN_CARD_BACK, size - Vector2(44, 44), 16)
-	bw.position = Vector2(22, 22)
-	back.add_child(bw)
+	var deck := Control.new()
+	deck.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	deck.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	holder.add_child(deck)
+	var center := v * 0.5
+	var k_n := KCARD_COUNT
+	var chosen := _rng.randi() % k_n
+	var cards: Array[Panel] = []
+	for k in k_n:
+		var b := _kraken_card_back()
+		deck.add_child(b)
+		cards.append(b)
+	var rx := minf(v.x * 0.3, 520.0)
+	var ry := 70.0
+	var base_scale := 0.62
+	# 카드 배치: 바닥 쪽(앞)일수록 크고 밝고 위에 그려짐
+	var place := func(spin: float, spread: float) -> void:
+		var order := []
+		for k in k_n:
+			var th := spin + TAU * k / k_n
+			var depth := cos(th)          # 1 = 맨 앞
+			var c: Panel = cards[k]
+			var sc := base_scale * (0.72 + 0.28 * (depth + 1.0) * 0.5)
+			c.scale = Vector2(sc, sc)
+			c.position = center + Vector2(sin(th) * rx * spread, cos(th) * ry * spread - 30.0) - size * 0.5
+			c.rotation = sin(th) * 0.12 * spread
+			c.modulate = Color(1, 1, 1).darkened(0.45 * (1.0 - (depth + 1.0) * 0.5))
+			order.append([depth, c])
+		order.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+		for o in order:
+			deck.move_child(o[1], -1)
+	# 1) 카드들이 가운데에서 둥글게 펼쳐짐
+	Audio.play("box_rumble")
+	var t0 := create_tween()
+	t0.tween_property(dim, "color:a", 0.55, 0.3)
+	t0.parallel().tween_method(func(f: float) -> void: place.call(-f * 1.2, f), 0.0, 1.0, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	await t0.finished
+	# 2) 반시계로 빠르게 돌다가 점점 느려져 뽑힌 카드가 맨 앞에 딱 멈춤
+	var start := -1.2
+	var target := TAU * 4.0 - TAU * chosen / k_n
+	while target - start < TAU * 3.0:
+		target += TAU
+	var last_slot := [int(floor(start / (TAU / k_n)))]
+	var spin_t := create_tween()
+	spin_t.tween_method(func(sp: float) -> void:
+		place.call(sp, 1.0)
+		var slot := int(floor(sp / (TAU / k_n)))
+		if slot != last_slot[0]:
+			last_slot[0] = slot
+			Audio.play("tick"), start, target, 3.0).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	await spin_t.finished
+	await get_tree().create_timer(0.25, false).timeout
+	# 3) 나머지는 흩어지고, 뽑힌 카드만 앞으로 크게
+	var pick: Panel = cards[chosen]
+	var gather := create_tween().set_parallel(true)
+	for k in k_n:
+		if k == chosen:
+			continue
+		var c: Panel = cards[k]
+		gather.tween_property(c, "modulate:a", 0.0, 0.35)
+		gather.tween_property(c, "scale", c.scale * 0.8, 0.35)
+	gather.tween_property(pick, "position", center - size * 0.5, 0.4).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	gather.tween_property(pick, "scale", Vector2.ONE, 0.4).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	gather.tween_property(pick, "rotation", 0.0, 0.4)
+	await gather.finished
+	# 오라 (카드 뒤에서 일렁임)
+	var aura := ColorRect.new()
+	var pad := Vector2(180, 200)
+	aura.size = size + pad
+	aura.position = center - aura.size * 0.5
+	aura.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var am := ShaderMaterial.new()
+	am.shader = CardAuraShader
+	am.set_shader_parameter("aura_color", aura_col)
+	am.set_shader_parameter("rect_px", aura.size)
+	am.set_shader_parameter("card_px", size)
+	am.set_shader_parameter("strength", 0.0)
+	am.set_shader_parameter("bright", 1.0 if aura_col.get_luminance() > 0.2 else 0.3)
+	aura.material = am
+	holder.add_child(aura)
+	holder.move_child(aura, deck.get_index())
 	# 앞면
 	var front := Panel.new()
 	front.size = size
 	front.pivot_offset = size * 0.5
-	front.position = center
+	front.position = center - size * 0.5
 	front.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	front.add_theme_stylebox_override("panel", _kraken_card_frame(size))
+	var fst := _kraken_card_frame(size)
+	fst.border_color = aura_col.lerp(Color.WHITE, 0.15) if aura_col.get_luminance() > 0.2 else aura_col.lightened(0.35)
+	fst.shadow_color = Color(aura_col, 0.45)
+	front.add_theme_stylebox_override("panel", fst)
 	front.scale = Vector2(0.05, 1.0)
 	front.visible = false
 	holder.add_child(front)
@@ -385,7 +480,7 @@ func _kraken_card(a: String) -> void:
 	head.text = tr("KRAKEN'S MOVE")
 	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	head.add_theme_font_size_override("font_size", 20)
-	head.add_theme_color_override("font_color", KCARD_NEON)
+	head.add_theme_color_override("font_color", aura_col.lerp(Color.WHITE, 0.25) if aura_col.get_luminance() > 0.2 else Color(0.9, 0.35, 0.35))
 	fv.add_child(head)
 	var aw := _kraken_card_window(data["art"], Vector2(size.x - 44, (size.x - 44) * 0.75), 14)
 	fv.add_child(aw)
@@ -393,8 +488,8 @@ func _kraken_card(a: String) -> void:
 	t1.text = tr(String(data["title"]))
 	t1.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	t1.add_theme_font_size_override("font_size", 44)
-	t1.add_theme_color_override("font_color", Color(0.86, 1.0, 0.78))
-	t1.add_theme_color_override("font_outline_color", Color(0.0, 0.12, 0.05))
+	t1.add_theme_color_override("font_color", Color(0.92, 1.0, 0.86))
+	t1.add_theme_color_override("font_outline_color", Color(0.0, 0.1, 0.05))
 	t1.add_theme_constant_override("outline_size", 8)
 	fv.add_child(t1)
 	var t2 := Label.new()
@@ -402,35 +497,22 @@ func _kraken_card(a: String) -> void:
 	t2.custom_minimum_size = Vector2(size.x - 60, 0)
 	t2.add_theme_font_size_override("font_size", 22)
 	fv.add_child(t2)
-	# 한글은 글자 단위로 끊기니, 띄어쓰기 단위로 직접 줄바꿈
 	t2.text = _wrap_words(tr(String(data["text"])), t2.get_theme_font("font"), 22, size.x - 64)
-	t2.add_theme_color_override("font_color", Color(0.78, 0.92, 0.8))
+	t2.add_theme_color_override("font_color", Color(0.8, 0.92, 0.84))
 	t2.add_theme_constant_override("line_spacing", 4)
-	# 1) 바닥에서 떠오름
-	Audio.play("box_rumble")
-	var t := create_tween()
-	t.tween_property(dim, "color:a", 0.5, 0.3)
-	t.parallel().tween_property(back, "position:y", center.y, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	t.parallel().tween_property(back, "rotation", 0.0, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	await t.finished
-	# 2) 크라켄이 고르는 듯 부르르 떨림
-	var shake := create_tween()
-	for k in 8:
-		shake.tween_property(back, "position:x", center.x + (9.0 if k % 2 == 0 else -9.0) * (1.0 - k / 8.0), 0.05)
-	shake.tween_property(back, "position:x", center.x, 0.05)
-	_shake_camera(0.25, 0.4)
-	await shake.finished
-	# 3) 뒤집힘
+	# 4) 뒤집힘 + 오라가 확 피어오름
 	Audio.play("box_burst")
+	_shake_camera(0.3, 0.4)
 	var flip := create_tween()
-	flip.tween_property(back, "scale:x", 0.05, 0.14)
+	flip.tween_property(pick, "scale:x", 0.05, 0.14)
 	flip.tween_callback(func() -> void:
-		back.visible = false
+		pick.visible = false
 		front.visible = true)
 	flip.tween_property(front, "scale:x", 1.0, 0.22).set_trans(Tween.TRANS_BACK)
+	flip.parallel().tween_method(func(f: float) -> void: am.set_shader_parameter("strength", f), 0.0, 1.0, 0.5)
 	await flip.finished
 	shot_hint = "60_kraken_card_" + a
-	await get_tree().create_timer(2.6, false).timeout
+	await get_tree().create_timer(2.8, false).timeout
 	var out := create_tween()
 	out.tween_property(holder, "modulate:a", 0.0, 0.3)
 	await out.finished

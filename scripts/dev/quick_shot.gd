@@ -227,8 +227,9 @@ func _run() -> void:
 			Engine.time_scale = 0.25
 			gk._kraken_card(a)
 			if a == "barrage":
-				await get_tree().create_timer(0.3).timeout
-				await _shot("kc_back")
+				for q in 4:
+					await get_tree().create_timer(0.35).timeout
+					await _shot("kc_spin_%d" % q)
 			while String(gk.shot_hint) != "60_kraken_card_" + a:
 				await get_tree().process_frame
 			await _shot("kc_" + a)
