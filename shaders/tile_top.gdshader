@@ -7,6 +7,11 @@ uniform sampler2D icon_tex : source_color, filter_linear_mipmap;
 uniform sampler2D border_tex : source_color, filter_linear_mipmap;
 uniform float icon_scale = 0.62;
 uniform float caustics = 1.0;   // 물속 빛 무늬 (하늘 위 배에서는 0)
+// 대각선으로 반씩 나뉜 칸 (크라켄의 보물상자: 왼쪽 위 = tile_color · icon_tex, 오른쪽 아래 = tile_color2 · icon_tex2)
+uniform bool split = false;
+uniform vec4 tile_color2 : source_color = vec4(0.1, 0.3, 0.22, 1.0);
+uniform vec4 ink_color2 : source_color = vec4(0.7, 1.0, 0.6, 1.0);
+uniform sampler2D icon_tex2 : source_color, filter_linear_mipmap;
 varying vec3 wpos;
 varying vec3 ax;    // 칸의 로컬 x · z 축 (월드)
 varying vec3 az;
@@ -36,7 +41,21 @@ vec2 icon_uv(vec2 uv) {
 	vec3 w = ax * d.x + az * d.y;
 	return vec2(w.x, w.z) / max(length(ax), 0.0001) / icon_scale + 0.5;
 }
+float split_side(vec2 uv) {
+	return step(1.0, uv.x + uv.y);
+}
+float split_icon(sampler2D tex, vec2 uv, vec2 c, float lod) {
+	vec2 iuv = (uv - c) / 0.36 + 0.5;
+	if (iuv.x <= 0.0 || iuv.x >= 1.0 || iuv.y <= 0.0 || iuv.y >= 1.0) {
+		return 0.0;
+	}
+	return textureLod(tex, iuv, lod).a;
+}
 float icon_a(vec2 uv, float lod) {
+	if (split) {
+		float sd = split_side(uv);
+		return mix(split_icon(icon_tex, uv, vec2(0.33), lod), split_icon(icon_tex2, uv, vec2(0.67), lod), sd);
+	}
 	vec2 iuv = icon_uv(uv);
 	if (iuv.x <= 0.0 || iuv.x >= 1.0 || iuv.y <= 0.0 || iuv.y >= 1.0) {
 		return 0.0;
@@ -45,7 +64,8 @@ float icon_a(vec2 uv, float lod) {
 }
 // 양각 높이: 테두리 + 무늬
 float relief(vec2 uv) {
-	return textureLod(border_tex, uv, 1.0).a * 0.7 + icon_a(uv, 1.0);
+	float seam = split ? (1.0 - smoothstep(0.012, 0.026, abs(uv.x + uv.y - 1.0) * 0.7071)) * 0.7 : 0.0;
+	return max(textureLod(border_tex, uv, 1.0).a * 0.7, seam) + icon_a(uv, 1.0);
 }
 
 void fragment() {
@@ -55,7 +75,8 @@ void fragment() {
 	// 유약: 색이 고르지 않고(굽는 동안 흐른 자국), 도드라진 곳 둘레엔 유약이 고여 진함
 	vec2 wp = wpos.xz;
 	float flow = noise(wp * 1.3) * 0.6 + noise(wp * 4.0) * 0.4;
-	vec3 glaze = tile_color.rgb * (0.86 + 0.24 * flow);
+	float sd = split ? split_side(uv) : 0.0;
+	vec3 glaze = mix(tile_color.rgb, tile_color2.rgb, sd) * (0.86 + 0.24 * flow);
 	glaze += vec3(0.05) * (1.0 - length(uv - 0.5) * 1.6);
 	float pool = max(textureLod(border_tex, uv, 4.0).a, icon_a(uv, 4.0));
 	glaze *= 1.0 - 0.3 * pool * (1.0 - max(b, ic));
@@ -66,7 +87,12 @@ void fragment() {
 	vec3 brass = mix(vec3(0.78, 0.6, 0.26), vec3(0.95, 0.82, 0.5), wear);
 	brass = mix(brass, border_color.rgb, 0.25);
 	// 무늬: 도드라진 흰 유약
-	vec3 ink = ink_color.rgb * (0.92 + 0.08 * wear);
+	vec3 ink = mix(ink_color.rgb, ink_color2.rgb, sd) * (0.92 + 0.08 * wear);
+	if (split) {
+		// 가운데 대각선 놋쇠 띠
+		float seam = 1.0 - smoothstep(0.012, 0.026, abs(uv.x + uv.y - 1.0) * 0.7071);
+		b = max(b, seam);
+	}
 	vec3 c = mix(glaze, brass, b);
 	c = mix(c, ink, ic);
 	// 가장자리 · 구석에 낀 모래와 물때

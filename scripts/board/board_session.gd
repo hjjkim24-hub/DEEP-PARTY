@@ -15,6 +15,7 @@ const TutorialOverlay := preload("res://scripts/ui/tutorial_overlay.gd")
 const PathArrow := preload("res://scripts/ui/path_arrow.gd")
 const PauseMenu := preload("res://scripts/ui/pause_menu.gd")
 const MinigameIntro := preload("res://scripts/minigames/minigame_intro.gd")
+const KrakenRoulette := preload("res://scripts/ui/kraken_roulette.gd")
 const PirateFonts := preload("res://scripts/ui/pirate_fonts.gd")
 const CARD_TEX := preload("res://textures/tiles/card_chance.png")
 const COIN_TEX := preload("res://textures/ui/coin.png")
@@ -121,6 +122,7 @@ var rig_ranking: Array = []   ## 다음 미니게임 순위 (pawn 목록)
 var rig_card := ""            ## 다음 찬스 카드 id
 var shop_price_mult := 1      ## 상점 가격 배수 (크라켄이 상점을 습격하면 2)
 var rig_minigame := ""        ## 다음 미니게임 id ("" = 랜덤)
+var rig_chest := -1           ## 개발용: 크라켄의 보물상자 결과 (1 = 보물, 0 = 크라켄, -1 = 확률대로)
 var force_shop_trophy := -1   ## 1 = 다음 상점에 트로피 꼭 진열, 0 = 꼭 안 함, -1 = 확률대로
 var force_trophy_buy := false ## 튜토리얼: 트로피 살지 물을 때 BUY 만 누를 수 있게
 var shot_hint := ""           ## 자동 스크린샷용: 지금 보여 주는 장면 이름
@@ -1039,8 +1041,179 @@ func _tile_effect(p: Dictionary) -> void:
 			await _draw_card(p)
 		"shop":
 			await _open_shop(p)
+		"kraken_chest":
+			await _kraken_chest(p)
 		_:
 			await _banner("...", tr("Nothing happens."), 0.6)
+
+
+## 크라켄의 보물상자 칸: 가진 동전을 원하는 만큼 걸고 룰렛 → 보물상자면 건 동전의 두 배를 받고,
+## 크라켄이면 건 동전을 잃고 하트 -1
+func _kraken_chest(p: Dictionary) -> void:
+	var coins: int = p["coins"]
+	_follow = null
+	var cp: Vector3 = world.spaces[int(p["tile"])]["pos"]
+	_move_camera(cp + Vector3(2.0, 0.6, 0), 1.7, 0.7)
+	await get_tree().create_timer(0.75, false).timeout
+	if coins <= 0:
+		await _banner(tr("KRAKEN'S CHEST"), tr("You have no coins to bet."), 1.1)
+		return
+	var bet := await _ask_bet(p, coins)
+	_add_coins(p, -bet)
+	await get_tree().create_timer(0.45, false).timeout
+	var win: bool = _rng.randf() < Rules.KRAKEN_CHEST_WIN if rig_chest < 0 else rig_chest == 1
+	rig_chest = -1
+	var dim := _modal_dim()
+	dim.color = Color(0, 0.03, 0.05, 0.4)
+	var box := VBoxContainer.new()
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_theme_constant_override("separation", 6)
+	dim.add_child(box)
+	var title := _outlined_label(tr("KRAKEN'S CHEST"), 46)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_color_override("font_color", GOLD)
+	box.add_child(title)
+	var sub := _outlined_label(tr("%s bets %d coins") % [p["name"], bet], 26)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(sub)
+	var wheel := KrakenRoulette.new()
+	wheel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.add_child(wheel)
+	await get_tree().process_frame
+	box.position = (get_viewport().get_visible_rect().size - box.size) * 0.5
+	box.pivot_offset = box.size * 0.5
+	box.scale = Vector2.ONE * 0.6
+	create_tween().tween_property(box, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	await get_tree().create_timer(0.4, false).timeout
+	Audio.play("box_rumble")
+	get_tree().create_timer(1.6, false).timeout.connect(func() -> void: shot_hint = "62b_chest_spin")
+	await wheel.spin(win)
+	dim.queue_free()
+	if world.ship:
+		world.ship.chest_reveal(win)
+	if win:
+		Audio.play("start")
+		_add_coins(p, bet * 2)
+		shot_hint = "62c_chest_win"
+		await _banner(tr("TREASURE!"), tr("Your bet is doubled: +%d coins") % (bet * 2), 1.3)
+	else:
+		Audio.play("box_burst")
+		_shake_camera(0.55, 0.45)
+		shot_hint = "62d_chest_kraken"
+		await _banner(tr("THE KRAKEN!"), tr("It takes your bet and bites you."), 1.1)
+		await _damage(p, 1)
+
+
+## 걸 동전 고르기 (−5 −1 [금액] +1 +5 · 최소 · 절반 · 전부 → 돌리기). 자동이면 가진 돈의 25~70%
+func _ask_bet(p: Dictionary, coins: int) -> int:
+	var dim := _modal_dim()
+	var panel := _modal_panel(dim, Color(GOLD, 0.8))
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 16)
+	panel.add_child(v)
+	var icons := HBoxContainer.new()
+	icons.alignment = BoxContainer.ALIGNMENT_CENTER
+	icons.add_theme_constant_override("separation", 26)
+	v.add_child(icons)
+	var ic1 := _icon(BoardWorld.ICONS["treasure"], 72)
+	ic1.modulate = GOLD
+	icons.add_child(ic1)
+	var ic2 := _icon(BoardWorld.ICONS["boss"], 72)
+	ic2.modulate = Color(0.55, 1.0, 0.45)
+	icons.add_child(ic2)
+	var t := Label.new()
+	t.text = tr("KRAKEN'S CHEST")
+	t.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	t.add_theme_font_size_override("font_size", 40)
+	t.add_theme_color_override("font_color", GOLD)
+	v.add_child(t)
+	var body := Label.new()
+	body.text = tr("Bet your coins and spin the wheel.\nTreasure chest: your bet is doubled.\nKraken: you lose your bet and 1 heart.")
+	body.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	body.add_theme_color_override("font_color", Color(PEARL, 0.85))
+	v.add_child(body)
+	var st := {"bet": clampi(coins / 2, 1, coins), "done": false}
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 12)
+	v.add_child(row)
+	var amount := Label.new()
+	amount.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	amount.custom_minimum_size = Vector2(130, 0)
+	amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	amount.add_theme_font_size_override("font_size", 54)
+	amount.add_theme_color_override("font_color", GOLD)
+	var have := Label.new()
+	have.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	have.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	have.add_theme_color_override("font_color", Color(PEARL, 0.7))
+	var btns := {}
+	var refresh := func() -> void:
+		amount.text = str(st["bet"])
+		have.text = tr("You have %d coins") % coins
+		for k in btns:
+			var d: int = int(k)
+			(btns[k] as Button).disabled = int(st["bet"]) + d < 1 or int(st["bet"]) + d > coins
+	var step_btn := func(d: int) -> Button:
+		var b := _glass_button(("%+d" % d))
+		b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		b.custom_minimum_size = Vector2(82, 58)
+		b.pressed.connect(func() -> void:
+			st["bet"] = clampi(int(st["bet"]) + d, 1, coins)
+			Audio.play("tick")
+			refresh.call())
+		btns[d] = b
+		return b
+	row.add_child(step_btn.call(-5))
+	row.add_child(step_btn.call(-1))
+	var mid := HBoxContainer.new()
+	mid.add_theme_constant_override("separation", 6)
+	mid.add_child(_icon(COIN_TEX, 46))
+	mid.add_child(amount)
+	row.add_child(mid)
+	row.add_child(step_btn.call(1))
+	row.add_child(step_btn.call(5))
+	v.add_child(have)
+	var row2 := HBoxContainer.new()
+	row2.alignment = BoxContainer.ALIGNMENT_CENTER
+	row2.add_theme_constant_override("separation", 12)
+	v.add_child(row2)
+	for q in [["MIN", 0.0], ["HALF", 0.5], ["ALL", 1.0]]:
+		var b := _glass_button(tr(q[0]))
+		b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		b.custom_minimum_size = Vector2(130, 52)
+		var f: float = q[1]
+		b.pressed.connect(func() -> void:
+			st["bet"] = clampi(int(round(coins * f)), 1, coins)
+			Audio.play("tick")
+			refresh.call())
+		row2.add_child(b)
+	var go := _glass_button(tr("SPIN"))
+	go.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	go.custom_minimum_size = Vector2(260, 66)
+	go.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	go.add_theme_font_size_override("font_size", 30)
+	go.pressed.connect(func() -> void:
+		Audio.play("click")
+		st["done"] = true)
+	v.add_child(go)
+	refresh.call()
+	_dialog_open = true
+	await _show_modal(panel)
+	shot_hint = "62a_chest_bet"
+	if _is_auto(p):
+		await get_tree().create_timer(1.2, false).timeout
+		st["bet"] = clampi(int(round(coins * _rng.randf_range(0.25, 0.7))), 1, coins)
+		refresh.call()
+		await get_tree().create_timer(0.8, false).timeout
+		st["done"] = true
+	while not bool(st["done"]):
+		await get_tree().process_frame
+	_dialog_open = false
+	dim.queue_free()
+	return int(st["bet"])
 
 
 ## 성게 함정 칸에 멈춤 (생존전에서 크라켄이 만든 칸)

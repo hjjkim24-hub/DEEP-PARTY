@@ -289,6 +289,40 @@ func _run() -> void:
 		await _shot("sd_back")
 		get_tree().quit(0)
 		return
+	# chest: 크라켄의 배 뱃머리 '크라켄의 보물상자' 칸 · 상자 · 베팅 창 · 룰렛 · 결과
+	if "chest" in _want:
+		var gc: Node = null
+		while gc == null or not ("hold_loop" in gc):
+			await get_tree().process_frame
+			gc = get_tree().current_scene
+		gc.hold_loop = true
+		while String(gc.shot_hint) != "34_kraken_awakens":
+			await get_tree().process_frame
+		await get_tree().create_timer(4.0).timeout
+		await gc._kraken_ship(1)
+		var wc: Node = gc.world
+		var ct: int = wc.ship.ids["F3"]
+		var me: Dictionary = gc._my_pawn()
+		me["tile"] = ct
+		(me["node"] as Node3D).position = gc._spot_on(ct, me)
+		me["coins"] = 30
+		gc._refresh_chip(me)
+		var tp: Vector3 = wc.spaces[ct]["pos"]
+		gc._cinematic(tp + Vector3(-7.0, 6.0, 6.0), tp + Vector3(3.0, 0.5, 0.0), 1.0, 0.01)
+		await get_tree().create_timer(1.5).timeout
+		await _shot("ch_tile")
+		gc._cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.01)
+		gc.rig_chest = 1
+		gc._kraken_chest(me)
+		await _catch(gc, ["62a_chest_bet", "62b_chest_spin", "62c_chest_win"], "ch_")
+		await get_tree().create_timer(4.0).timeout
+		gc.rig_chest = 0
+		gc._kraken_chest(me)
+		await _catch(gc, ["62d_chest_kraken"], "ch_")
+		await get_tree().create_timer(1.0).timeout
+		print("CHEST coins=", me["coins"], " hearts=", me["hearts"])
+		get_tree().quit(0)
+		return
 	# backmap: 카드 뒷면용 SUNKEN ISLAND 판 전체 (글씨 · 말 없이, 거의 위에서)
 	if "backmap" in _want:
 		var gb: Node = null

@@ -612,6 +612,7 @@ func _kraken_ship(r: int) -> void:
 		q["tile"] = t
 		q["prev"] = _prev_on_loop(t)
 	await _arrive(alive, true)
+	_legend_add("kraken_chest")
 	_update_round_label()
 	shot_hint = "60_kraken_ship"
 	await _banner(tr("THE KRAKEN'S SHIP"), tr("Back to the island after %d rounds.") % Rules.SHIP_ROUNDS, 1.6)

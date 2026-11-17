@@ -55,6 +55,9 @@ const LOOP := ["P2", "P1", "Q1", "Q2", "Q3", "S1", "S2", "S3", "S4", "S5", "S6",
 const BRANCHES := [["S7", "H1", "H2", "M3"]]
 const STAIRS := [["Q3", "S1"], ["S9", "F1"], ["F5", "M1"], ["M9", "Q6"], ["Q4", "P3"], ["P1", "Q1"]]
 const DROPS := ["S3", "M6", "F2", "P2"]
+## 특별한 칸 (나머지는 일반 칸)
+const SPECIAL := {"F3": "kraken_chest"}
+const CHEST_AT := Vector3(53.6, FC_Y, 0.0)   ## 크라켄의 보물상자 (보물상자 칸 바로 앞, 뱃머리 쪽)
 
 var w                                ## board_world
 var env: Environment
@@ -241,6 +244,7 @@ func build() -> void:
 	_deck_props()
 	_kraken_arms()
 	_kraken_things()
+	_kraken_chest()
 	_lights_decor()
 	_flush_ropes()
 	_sky_clouds()
@@ -508,7 +512,7 @@ func _spaces() -> void:
 	for n in TILES:
 		ids[n] = w.spaces.size()
 		var base: Vector3 = AT + tile_pos(n)
-		w.spaces.append({"base": base, "kind": "plain", "links": [], "next": [], "yaw": 0.0, "bridge": false, "ship": true,
+		w.spaces.append({"base": base, "kind": SPECIAL.get(n, "plain"), "links": [], "next": [], "yaw": 0.0, "bridge": false, "ship": true,
 			"pos": base + Vector3(0, w.TILE_H, 0), "ship_name": n})
 	var chains := [LOOP + [LOOP[0]]] + BRANCHES
 	for ch in chains:
@@ -528,6 +532,8 @@ func _spaces() -> void:
 		var yaw := atan2(d.x, d.z)
 		var snap := roundf(yaw / (PI * 0.5)) * PI * 0.5
 		sp["yaw"] = yaw if String(sp["ship_name"]) in ["F2", "F4"] else snap
+		if sp["kind"] == "kraken_chest":
+			sp["yaw"] = PI * 0.5     # 보물상자 반쪽이 뱃머리(상자) 쪽을 보게
 	for n in DROPS:
 		drop_tiles.append(ids[n])
 
@@ -1584,3 +1590,97 @@ func LANE_XS() -> Array:
 			out.append((TILES[n] as Vector3).x)
 	out.sort()
 	return out
+
+
+
+# ── 크라켄의 보물상자 (뱃머리 끝, 보물상자 칸 바로 앞) ───────────
+var chest_lid: Node3D
+var chest_light: OmniLight3D
+var chest_glow: StandardMaterial3D
+
+func _kraken_chest() -> void:
+	var root := Node3D.new()
+	root.position = CHEST_AT
+	root.basis = Basis(Vector3.UP, -PI * 0.5)       # 상자 앞(+z)이 칸(-x) 쪽을 봄
+	add_child(root)
+	var wood := smat(Color(0.32, 0.17, 0.09), "wood", 0.22, Vector3(1, 0, 0))
+	var dark := smat(Color(0.16, 0.09, 0.05), "wood", 0.0)
+	var w_ := 2.6
+	var d_ := 1.7
+	var h_ := 1.3
+	# 받침 단 + 상자 몸통 + 금테 · 쇠 모서리
+	_mi(w._rbox(Vector3(w_ + 1.2, 0.3, d_ + 1.2), 0.08), dark, Vector3(0, 0.15, 0), Basis(), root)
+	_mi(w._box(Vector3(w_, h_, d_)), wood, Vector3(0, 0.3 + h_ * 0.5, 0), Basis(), root)
+	for bx: float in [-w_ * 0.36, 0.0, w_ * 0.36]:
+		_mi(w._box(Vector3(0.14, h_ + 0.04, d_ + 0.06)), gold(), Vector3(bx, 0.3 + h_ * 0.5, 0), Basis(), root)
+	for cx: float in [-1.0, 1.0]:
+		for cz: float in [-1.0, 1.0]:
+			_mi(w._box(Vector3(0.22, h_ + 0.06, 0.22)), iron(), Vector3(cx * w_ * 0.5, 0.3 + h_ * 0.5, cz * d_ * 0.5), Basis(), root)
+	# 안쪽: 빛나는 금화 더미 (뚜껑이 열리면 보임)
+	chest_glow = _glow(Color(1.0, 0.75, 0.3), 1.2)
+	var pile := SphereMesh.new()
+	pile.radius = 1.0
+	pile.height = 0.7
+	_mi(pile, chest_glow, Vector3(0, 0.3 + h_ - 0.15, 0), Basis().scaled(Vector3(w_ * 0.45, 0.45, d_ * 0.42)), root)
+	# 뚜껑 (뒤쪽 경첩을 축으로 열림): 둥근 지붕 + 금테 + 앞쪽 크라켄 자물쇠
+	chest_lid = Node3D.new()
+	chest_lid.position = Vector3(0, 0.3 + h_, -d_ * 0.5)
+	root.add_child(chest_lid)
+	_mi(w._cyl(d_ * 0.5, d_ * 0.5, w_, 24), wood, Vector3(0, 0, d_ * 0.5), Basis(Vector3(0, 0, 1), PI * 0.5).scaled(Vector3(1.0, 1.0, 0.62)), chest_lid)
+	for bx: float in [-w_ * 0.36, 0.0, w_ * 0.36]:
+		_mi(w._cyl(d_ * 0.52, d_ * 0.52, 0.14, 24), gold(), Vector3(bx, 0, d_ * 0.5), Basis(Vector3(0, 0, 1), PI * 0.5).scaled(Vector3(1.0, 1.0, 0.63)), chest_lid)
+	var lock := Node3D.new()
+	lock.position = Vector3(0, 0.05, d_ + 0.04)
+	lock.scale = Vector3.ONE * 0.16
+	lock.basis = Basis().scaled(Vector3.ONE * 0.16)
+	chest_lid.add_child(lock)
+	var body := MeshInstance3D.new()
+	body.mesh = w.KRAKEN_BODY
+	body.material_override = mat(Color(0.85, 0.62, 0.26), 0.3, 0.9)
+	lock.add_child(body)
+	for sd: float in [-1.0, 1.0]:
+		var eye := SphereMesh.new()
+		eye.radius = 0.36
+		eye.height = 0.72
+		_mi(eye, _glow(Color(0.5, 1.0, 0.35), 4.0), Vector3(sd * 1.57, 0.74, 1.3), Basis(), lock)
+	chest_lid.rotation.x = -0.18     # 살짝 들린 뚜껑 틈으로 금빛이 새어 나옴
+	# 상자를 휘감은 작은 크라켄 촉수 (상자 뒤 갑판 가장자리에서 기어 올라옴)
+	var g := root.global_transform
+	var to_ship := func(lp: Vector3) -> Vector3: return (g * lp) - global_transform.origin
+	var pts := []
+	for lp in [Vector3(-2.6, 0.2, -2.6), Vector3(-1.9, 0.6, -1.3), Vector3(-1.5, 1.3, -0.2), Vector3(-1.45, 1.75, 0.95),
+			Vector3(-0.6, 2.05, 1.2), Vector3(0.4, 2.1, 0.9), Vector3(1.0, 1.95, 0.2), Vector3(0.7, 1.75, -0.4)]:
+		pts.append(to_ship.call(lp))
+	_spline_tentacle(pts, 0.55, func(p: Vector3) -> Vector3: return ((CHEST_AT + Vector3(0, 1.0, 0)) - p).normalized())
+	# 흩어진 금화 + 불빛
+	var coin := _glow(Color(1.0, 0.76, 0.3), 0.5)
+	coin.metallic = 0.9
+	coin.roughness = 0.3
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	for k in 26:
+		var a := rng.randf() * TAU
+		var r := rng.randf_range(1.8, 3.0)
+		_mi(w._cyl(0.11, 0.11, 0.04, 10), coin, CHEST_AT + Vector3(cos(a) * r, 0.32, sin(a) * r), Basis(Vector3(1, 0, 0), rng.randf_range(-0.2, 0.2)))
+	chest_light = OmniLight3D.new()
+	chest_light.light_color = Color(1.0, 0.72, 0.35)
+	chest_light.light_energy = 1.4
+	chest_light.omni_range = 7.0
+	chest_light.position = CHEST_AT + Vector3(0, 2.2, 0)
+	add_child(chest_light)
+	_lantern(CHEST_AT + Vector3(0.6, 0.0, 2.8) + Vector3(0, 1.0, 0), 0.8, false, false, Color(0.55, 1.0, 0.45))
+	_lantern(CHEST_AT + Vector3(0.6, 0.0, -2.8) + Vector3(0, 1.0, 0), 0.8, false, false, Color(0.55, 1.0, 0.45))
+
+
+## 보물상자 뚜껑 연출: win = 활짝 열리며 금빛, 아니면 크라켄 초록빛으로 쾅
+func chest_reveal(win: bool) -> void:
+	var t := create_tween().set_parallel(true)
+	t.tween_property(chest_lid, "rotation:x", -1.7 if win else -1.1, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	chest_light.light_color = Color(1.0, 0.75, 0.35) if win else Color(0.45, 1.0, 0.35)
+	t.tween_property(chest_light, "light_energy", 6.0, 0.25)
+	t.tween_method(func(v: float) -> void: chest_glow.emission_energy_multiplier = v, 1.2, 5.0 if win else 1.2, 0.3)
+	t.chain().tween_interval(1.4)
+	t.chain().set_parallel(true)
+	t.tween_property(chest_lid, "rotation:x", -0.18, 0.5).set_trans(Tween.TRANS_CUBIC)
+	t.tween_property(chest_light, "light_energy", 1.4, 0.6)
+	t.tween_method(func(v: float) -> void: chest_glow.emission_energy_multiplier = v, 5.0 if win else 1.2, 1.2, 0.6)
