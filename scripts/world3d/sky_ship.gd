@@ -1331,27 +1331,39 @@ func _drape(x: float, s: float, along: float, r0: float) -> void:
 		return Vector3(0, -1, 0) if on_deck else Vector3(0, -0.4 * k, -s).normalized())
 
 
+## 뱃전에 걸친 촉수들: [x, 쪽, 끝이 뻗는 쪽, 굵기]
+const DRAPES := [[-15.0, 1.0, -1.0, 2.6], [25.0, 1.0, -1.0, 2.2], [-2.0, -1.0, -1.0, 2.6], [48.0, -1.0, -1.0, 1.8],
+	[-57.0, 1.0, -1.0, 1.9], [7.0, 1.0, 1.0, 2.3], [44.0, 1.0, 1.0, 1.7], [21.0, -1.0, 1.0, 2.2], [-20.0, -1.0, -1.0, 2.3],
+	[-37.0, 1.0, 1.0, 1.9], [-58.0, -1.0, 1.0, 1.7]]
+
+
 func _kraken_arms() -> void:
-	_drape(-15.0, 1.0, 1.0, 2.6)
-	_drape(25.0, 1.0, -1.0, 2.2)
-	_drape(-2.0, -1.0, -1.0, 2.6)
-	_drape(-40.0, -1.0, 1.0, 2.0)
-	_drape(48.0, -1.0, -1.0, 1.8)
+	for d in DRAPES:
+		_drape(d[0], d[1], d[2], d[3])
 	# 짐칸에서 솟아 앞돛대를 칭칭 감아 오른 촉수
-	var mx: float = MASTS[0][0]
-	var pts := [Vector3(19.0, -HOLD_DEPTH + 0.5, 2.2), Vector3(20.5, -3.0, 2.8), Vector3(21.6, 0.8, 3.3), Vector3(23.6, 3.6, 3.0),
-		Vector3(26.2, 5.0, 2.0)]
-	var y := 5.6
-	var a := PI * 0.7
-	var rr := 1.9
-	for k in 12:
+	_coil(MASTS[0][0], 0.0, 5.6, 12, 1.25, [Vector3(19.0, -HOLD_DEPTH + 0.5, 2.2), Vector3(20.5, -3.0, 2.8), Vector3(21.6, 0.8, 3.3),
+		Vector3(23.6, 3.6, 3.0), Vector3(26.2, 5.0, 2.0)], PI * 0.7)
+	# 좌현 밖에서 뒷갑판을 넘어와 뒷돛대를 감은 촉수
+	_coil(MASTS[2][0], QD_Y, QD_Y + 5.0, 10, 1.45, [Vector3(-46.0, CLOUD_Y - 6.0, -36.0), Vector3(-40.0, CLOUD_Y + 14.0, -26.0),
+		Vector3(-45.0, -22.0, -21.0), Vector3(-42.5, -8.0, -16.6), Vector3(-41.6, QD_Y + 1.0, -15.4), Vector3(-41.3, QD_Y + 5.2, -14.0),
+		Vector3(-41.2, QD_Y + 4.6, -9.5), Vector3(-41.6, QD_Y + 4.4, -4.0)], -PI * 0.5)
+
+
+## 앞쪽 점들(pts)을 지나 돛대(mx)를 나선으로 감아 오르는 촉수
+func _coil(mx: float, base_y: float, y0: float, turns_pts: int, r0: float, pts: Array, a0: float) -> void:
+	var y := y0
+	var a := a0
+	var rr := 1.9 + float(MASTS[0][3]) * 0.3
+	for k in turns_pts:
 		pts.append(Vector3(mx + cos(a) * rr, y, sin(a) * rr))
 		a -= 1.25
 		y += 0.85
 		rr = maxf(rr - 0.06, 1.15)
-	_spline_tentacle(pts, 1.25, func(p: Vector3) -> Vector3:
+	_spline_tentacle(pts, r0, func(p: Vector3) -> Vector3:
 		var d := Vector3(mx - p.x, 0, -p.z)
-		return d.normalized() if d.length() > 0.5 and p.y > 4.0 else Vector3(0, 0, -1))
+		if d.length() < 3.0 and p.y > base_y + 3.0:
+			return d.normalized()
+		return Vector3(0, -1, 0) if absf(p.z) < hb(p.x) + 0.2 and p.y > -1.0 else Vector3(0, 0, -signf(p.z)))
 
 
 ## 크라켄 숭배 물건들: 금빛 크라켄 상 · 알 둥지 · 표본 병 · 먹물 통 · 뱃전 밖 깃발
@@ -1404,7 +1416,7 @@ func _kraken_things() -> void:
 	nest.outer_radius = 1.5
 	nest.rings = 24
 	nest.ring_segments = 10
-	for np: Vector3 in [Vector3(6.0, 0, -11.2), Vector3(-24.0, 0, 11.4), Vector3(44.0, FC_Y, 0.0)]:
+	for np: Vector3 in [Vector3(6.0, 0, -11.2), Vector3(-12.0, 0, 11.4), Vector3(44.0, FC_Y, 0.0)]:
 		_mi(nest, mat(Color(0.5, 0.4, 0.26), 0.95), np + Vector3(0, 0.2, 0), Basis().scaled(Vector3(1.0, 0.7, 1.0)))
 		var rng := RandomNumberGenerator.new()
 		rng.seed = int(np.x * 10)
@@ -1454,7 +1466,7 @@ func _kraken_things() -> void:
 	barrel.bottom_radius = 0.46
 	barrel.height = 1.15
 	barrel.radial_segments = 16
-	for bp: Vector3 in [Vector3(-8.0, 0, 11.6), Vector3(14.0, 0, -11.8), Vector3(34.0, 0, 11.4)]:
+	for bp: Vector3 in [Vector3(2.0, 0, 11.6), Vector3(14.0, 0, -11.8), Vector3(34.0, 0, 11.4)]:
 		if near_tile(bp, 2.0):
 			continue
 		_mi(barrel, smat(Color(0.12, 0.1, 0.1), "wood", 0.12, Vector3(0, 1, 0)), bp + Vector3(0, 0.58, 0))
@@ -1463,7 +1475,7 @@ func _kraken_things() -> void:
 		_mi(w._cyl(0.38, 0.38, 0.04, 16), ink, bp + Vector3(0, 1.17, 0))
 		_mi(w._cyl(1.3, 1.3, 0.02, 20), ink, bp + Vector3(0.6, 0.02, 0.3), Basis().scaled(Vector3(1.0, 1.0, 0.7)))
 	# 5) 뱃전 밖에 늘어뜨린 크라켄 깃발 (선체를 따라 비스듬히)
-	for b in [[-44.0, 1.0], [-27.0, 1.0], [3.0, 1.0], [14.0, 1.0], [-20.0, -1.0], [10.0, -1.0], [34.0, -1.0]]:
+	for b in [[-30.0, 1.0], [-21.5, 1.0], [14.0, 1.0], [-31.0, -1.0], [30.0, -1.0], [40.0, -1.0]]:
 		var bx: float = b[0]
 		var sd: float = b[1]
 		var g := gunwale(bx)
@@ -1543,13 +1555,12 @@ func _lights_decor() -> void:
 	_multi(bm, _glow(Color(0.5, 1.0, 0.45), 4.0), bulbs_g)
 	# 갑판 가장자리 등불 기둥 (뱃전 길 칸 사이, 바깥쪽)
 	var post_m := smat(Color(0.25, 0.16, 0.1), "wood", 0.0, Vector3(0, 1, 0))
-	var arms := [-15.0, 25.0, -2.0, -40.0, 48.0]
 	for sd: float in [-1.0, 1.0]:
 		for k in LANE_XS().size() - 1:
 			var x: float = (LANE_XS()[k] + LANE_XS()[k + 1]) * 0.5
 			var skip := false
-			for ax: float in arms:
-				if absf(ax - x) < 4.5:
+			for d in DRAPES:
+				if float(d[1]) == sd and absf(float(d[0]) + float(d[2]) * 3.0 - x) < 5.5:
 					skip = true
 			if skip:
 				continue
