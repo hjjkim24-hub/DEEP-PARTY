@@ -63,6 +63,7 @@ const ICONS := {
 	"heal": preload("res://textures/tiles/icon_heal.png"),
 	"boss": preload("res://textures/tiles/icon_boss.png"),
 	"kraken_chest": preload("res://textures/tiles/icon_treasure.png"),
+	"cannon": preload("res://textures/tiles/icon_cannon.png"),
 }
 const BORDER_TEX := preload("res://textures/tiles/icon_border.png")
 const CHANCE_CARD_TEX := preload("res://textures/tiles/card_chance.png")
@@ -74,6 +75,7 @@ const TILE_COLORS := {
 	"treasure": Color(0.96, 0.74, 0.22), "supply": Color(0.62, 0.44, 0.26), "urchin": Color(0.48, 0.2, 0.52),
 	"whirlpool": Color(0.16, 0.48, 0.78), "heal": Color(0.36, 0.8, 0.74), "boss": Color(0.3, 0.06, 0.12),
 	"kraken_chest": Color(0.96, 0.72, 0.2),
+	"cannon": Color(0.3, 0.33, 0.4),
 }
 const INK_COLORS := {
 	"plain": Color(1, 1, 1), "chance": Color(1.0, 0.98, 0.9), "minigame": Color(0.95, 0.98, 1.0),
@@ -83,6 +85,7 @@ const INK_COLORS := {
 	"treasure": Color(1.0, 0.98, 0.9), "supply": Color(1.0, 0.93, 0.8), "urchin": Color(1.0, 0.9, 1.0),
 	"whirlpool": Color(0.9, 0.98, 1.0), "heal": Color(1, 1, 1), "boss": Color(1.0, 0.82, 0.3),
 	"kraken_chest": Color(1.0, 0.97, 0.86),
+	"cannon": Color(1.0, 0.76, 0.42),
 }
 ## 범례 순서 + 화면에 보일 이름 (번역 키)
 const KIND_ORDER := ["plain", "chance", "minigame", "portal", "shop"]
@@ -90,7 +93,7 @@ const KIND_NAMES := {
 	"plain": "Plain", "chance": "Chance", "minigame": "Minigame", "portal": "Portal", "shop": "Shop",
 	"coin_plus": "Lucky +5", "coin_minus": "Trap -5",
 	"treasure": "Treasure", "supply": "Supply Crate", "urchin": "Sea Urchin", "whirlpool": "Whirlpool",
-	"heal": "Air Bubble", "boss": "Kraken's Lair", "kraken_chest": "Kraken's Chest",
+	"heal": "Air Bubble", "boss": "Kraken's Lair", "kraken_chest": "Kraken's Chest", "cannon": "Cannon",
 }
 ## 협동 원정 범례 순서
 const COOP_KIND_ORDER := ["plain", "treasure", "supply", "heal", "shop", "urchin", "whirlpool", "boss"]

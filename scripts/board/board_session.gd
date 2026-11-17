@@ -723,7 +723,8 @@ func _play_turn(p: Dictionary, rig: int = 0, forced: Dictionary = {}) -> void:
 	_landed = true
 
 
-## CPU 갈림길: 트로피가 있으면 대개 트로피 쪽으로, 아니면 아무 데나
+## CPU 갈림길: 트로피가 있으면 대개 트로피 쪽으로. 그 밖엔 남은 걸음으로 멈출 칸을 내다보고
+## 크라켄이 노린 붉은 칸 · 독가시 칸 (하트가 1 개면 크라켄의 보물상자도)을 피함, 비슷하면 아무 데나
 func _cpu_pick_path(p: Dictionary, opts: Array) -> int:
 	if world.trophy_tile >= 0 and _rng.randf() < 0.75:
 		var best: int = opts[0]
@@ -734,7 +735,41 @@ func _cpu_pick_path(p: Dictionary, opts: Array) -> int:
 				bd = d
 				best = int(o)
 		return best
-	return int(opts[_rng.randi() % opts.size()])
+	var pick: int = opts[0]
+	var low := INF
+	for o in opts:
+		var r := _cpu_risk(p, int(o)) + _rng.randf() * 0.5
+		if r < low:
+			low = r
+			pick = int(o)
+	return pick
+
+
+## 이 길(first)로 가면 멈출 칸이 얼마나 위험한지 (갈림길에선 첫 길로 간다고 보고 내다봄)
+func _cpu_risk(p: Dictionary, first: int) -> float:
+	var prev: int = p["tile"]
+	var cur := first
+	for k in maxi(_steps_left - 1, 0):
+		var nxt := -1
+		for l in world.spaces[cur]["links"]:
+			if int(l) != prev:
+				nxt = int(l)
+				break
+		if nxt < 0:
+			nxt = prev
+		prev = cur
+		cur = nxt
+	var risk := 0.0
+	if world.danger_tiles().has(cur):
+		risk += 10.0
+	if String(_tile_mods.get(cur, "")) == "urchin":
+		risk += 8.0
+	var kind := String(world.spaces[cur]["kind"])
+	if kind == "kraken_chest" and int(p.get("hearts", 3)) <= 1:
+		risk += 5.0
+	if kind == "shop" and int(p.get("hearts", 3)) < Rules.HEARTS_MAX and int(p["coins"]) >= Rules.POTION_PRICE * shop_price_mult:
+		risk -= 2.0
+	return risk
 
 
 ## from 칸에서(직전 칸 prev 로 되돌아가지 않고) target 까지 칸 수
@@ -1042,8 +1077,54 @@ func _tile_effect(p: Dictionary) -> void:
 			await _open_shop(p)
 		"kraken_chest":
 			await _kraken_chest(p)
+		"cannon":
+			await _cannon(p)
 		_:
 			await _banner("...", tr("Nothing happens."), 0.6)
+
+
+## 대포 칸: 원하는 상대를 골라 대포를 쏨 → 맞은 상대는 동전 5개를 잃음
+func _cannon(p: Dictionary) -> void:
+	var cands := _others(p)
+	if cands.is_empty() or world.ship == null or not world.ship.cannons.has(int(p["tile"])):
+		await _banner(tr("CANNON"), tr("Nobody to fire at."), 0.9)
+		return
+	var target: Dictionary = await _pick_player(p, cands, tr("Pick a player to fire the cannon at!"), "coins")
+	var tnode: Node3D = target["node"]
+	var c: Dictionary = world.ship.cannons[int(p["tile"])]
+	var cpos: Vector3 = (c["yaw"] as Node3D).global_transform.origin
+	var tpos := tnode.position
+	# 대포 뒤 어깨너머에서 상대 쪽을 봄
+	var dir := Vector3(tpos.x - cpos.x, 0, tpos.z - cpos.z).normalized()
+	var side := Vector3(dir.z, 0, -dir.x)
+	_follow = null
+	_cinematic(cpos - dir * 3.5 + side * 3.2 + Vector3(0, 5.2, 0), cpos.lerp(tpos, 0.5) + Vector3(0, 0.8, 0), 1.0, 0.8)
+	await get_tree().create_timer(0.85, false).timeout
+	shot_hint = "63a_cannon_aim"
+	# 발사 직후 카메라가 포탄을 따라 상대 쪽으로 미끄러져 감
+	var near_from := tpos - dir * 7.5 + side * 3.0 + Vector3(0, 3.8, 0)
+	var near_xf := Transform3D(Basis.looking_at(tpos + Vector3(0, 0.9, 0) - near_from, Vector3.UP), near_from)
+	world.ship.cannon_fired.connect(func(fly: float) -> void:
+		_shake_camera(0.45, 0.3)
+		shot_hint = "63b_cannon_fire"
+		create_tween().tween_property(self, "_cine_xf", near_xf, fly + 0.15).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT), CONNECT_ONE_SHOT)
+	await world.ship.cannon_fire(int(p["tile"]), tpos + Vector3(0, 0.9, 0))
+	get_tree().create_timer(0.3, false).timeout.connect(func() -> void: shot_hint = "63c_cannon_hit")
+	_shake_camera(0.6, 0.4)
+	# 맞은 말: 펄쩍 튀었다가 떨어짐 + 동전 -5
+	var base := _spot_on(int(target["tile"]), target)
+	var hop := create_tween()
+	hop.tween_property(tnode, "position", base + Vector3(0, 1.6, 0), 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	hop.parallel().tween_property(tnode, "rotation:z", 0.6, 0.22)
+	hop.tween_property(tnode, "position", base, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	hop.parallel().tween_property(tnode, "rotation:z", 0.0, 0.3)
+	await hop.finished
+	Audio.play("thud")
+	_squash(tnode)
+	_add_coins(target, -Rules.CANNON_COINS)
+	await _banner(tr("BOOM!"), tr("%s loses %d coins") % [target["name"], Rules.CANNON_COINS], 1.1)
+	_cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.8)
+	await get_tree().create_timer(0.6, false).timeout
 
 
 ## 크라켄의 보물상자 칸: 가진 동전을 원하는 만큼 걸고 룰렛 → 보물상자면 건 동전의 두 배를 받고,
@@ -1080,7 +1161,7 @@ func _kraken_chest(p: Dictionary) -> void:
 	var vs := get_viewport().get_visible_rect().size
 	cap.position = Vector2((vs.x - cap.size.x) * 0.5, vs.y - cap.size.y - 70.0)
 	await get_tree().create_timer(1.0, false).timeout
-	Audio.play("box_rumble")
+	Audio.play("creak")
 	get_tree().create_timer(1.8, false).timeout.connect(func() -> void: shot_hint = "62b_chest_spin")
 	await world.ship.wheel_spin(win)
 	shot_hint = "62e_chest_wheel_stop"
@@ -1092,11 +1173,13 @@ func _kraken_chest(p: Dictionary) -> void:
 		world.ship.chest_reveal(win)
 	if win:
 		Audio.play("start")
+		Audio.play("coins")
 		_add_coins(p, bet * 2)
 		shot_hint = "62c_chest_win"
 		await _banner(tr("TREASURE!"), tr("Your bet is doubled: +%d coins") % (bet * 2), 1.3)
 	else:
 		Audio.play("box_burst")
+		Audio.play("roar")
 		_shake_camera(0.55, 0.45)
 		shot_hint = "62d_chest_kraken"
 		await _banner(tr("THE KRAKEN!"), tr("It takes your bet and bites you."), 1.1)
@@ -1204,7 +1287,8 @@ func _ask_bet(p: Dictionary, coins: int) -> int:
 	shot_hint = "62a_chest_bet"
 	if _is_auto(p):
 		await get_tree().create_timer(1.2, false).timeout
-		st["bet"] = clampi(int(round(coins * _rng.randf_range(0.25, 0.7))), 1, coins)
+		var k := 0.15 if int(p.get("hearts", 3)) <= 1 else _rng.randf_range(0.25, 0.7)
+		st["bet"] = clampi(int(round(coins * k)), 1, coins)
 		refresh.call()
 		await get_tree().create_timer(0.8, false).timeout
 		st["done"] = true
@@ -2450,6 +2534,7 @@ func _after_intro() -> void:
 
 func _exit_to_menu() -> void:
 	get_tree().paused = false
+	Audio.play_ambience("", -60.0, 0.4)
 	if _fade.color.a > 0.5 and not _intro_done:
 		return
 	GameState.tutorial_active = false

@@ -124,6 +124,7 @@ func _kraken_wakes() -> void:
 	_cinematic(Vector3(eye.x - 16.0, 20.0, -world.half_d + 46.0), eye + Vector3(0, 2.0, -6.0), 1.0, 1.6)
 	await get_tree().create_timer(1.6, false).timeout
 	Audio.play("box_rumble")
+	Audio.play("roar")
 	_shake_camera(0.25, 1.2)
 	world.kraken_awaken()
 	await get_tree().create_timer(1.6, false).timeout
@@ -276,6 +277,7 @@ func _kraken_turn(r: int) -> void:
 	# 크라켄이 몸을 일으키며 으르렁
 	_move_camera(world.overview, world.overview_zoom * 0.85, 0.9)
 	Audio.play("box_rumble")
+	Audio.play("roar")
 	_shake_camera(0.4, 1.0)
 	await get_tree().create_timer(0.9, false).timeout
 	await _kraken_card(a)
@@ -425,7 +427,7 @@ func _kraken_card(a: String) -> void:
 		for o in order:
 			deck.move_child(o[1], -1)
 	# 1) 카드들이 가운데에서 둥글게 펼쳐짐
-	Audio.play("box_rumble")
+	Audio.play("card_spin")
 	var t0 := create_tween()
 	t0.tween_property(dim, "color:a", 0.55, 0.3)
 	t0.parallel().tween_method(func(f: float) -> void: place.call(-f * 1.2, f), 0.0, 1.0, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -518,6 +520,7 @@ func _kraken_card(a: String) -> void:
 	t2.add_theme_color_override("font_color", Color(0.8, 0.92, 0.84))
 	t2.add_theme_constant_override("line_spacing", 4)
 	# 4) 뒤집힘 + 오라가 확 피어오름
+	Audio.play("card_flip")
 	Audio.play("box_burst")
 	_shake_camera(0.3, 0.4)
 	var flip := create_tween()
@@ -584,6 +587,7 @@ func _kraken_surge(r: int) -> void:
 		for t in shops:
 			world.bubbles_at(world.spaces[int(t)]["pos"], 18, 0.8, true)
 		Audio.play("box_burst")
+		Audio.play("coins")
 		_shake_camera(0.4, 0.5)
 	shop_price_mult = Rules.KRAKEN_SURGE_MULT
 	_surge_until = r + Rules.KRAKEN_EFFECT_ROUNDS
@@ -613,6 +617,7 @@ func _kraken_ship(r: int) -> void:
 		q["prev"] = _prev_on_loop(t)
 	await _arrive(alive, true)
 	_legend_add("kraken_chest")
+	_legend_add("cannon")
 	_update_round_label()
 	shot_hint = "60_kraken_ship"
 	await _banner(tr("THE KRAKEN'S SHIP"), tr("Back to the island after %d rounds.") % Rules.SHIP_ROUNDS, 1.6)
@@ -644,14 +649,14 @@ func _fall_through(alive: Array, from_ship: bool) -> void:
 	var portals := []
 	for q in alive:
 		portals.append(world.drop_portal((q["node"] as Node3D).position + Vector3(0, 0.04, 0)))
-		Audio.play("tick")
+		Audio.play("portal", 300)
 		await get_tree().create_timer(0.12, false).timeout
 	Audio.play("box_rumble")
 	_shake_camera(0.35, 1.0)
 	await get_tree().create_timer(0.7, false).timeout
 	shot_hint = "60b_ship_portals" if not from_ship else "60e_ship_leave"
 	await get_tree().create_timer(0.4, false).timeout
-	Audio.play("bubbles")
+	Audio.play("whoosh")
 	for q in alive:
 		var node: Node3D = q["node"]
 		var t := create_tween().set_parallel(true)
@@ -672,8 +677,10 @@ func _fall_through(alive: Array, from_ship: bool) -> void:
 			(q["node"] as Node3D).visible = from_ship
 	if from_ship:
 		world.leave_ship()
+		Audio.play_ambience("")
 	else:
 		world.enter_ship()
+		Audio.play_ambience("wind", -12.0, 2.5)
 	_update_round_label()
 
 
@@ -702,7 +709,7 @@ func _arrive(alive: Array, to_ship: bool) -> void:
 		node.position = spot + Vector3(0, 7.0, 0)
 		node.rotation.y = 0.0
 		node.scale = Vector3.ONE * PAWN_SCALE * 0.5
-		Audio.play("tick")
+		Audio.play("portal", 300)
 		await get_tree().create_timer(0.15, false).timeout
 	await get_tree().create_timer(0.45, false).timeout
 	for k in alive.size():
@@ -715,7 +722,7 @@ func _arrive(alive: Array, to_ship: bool) -> void:
 		t.tween_property(node, "scale", Vector3.ONE * PAWN_SCALE, 0.35)
 		t.tween_property(node, "rotation:y", TAU, 0.5)
 		get_tree().create_timer(0.5, false).timeout.connect(func() -> void:
-			Audio.play("box_burst", 60)
+			Audio.play("thud", 60)
 			_squash(node)
 			world.bubbles_at(spot + Vector3(0, 0.2, 0), 10, 0.5, true))
 		if k == 1:

@@ -48,6 +48,7 @@ const KRAKEN_ATTACK_EVERY := 2
 const KRAKEN_ACTIONS := ["barrage", "spines", "surge", "ship"]
 const SHIP_ROUNDS := 2              ## ship: 배 위에서 보내는 라운드 수
 const KRAKEN_CHEST_WIN := 0.5       ## 크라켄의 보물상자 룰렛: 보물상자가 나올 확률
+const CANNON_COINS := 5             ## 대포 칸: 맞은 상대가 잃는 동전
 const KRAKEN_TARGETS_BASE := 40     ## barrage: 첫 공격에 노리는 칸 수 (판은 약 180칸)
 const KRAKEN_TARGETS_GROW := 5.0    ## 크라켄 차례마다 늘어나는 수
 const KRAKEN_TARGETS_MAX := 60

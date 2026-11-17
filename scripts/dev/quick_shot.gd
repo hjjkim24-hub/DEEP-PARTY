@@ -103,6 +103,81 @@ func _run() -> void:
 		await _menus("ko")
 		get_tree().quit(0)
 		return
+	# tutboard: 튜토리얼 보드만 처음부터 끝까지 자동으로 (단계마다 한 장)
+	if "tutboard" in _want:
+		GameState.tutorial_active = true
+		GameState.players[0] = {"kind": "human", "color": 0}
+		GameState.players[1] = {"kind": "cpu", "level": 1, "color": 2}
+		get_tree().change_scene_to_file("res://scenes/tutorial_board.tscn")
+		var tb: Node = null
+		while tb == null or not ("_overlay" in tb) or tb._overlay == null:
+			await get_tree().process_frame
+			tb = get_tree().current_scene
+		var ov: Node = tb._overlay
+		var last := -2
+		var stuck := 0.0
+		while is_instance_valid(ov) and ov.is_inside_tree():
+			await get_tree().create_timer(0.8).timeout
+			if not is_instance_valid(ov):
+				break
+			var idx: int = ov.index
+			if idx != last:
+				last = idx
+				stuck = 0.0
+				await get_tree().create_timer(2.0).timeout
+				await _shot("tut_%02d" % idx)
+				if not is_instance_valid(ov):
+					break
+				if ov.is_waiting_for_action():
+					var st: Dictionary = ov.current()
+					if st.has("auto"):
+						(st["auto"] as Callable).call()
+				else:
+					ov.next()
+			else:
+				stuck += 0.8
+				if ov.has_method("is_idle") and ov.is_idle():
+					stuck = 0.0
+				if stuck > 40.0:
+					print("TUT STUCK at ", idx)
+					break
+		await get_tree().create_timer(1.5).timeout
+		await _shot("tut_end")
+		print("TUT DONE")
+		get_tree().quit(0)
+		return
+	# cannon: 크라켄의 배 대포 칸
+	if "cannon" in _want:
+		GameState.debug_autoplay = true
+		GameState.selected_mode = GameState.Mode.FREE_FOR_ALL
+		GameState.selected_board = "sunken_island"
+		GameState.players[1] = {"kind": "cpu", "level": 1, "color": 2}
+		GameState.players[2] = {"kind": "cpu", "level": 1, "color": 5}
+		get_tree().change_scene_to_file("res://scenes/board.tscn")
+		var gn: Node = null
+		while gn == null or not ("hold_loop" in gn):
+			await get_tree().process_frame
+			gn = get_tree().current_scene
+		gn.hold_loop = true
+		while String(gn.shot_hint) != "34_kraken_awakens":
+			await get_tree().process_frame
+		await get_tree().create_timer(4.0).timeout
+		await gn._kraken_ship(1)
+		var wn: Node = gn.world
+		var me: Dictionary = gn._my_pawn()
+		var ct: int = wn.ship.ids["S5"]
+		me["tile"] = ct
+		(me["node"] as Node3D).position = gn._spot_on(ct, me)
+		var tp: Vector3 = wn.spaces[ct]["pos"]
+		gn._cinematic(tp + Vector3(-5.0, 5.0, -6.0), tp + Vector3(0.0, 0.5, 4.0), 1.0, 0.01)
+		await get_tree().create_timer(1.5).timeout
+		await _shot("cn_tile")
+		gn._cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.01)
+		gn._cannon(me)
+		await _catch(gn, ["46_pick_player", "63a_cannon_aim", "63b_cannon_fire", "63c_cannon_hit"], "cn_")
+		await get_tree().create_timer(2.0).timeout
+		get_tree().quit(0)
+		return
 	GameState.debug_autoplay = true
 	GameState.debug_auto_minigames = true
 	GameState.selected_mode = GameState.Mode.FREE_FOR_ALL

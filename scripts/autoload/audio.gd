@@ -22,6 +22,7 @@ const SFX_NAMES := [
 	"hover", "click", "back", "toggle_on", "toggle_off", "tick", "tab", "color",
 	"equip", "unequip", "add", "remove", "start", "toast", "bubbles",
 	"box_rumble", "box_burst", "box_whoosh",
+	"cannon", "explode", "whoosh", "portal", "card_spin", "card_flip", "coins", "roar", "thud", "creak",
 ]
 ## 소리별 음량(dB). 자주 나는 소리는 작게.
 const SFX_DB := {
@@ -29,8 +30,13 @@ const SFX_DB := {
 	"color": -5.0, "equip": -4.0, "unequip": -5.0, "add": -3.0, "remove": -4.0,
 	"start": -2.0, "toast": -6.0, "toggle_on": -6.0, "toggle_off": -6.0, "bubbles": -16.0,
 	"box_rumble": -4.0, "box_burst": -2.0, "box_whoosh": -3.0,
+	"cannon": -1.0, "explode": -3.0, "whoosh": -6.0, "portal": -5.0, "card_spin": -7.0, "card_flip": -5.0,
+	"coins": -5.0, "roar": -2.0, "thud": -6.0, "creak": -8.0,
 }
-const PITCH_JITTER := {"hover": 0.08, "click": 0.05, "tick": 0.06, "bubbles": 0.15, "color": 0.03}
+## 반복되는 배경 소리 (크라켄의 배 위 바람 등)
+const AMBIENCE := {"wind": "res://audio/sfx/wind.wav"}
+const PITCH_JITTER := {"hover": 0.08, "click": 0.05, "tick": 0.06, "bubbles": 0.15, "color": 0.03, "thud": 0.1, "coins": 0.05,
+	"cannon": 0.05, "explode": 0.06}
 const MIN_INTERVAL_MS := 40
 const VOICES := 10
 const MUSIC_DB := -4.0
@@ -43,6 +49,8 @@ var _next := 0
 var _last := {}
 var _music: AudioStreamPlayer
 var _music_tween: Tween
+var _amb: AudioStreamPlayer
+var _amb_tween: Tween
 
 
 func _ready() -> void:
@@ -59,6 +67,9 @@ func _ready() -> void:
 	_music = AudioStreamPlayer.new()
 	_music.bus = "Music"
 	add_child(_music)
+	_amb = AudioStreamPlayer.new()
+	_amb.bus = "SFX"
+	add_child(_amb)
 	get_tree().node_added.connect(_on_node_added)
 
 
@@ -162,3 +173,27 @@ func _exit_tree() -> void:
 		p.stop()
 		p.stream = null
 	_streams.clear()
+
+
+
+## 배경 소리 (끝없이 반복): name = "" 이면 서서히 끔
+func play_ambience(amb_name: String, db: float = -10.0, fade_time: float = 1.5) -> void:
+	if _amb_tween:
+		_amb_tween.kill()
+	_amb_tween = create_tween()
+	if amb_name == "" or not AMBIENCE.has(amb_name):
+		if _amb.playing:
+			_amb_tween.tween_property(_amb, "volume_db", -60.0, fade_time)
+			_amb_tween.tween_callback(_amb.stop)
+		return
+	var st := load(AMBIENCE[amb_name]) as AudioStreamWAV
+	if st == null:
+		return
+	st = st.duplicate() as AudioStreamWAV
+	st.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	st.loop_begin = 0
+	st.loop_end = int(st.get_length() * st.mix_rate)
+	_amb.stream = st
+	_amb.volume_db = -60.0
+	_amb.play()
+	_amb_tween.tween_property(_amb, "volume_db", db, fade_time)

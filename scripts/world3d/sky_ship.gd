@@ -11,6 +11,7 @@ extends Node3D
 const SailShader := preload("res://shaders/sail.gdshader")
 const CloudSeaShader := preload("res://shaders/cloud_sea.gdshader")
 const CloudPuffShader := preload("res://shaders/cloud_puff.gdshader")
+const SmokeShader := preload("res://shaders/smoke_puff.gdshader")
 const NightSkyShader := preload("res://shaders/night_sky.gdshader")
 const EMBLEM := preload("res://textures/ship/emblem.png")
 const ReefKit := preload("res://scripts/world3d/reef_kit.gd")
@@ -56,7 +57,7 @@ const BRANCHES := [["S7", "H1", "H2", "M3"]]
 const STAIRS := [["Q3", "S1"], ["S9", "F1"], ["F5", "M1"], ["M9", "Q6"], ["Q4", "P3"], ["P1", "Q1"]]
 const DROPS := ["S3", "M6", "F2", "P2"]
 ## 특별한 칸 (나머지는 일반 칸)
-const SPECIAL := {"F3": "kraken_chest"}
+const SPECIAL := {"F3": "kraken_chest", "S5": "cannon", "M4": "cannon"}
 const CHEST_AT := Vector3(53.6, FC_Y, 0.0)   ## 크라켄의 보물상자 (보물상자 칸 바로 앞, 뱃머리 쪽)
 const WHEEL_AT := Vector3(55.6, FC_Y, -5.8)  ## 크라켄의 행운 바퀴 (상자 옆에 세워 둔 커다란 나무 바퀴, 앞이 +z)
 const WHEEL_R := 1.8
@@ -250,6 +251,7 @@ func build() -> void:
 	_kraken_things()
 	_kraken_chest()
 	_fortune_wheel()
+	_swivel_cannons()
 	_lights_decor()
 	_flush_ropes()
 	_sky_clouds()
@@ -993,7 +995,7 @@ func _deck_props() -> void:
 	for s: float in [-1.0, 1.0]:
 		for cx: float in [-30.2, -24.7, -19.2, -13.7, -8.2, -2.7, 2.7, 8.2, 13.7, 19.2, 24.7, 30.2, 35.6]:
 			var z := s * (hb(cx) - 1.4)
-			if near_tile(Vector3(cx, 0, z), 2.1):
+			if near_tile(Vector3(cx, 0, z), 2.1) or _near_swivel(Vector3(cx, 0, z)):
 				continue
 			_box(Vector3(0.75, 0.42, 1.3), dark, Vector3(cx, 0.36, z))
 			for wx: float in [-0.38, 0.38]:
@@ -1478,7 +1480,7 @@ func _kraken_things() -> void:
 	barrel.bottom_radius = 0.46
 	barrel.height = 1.15
 	barrel.radial_segments = 16
-	for bp: Vector3 in [Vector3(2.0, 0, 11.6), Vector3(14.0, 0, -11.8), Vector3(34.0, 0, 11.4)]:
+	for bp: Vector3 in [Vector3(-6.5, 0, 11.6), Vector3(14.0, 0, -11.8), Vector3(34.0, 0, 11.4)]:
 		if near_tile(bp, 2.0):
 			continue
 		_mi(barrel, smat(Color(0.12, 0.1, 0.1), "wood", 0.12, Vector3(0, 1, 0)), bp + Vector3(0, 0.58, 0))
@@ -2058,3 +2060,259 @@ func _wheel_process(delta: float) -> void:
 		_wheel_t += delta
 		_wheel_mat.set_shader_parameter("highlight", _wheel_hl)
 		_wheel_mat.set_shader_parameter("flash", 0.5 + 0.5 * sin(_wheel_t * 10.0))
+
+
+
+# ── 대포 칸 옆 회전 대포: 원하는 상대를 겨눠 포탄을 쏨 ───────────────
+var cannons := {}            ## 칸 번호 → {"yaw": Node3D, "pitch": Node3D, "barrel": Node3D, "muzzle": Node3D, "flash": ..., "light": ...}
+
+func _swivel_at(n: String) -> Vector3:
+	var t: Vector3 = TILES[n]
+	return Vector3(t.x, deck_y(t.x), signf(t.z) * (absf(t.z) + 3.6))
+
+
+func _near_swivel(p: Vector3) -> bool:
+	for n in SPECIAL:
+		if SPECIAL[n] == "cannon" and Vector2(p.x - _swivel_at(n).x, p.z - _swivel_at(n).z).length() < 3.2:
+			return true
+	return false
+
+
+func _swivel_cannons() -> void:
+	var bronze := mat(Color(0.55, 0.36, 0.18), 0.32, 0.9)
+	var iron_m := mat(Color(0.13, 0.12, 0.11), 0.4, 0.8)
+	var wood := smat(Color(0.3, 0.17, 0.09), "wood", 0.0, Vector3(1, 0, 0), 0.0)
+	var dark := smat(Color(0.14, 0.08, 0.05), "wood", 0.0)
+	for n in SPECIAL:
+		if SPECIAL[n] != "cannon":
+			continue
+		var at := _swivel_at(n)
+		var s := signf(at.z)
+		var root := Node3D.new()
+		root.position = at
+		add_child(root)
+		# 돌림판: 쇠테 두른 둥근 나무 받침 + 축
+		_mi(w._cyl(1.05, 1.15, 0.22, 32), dark, Vector3(0, 0.11, 0), Basis(), root)
+		var ring := TorusMesh.new()
+		ring.inner_radius = 1.02
+		ring.outer_radius = 1.14
+		ring.rings = 40
+		ring.ring_segments = 8
+		_mi(ring, iron_m, Vector3(0, 0.2, 0), Basis(), root)
+		var yaw := Node3D.new()
+		yaw.position = Vector3(0, 0.22, 0)
+		yaw.rotation.y = PI if s > 0.0 else 0.0     # 처음엔 배 안쪽을 봄 (+z 앞)
+		root.add_child(yaw)
+		# 바퀴 달린 나무 포가 (양쪽 볼판 + 굴대 + 바퀴 4)
+		for sx: float in [-1.0, 1.0]:
+			_mi(w._box(Vector3(0.14, 0.7, 1.7)), wood, Vector3(sx * 0.42, 0.42, 0.0), Basis(), yaw)
+			for sz: float in [-0.55, 0.6]:
+				_mi(w._cyl(0.28, 0.28, 0.12, 16), dark, Vector3(sx * 0.58, 0.28, sz), Basis(Vector3(0, 0, 1), PI * 0.5), yaw)
+				_mi(w._cyl(0.08, 0.08, 0.14, 8), iron_m, Vector3(sx * 0.62, 0.28, sz), Basis(Vector3(0, 0, 1), PI * 0.5), yaw)
+		_mi(w._box(Vector3(0.84, 0.16, 1.4)), wood, Vector3(0, 0.22, 0), Basis(), yaw)
+		# 포신 (앞으로 +z): 굵은 뒤 → 가는 앞 + 고리 띠 + 포구 + 뒤 꼭지
+		var pitch := Node3D.new()
+		pitch.position = Vector3(0, 0.82, -0.1)
+		yaw.add_child(pitch)
+		var barrel := Node3D.new()
+		pitch.add_child(barrel)
+		_rod(Vector3(0, 0, -0.85), Vector3(0, 0, 1.9), 0.17, bronze, 0.3, 20, barrel)
+		for bz: float in [-0.7, -0.25, 0.6, 1.75]:
+			var rr := lerpf(0.33, 0.21, (bz + 0.85) / 2.75)
+			_mi(w._cyl(rr, rr, 0.1, 20), bronze, Vector3(0, 0, bz), Basis(Vector3(1, 0, 0), PI * 0.5), barrel)
+		var muzzle_ring := TorusMesh.new()
+		muzzle_ring.inner_radius = 0.12
+		muzzle_ring.outer_radius = 0.24
+		muzzle_ring.rings = 24
+		muzzle_ring.ring_segments = 10
+		_mi(muzzle_ring, bronze, Vector3(0, 0, 1.92), Basis(Vector3(1, 0, 0), PI * 0.5), barrel)
+		_mi(w._cyl(0.11, 0.11, 0.06, 16), mat(Color(0.02, 0.02, 0.02), 0.9), Vector3(0, 0, 1.95), Basis(Vector3(1, 0, 0), PI * 0.5), barrel)
+		var knob := SphereMesh.new()
+		knob.radius = 0.13
+		knob.height = 0.26
+		_mi(knob, bronze, Vector3(0, 0, -1.0), Basis(), barrel)
+		_mi(w._cyl(0.06, 0.06, 0.95, 10), iron_m, Vector3(0, 0, 0), Basis(Vector3(0, 0, 1), PI * 0.5), barrel)   # 귀축
+		var muzzle := Node3D.new()
+		muzzle.position = Vector3(0, 0, 2.05)
+		barrel.add_child(muzzle)
+		var fl := _glow(Color(1.0, 0.72, 0.3), 8.0)
+		var flash := MeshInstance3D.new()
+		var fs := SphereMesh.new()
+		fs.radius = 0.5
+		fs.height = 1.0
+		flash.mesh = fs
+		flash.material_override = fl
+		flash.visible = false
+		muzzle.add_child(flash)
+		var lt := OmniLight3D.new()
+		lt.light_color = Color(1.0, 0.7, 0.35)
+		lt.light_energy = 0.0
+		lt.omni_range = 9.0
+		muzzle.add_child(lt)
+		# 포탄 더미 + 화약 통 + 꽂아 둔 꽂을대
+		var ball := SphereMesh.new()
+		ball.radius = 0.16
+		ball.height = 0.32
+		for q in 4:
+			_mi(ball, iron_m, Vector3((q % 2) * 0.34 - 0.17 + 1.3, 0.16 + (q / 3) * 0.26, -0.4 + (q / 2) * 0.3 * float(q < 3)), Basis(), root)
+		_mi(w._cyl(0.3, 0.32, 0.6, 14), smat(Color(0.3, 0.18, 0.1), "wood", 0.12, Vector3(0, 1, 0)), Vector3(-1.35, 0.3, 0.3), Basis(), root)
+		_rod(Vector3(-1.2, 0.05, -0.7), Vector3(-1.0, 2.0, -0.95), 0.03, wood, -1.0, 6, root)
+		cannons[ids[n]] = {"yaw": yaw, "pitch": pitch, "barrel": barrel, "muzzle": muzzle, "flash": flash, "light": lt}
+
+
+signal cannon_fired(fly: float)
+
+
+## 대포 칸(tile)의 대포가 target(월드 좌표)을 겨눠 쏨 → 포탄이 날아가 터질 때까지 (await)
+func cannon_fire(tile: int, target: Vector3) -> void:
+	var c: Dictionary = cannons[tile]
+	var yaw: Node3D = c["yaw"]
+	var pitch: Node3D = c["pitch"]
+	var barrel: Node3D = c["barrel"]
+	var muzzle: Node3D = c["muzzle"]
+	# 겨누기 (끼익 돌아감)
+	var from := yaw.global_transform.origin
+	var d := target - from
+	var want := atan2(d.x, d.z)
+	var cur := yaw.rotation.y
+	var goal := cur + angle_difference(cur, want)
+	var dist := Vector2(d.x, d.z).length()
+	Audio.play("creak")
+	var t := create_tween().set_parallel(true)
+	t.tween_property(yaw, "rotation:y", goal, 0.8).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+	t.tween_property(pitch, "rotation:x", -clampf(0.12 + dist * 0.006, 0.12, 0.45), 0.8).set_trans(Tween.TRANS_CUBIC)
+	await t.finished
+	await get_tree().create_timer(0.35, false).timeout
+	# 쾅: 불꽃 · 빛 · 반동 · 연기
+	Audio.play("cannon")
+	var flash: MeshInstance3D = c["flash"]
+	var lt: OmniLight3D = c["light"]
+	flash.visible = true
+	flash.scale = Vector3.ONE * 0.3
+	var ft := create_tween().set_parallel(true)
+	ft.tween_property(flash, "scale", Vector3.ONE * 1.4, 0.08)
+	ft.tween_property(lt, "light_energy", 8.0, 0.05)
+	ft.chain().set_parallel(true)
+	ft.tween_property(flash, "scale", Vector3.ONE * 0.01, 0.18)
+	ft.tween_property(lt, "light_energy", 0.0, 0.35)
+	ft.chain().tween_callback(func() -> void: flash.visible = false)
+	var rt := create_tween()
+	rt.tween_property(barrel, "position:z", -0.45, 0.06)
+	rt.tween_property(barrel, "position:z", 0.0, 0.7).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	var mp := muzzle.global_transform.origin
+	var fwd := (muzzle.global_transform.basis.z).normalized()
+	_smoke(mp - global_transform.origin, fwd, 0.45)
+	# 포탄: 포물선으로 날아감
+	var ball := MeshInstance3D.new()
+	var bm := SphereMesh.new()
+	bm.radius = 0.2
+	bm.height = 0.4
+	ball.mesh = bm
+	ball.material_override = mat(Color(0.08, 0.08, 0.08), 0.35, 0.8)
+	add_child(ball)
+	var a := mp - global_transform.origin
+	var b := target - global_transform.origin
+	var fly := clampf(dist / 26.0, 0.55, 1.4)
+	var apex := 1.5 + dist * 0.18
+	cannon_fired.emit(fly)
+	Audio.play("whoosh")
+	var bt := create_tween()
+	bt.tween_method(func(f: float) -> void:
+		ball.position = a.lerp(b, f) + Vector3(0, sin(f * PI) * apex, 0), 0.0, 1.0, fly)
+	await bt.finished
+	ball.queue_free()
+	# 터짐: 빛 · 연기 · 파편
+	Audio.play("explode")
+	var bl := OmniLight3D.new()
+	bl.light_color = Color(1.0, 0.6, 0.3)
+	bl.light_energy = 7.0
+	bl.omni_range = 8.0
+	bl.position = b + Vector3(0, 0.8, 0)
+	add_child(bl)
+	create_tween().tween_property(bl, "light_energy", 0.0, 0.6).finished.connect(bl.queue_free)
+	# 불덩이: 순간 부풀었다 꺼짐
+	var fb := MeshInstance3D.new()
+	var fs := SphereMesh.new()
+	fs.radius = 0.5
+	fs.height = 1.0
+	fb.mesh = fs
+	var fm := StandardMaterial3D.new()
+	fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fm.albedo_color = Color(1.0, 0.62, 0.22, 0.95)
+	fb.material_override = fm
+	fb.position = b + Vector3(0, 0.3, 0)
+	fb.scale = Vector3.ONE * 0.4
+	add_child(fb)
+	var fbt := create_tween().set_parallel(true)
+	fbt.tween_property(fb, "scale", Vector3.ONE * 2.6, 0.32).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+	fbt.tween_property(fm, "albedo_color", Color(1.0, 0.35, 0.1, 0.0), 0.38)
+	fbt.chain().tween_callback(fb.queue_free)
+	_smoke(b, Vector3.UP, 1.6)
+	_debris(b)
+
+
+## 화약 연기 (회색 뭉게연기가 퍼지며 사라짐)
+func _smoke(p: Vector3, dir: Vector3, amount: float) -> void:
+	var cp := CPUParticles3D.new()
+	cp.one_shot = true
+	cp.amount = int(22 * amount)
+	cp.lifetime = 2.2
+	cp.explosiveness = 0.9
+	cp.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	cp.emission_sphere_radius = 0.3
+	cp.direction = dir
+	cp.spread = 35.0
+	cp.initial_velocity_min = 1.5
+	cp.initial_velocity_max = 5.0
+	cp.damping_min = 3.0
+	cp.damping_max = 5.0
+	cp.gravity = Vector3(0, 0.6, 0)
+	cp.scale_amount_min = 1.2
+	cp.scale_amount_max = 2.6
+	var sc := Curve.new()
+	sc.add_point(Vector2(0, 0.4))
+	sc.add_point(Vector2(1, 1.6))
+	cp.scale_amount_curve = sc
+	var q := QuadMesh.new()
+	q.size = Vector2(1.2, 1.2)
+	var m := ShaderMaterial.new()
+	m.shader = SmokeShader
+	m.set_shader_parameter("opacity", clampf(0.25 + amount * 0.25, 0.3, 0.65))
+	m.set_shader_parameter("tint", Color(0.4, 0.39, 0.4))
+	q.material = m
+	cp.mesh = q
+	var g := Gradient.new()
+	g.set_color(0, Color(1.0, 0.85, 0.6, 0.9))
+	g.add_point(0.15, Color(0.75, 0.75, 0.78, 0.7))
+	g.set_color(1, Color(0.6, 0.6, 0.65, 0.0))
+	cp.color_ramp = g
+	cp.position = p
+	add_child(cp)
+	cp.emitting = true
+	get_tree().create_timer(3.0).timeout.connect(cp.queue_free)
+
+
+func _debris(p: Vector3) -> void:
+	var cp := CPUParticles3D.new()
+	cp.one_shot = true
+	cp.amount = 26
+	cp.lifetime = 1.2
+	cp.explosiveness = 1.0
+	cp.direction = Vector3.UP
+	cp.spread = 70.0
+	cp.initial_velocity_min = 4.0
+	cp.initial_velocity_max = 8.0
+	cp.gravity = Vector3(0, -14, 0)
+	cp.angular_velocity_min = -400
+	cp.angular_velocity_max = 400
+	cp.scale_amount_min = 0.5
+	cp.scale_amount_max = 1.2
+	var bx := BoxMesh.new()
+	bx.size = Vector3(0.12, 0.04, 0.3)
+	bx.material = mat(Color(0.42, 0.28, 0.16), 0.8)
+	cp.mesh = bx
+	cp.position = p + Vector3(0, 0.3, 0)
+	add_child(cp)
+	cp.emitting = true
+	get_tree().create_timer(2.0).timeout.connect(cp.queue_free)
