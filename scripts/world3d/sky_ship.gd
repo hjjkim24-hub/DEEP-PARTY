@@ -4,12 +4,9 @@ extends Node3D
 ## board_world.enter_ship() 로 섬 대신 이 배와 밤하늘을 보여 줌.
 ##   배 길이는 x 축 (뱃머리 +x, 고물 -x), 폭은 z 축 (우현 +z 가 카메라 쪽). 좌표는 이 노드 기준 (AT 가 원점).
 ##   갑판 4 층: 큰 갑판(0) · 앞갑판(FC_Y) · 뒷갑판(QD_Y) · 맨 뒤 선장실 지붕(PP_Y). 층 사이는 가파른 배 계단.
-##   칸은 지금은 전부 일반 칸 (배 전용 칸은 나중에). 길은 반듯하게, 전체 구조로 재미를 줌:
-##     - 양쪽 뱃전을 따라 한 바퀴 (4 층 갑판을 계단으로 오르내림)
-##     - 뚫린 짐칸을 가로지르는 널다리 (보물 더미가 내려다보임)
-##     - 우현 바깥 공중 발판 (뱃전 밖에 매단 비계, 발아래가 구름)
-##     - 줄사다리로 큰 돛대 망대에 올라 → 공중 흔들다리 → 뒷돛대 망대 → 뒷갑판으로
-##     - 좌현 '널빤지 걷기' 끝 칸 · 뱃머리 끝 장식 발판 (막다른 칸)
+##   칸은 지금은 전부 일반 칸 (배 전용 칸은 나중에). 칸은 모두 갑판 위, 길은 반듯하게:
+##     - 양쪽 뱃전을 따라 한 바퀴 (4 층 갑판을 계단으로 오르내림) + 뱃머리 끝 망보는 자리 (막다른 칸)
+##     - 뚫린 짐칸을 가로지르는 널다리 (보물 더미가 내려다보임) · 큰 돛대 뒤 가로지름길
 
 const SailShader := preload("res://shaders/sail.gdshader")
 const CloudSeaShader := preload("res://shaders/cloud_sea.gdshader")
@@ -41,27 +38,25 @@ const LANE := 10.5
 const TILES := {
 	"P1": Vector3(-53.5, PP_Y, 6.5), "P2": Vector3(-58.5, PP_Y, 0.0), "P3": Vector3(-53.5, PP_Y, -6.5),
 	"Q1": Vector3(-44.4, QD_Y, LANE), "Q2": Vector3(-36.9, QD_Y, LANE), "Q4": Vector3(-44.4, QD_Y, -LANE), "Q5": Vector3(-36.9, QD_Y, -LANE),
-	"S1": Vector3(-27.5, 0, LANE), "S2": Vector3(-22.0, 0, LANE), "S3": Vector3(-16.5, 0, LANE), "S4": Vector3(-11.0, 0, LANE),
-	"S5": Vector3(-5.5, 0, LANE), "S6": Vector3(0.0, 0, LANE), "S7": Vector3(5.5, 0, LANE), "S8": Vector3(11.0, 0, LANE),
-	"S9": Vector3(16.5, 0, LANE), "S10": Vector3(22.0, 0, LANE), "S11": Vector3(27.5, 0, LANE), "S12": Vector3(33.0, 0, LANE),
-	"F1": Vector3(44.0, FC_Y, LANE), "F2": Vector3(49.5, FC_Y, 6.5), "F3": Vector3(54.0, FC_Y, 0.0), "F4": Vector3(49.5, FC_Y, -6.5),
-	"F5": Vector3(44.0, FC_Y, -LANE), "BK": Vector3(60.5, FC_Y, 0.0),
-	"M1": Vector3(33.0, 0, -LANE), "M2": Vector3(27.5, 0, -LANE), "M3": Vector3(22.0, 0, -LANE), "M4": Vector3(16.5, 0, -LANE),
-	"M5": Vector3(11.0, 0, -LANE), "M6": Vector3(5.5, 0, -LANE), "M7": Vector3(0.0, 0, -LANE), "M8": Vector3(-5.5, 0, -LANE),
-	"M9": Vector3(-11.0, 0, -LANE), "M10": Vector3(-16.5, 0, -LANE), "M11": Vector3(-22.0, 0, -LANE), "M12": Vector3(-27.5, 0, -LANE),
-	"PL": Vector3(0.0, 1.85, -20.2),
-	"C1": Vector3(-11.0, -2.6, 17.6), "C2": Vector3(-5.5, -2.6, 17.6), "C3": Vector3(0.0, -2.6, 17.6),
-	"H1": Vector3(16.5, 0.4, 3.6), "H2": Vector3(16.5, 0.4, -3.6),
-	"T1": Vector3(-7.6, 0.0, 0.0), "B1": Vector3(-13.6, 0.0, 0.0), "B2": Vector3(-19.7, 0.0, 0.0), "B3": Vector3(-25.8, 0.0, 0.0),
-	"B4": Vector3(-31.9, 0.0, 0.0), "T2": Vector3(-38.0, 0.0, 0.0),
+	"S1": Vector3(-27.5, 0, LANE), "S2": Vector3(-23.18, 0, LANE), "S3": Vector3(-18.86, 0, LANE), "S4": Vector3(-14.54, 0, LANE),
+	"S5": Vector3(-10.21, 0, LANE), "S6": Vector3(-5.89, 0, LANE), "S7": Vector3(-1.57, 0, LANE), "S8": Vector3(2.75, 0, LANE),
+	"S9": Vector3(7.07, 0, LANE), "S10": Vector3(11.39, 0, LANE), "S11": Vector3(15.71, 0, LANE), "S12": Vector3(20.04, 0, LANE),
+	"S13": Vector3(24.36, 0, LANE), "S14": Vector3(28.68, 0, LANE), "S15": Vector3(33.0, 0, LANE),
+	"F1": Vector3(44.0, FC_Y, LANE), "F2": Vector3(48.6, FC_Y, 8.4), "F3": Vector3(52.2, FC_Y, 4.6), "F4": Vector3(53.8, FC_Y, 0.0),
+	"F5": Vector3(52.2, FC_Y, -4.6), "F6": Vector3(48.6, FC_Y, -8.4), "F7": Vector3(44.0, FC_Y, -LANE), "BK": Vector3(60.5, FC_Y, 0.0),
+	"M1": Vector3(33.0, 0, -LANE), "M2": Vector3(28.68, 0, -LANE), "M3": Vector3(24.36, 0, -LANE), "M4": Vector3(20.04, 0, -LANE),
+	"M5": Vector3(15.71, 0, -LANE), "M6": Vector3(11.39, 0, -LANE), "M7": Vector3(7.07, 0, -LANE), "M8": Vector3(2.75, 0, -LANE),
+	"M9": Vector3(-1.57, 0, -LANE), "M10": Vector3(-5.89, 0, -LANE), "M11": Vector3(-10.21, 0, -LANE),
+	"M12": Vector3(-14.54, 0, -LANE), "M13": Vector3(-18.86, 0, -LANE), "M14": Vector3(-23.18, 0, -LANE),
+	"M15": Vector3(-27.5, 0, -LANE),
+	"H1": Vector3(15.71, 0.4, 3.6), "H2": Vector3(15.71, 0.4, -3.6), "X1": Vector3(-14.54, 0, 3.6), "X2": Vector3(-14.54, 0, -3.6),
 }
-## 한 바퀴 길 (앞으로 가는 순서) + 갈래길들
-const LOOP := ["P2", "P1", "Q1", "Q2", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12",
-	"F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12", "Q5", "Q4", "P3"]
-const BRANCHES := [["S3", "C1", "C2", "C3", "S7"], ["S9", "H1", "H2", "M4"], ["S4", "T1", "B1", "B2", "B3", "B4", "T2", "Q5"],
-	["M7", "PL"], ["F3", "BK"]]
-const STAIRS := [["Q2", "S1"], ["S12", "F1"], ["F5", "M1"], ["M12", "Q5"], ["Q4", "P3"], ["P1", "Q1"]]
-const DROPS := ["S10", "M9", "F2", "P2"]
+## 한 바퀴 길 (앞으로 가는 순서) + 갈래길들 (모두 갑판 위)
+const LOOP := ["P2", "P1", "Q1", "Q2", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12", "S13", "S14", "S15",
+	"F1", "F2", "F3", "F4", "F5", "F6", "F7", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12", "M13", "M14", "M15", "Q5", "Q4", "P3"]
+const BRANCHES := [["S11", "H1", "H2", "M5"], ["S4", "X1", "X2", "M12"], ["F4", "BK"]]
+const STAIRS := [["Q2", "S1"], ["S15", "F1"], ["F7", "M1"], ["M15", "Q5"], ["Q4", "P3"], ["P1", "Q1"]]
+const DROPS := ["S9", "M7", "F3", "P2"]
 
 var w                                ## board_world
 var env: Environment
@@ -146,23 +141,7 @@ func top_y(mi: int) -> float:
 
 ## 칸 자리 (망대 · 흔들다리 칸은 높이를 돛대에서 계산)
 func tile_pos(n: String) -> Vector3:
-	var p: Vector3 = TILES[n]
-	match n:
-		"T1":
-			p.y = top_y(1)
-		"T2":
-			p.y = top_y(2)
-		"B1", "B2", "B3", "B4":
-			p.y = _bridge_y(p.x) + 0.05
-	return p
-
-
-## 흔들다리 높이 (가운데가 처짐)
-func _bridge_y(x: float) -> float:
-	var x0: float = TILES["T1"].x
-	var x1: float = TILES["T2"].x
-	var f := clampf((x - x0) / (x1 - x0), 0.0, 1.0)
-	return lerpf(top_y(1), top_y(2), f) - sin(f * PI) * 1.4
+	return TILES[n]
 
 
 func near_tile(p: Vector3, r: float) -> bool:
@@ -259,9 +238,6 @@ func build() -> void:
 	_tiles()
 	_stairs_and_rails()
 	_masts()
-	_tops_and_bridge()
-	_catwalk()
-	_plank()
 	_bow()
 	_stern()
 	_deck_props()
@@ -510,9 +486,9 @@ func _hold() -> void:
 	l.position = Vector3(cx, y0 + 3.0, 0)
 	add_child(l)
 	_lamps.append([l, 2.4, 0.3])
-	# 널다리 (우현 S9 → H1 → H2 → 좌현 M4, 짐칸을 곧게 가로지름)
+	# 널다리 (우현 S11 → H1 → H2 → 좌현 M5, 짐칸을 곧게 가로지름)
 	var plank := smat(Color(0.46, 0.32, 0.2), "wood", 0.0, Vector3(1, 0, 0))
-	var pts := [tile_pos("S9"), tile_pos("H1"), tile_pos("H2"), tile_pos("M4")]
+	var pts := [tile_pos("S11"), tile_pos("H1"), tile_pos("H2"), tile_pos("M5")]
 	for k in 3:
 		var a: Vector3 = pts[k]
 		var b: Vector3 = pts[k + 1]
@@ -550,7 +526,7 @@ func _spaces() -> void:
 		var d := b - a
 		var yaw := atan2(d.x, d.z)
 		var snap := roundf(yaw / (PI * 0.5)) * PI * 0.5
-		sp["yaw"] = yaw if String(sp["ship_name"]) in ["F2", "F4"] else snap
+		sp["yaw"] = yaw if String(sp["ship_name"]) in ["F2", "F3", "F5", "F6"] else snap
 	for n in DROPS:
 		drop_tiles.append(ids[n])
 
@@ -718,8 +694,7 @@ func _masts() -> void:
 		_mi(w._cyl(r * 0.5, r * 0.5, 0.35, 12), iron(), p0 + Vector3(0, h + 0.1, 0))
 		_box(Vector3(0.22, 0.22, 3.4 * k_r), yard_m, p0 + Vector3(0, h * 0.78, 0))
 		_box(Vector3(2.0 * k_r, 0.22, 0.22), yard_m, p0 + Vector3(0, h * 0.78, 0))
-		if mi == 0:
-			_mi(w._cyl(2.2, 2.0, 0.3, 24), yard_m, p0 + Vector3(0, lo - 0.15, 0))
+		_mi(w._cyl(2.4 * k_r, 2.2 * k_r, 0.3, 24), yard_m, p0 + Vector3(0, lo - 0.15, 0))
 		# 활대 3 단 (맨 아래는 돛을 말아 묶음)
 		var span := 10.0 * (h / 40.0) + 1.5
 		var yards := [[0.33, 1.0], [0.6, 0.8], [0.86, 0.56]]
@@ -880,135 +855,6 @@ func _flag(at: Vector3, size: Vector2, col: Color, emblem: bool, seed: float) ->
 	_rod(at + Vector3(0, -size.y - 0.2, 0), at + Vector3(0, 0.6, 0), 0.05, mat(Color(0.2, 0.14, 0.09), 0.7), -1.0, 6)
 
 
-## 망대 (칸이 올라앉는 넓은 발판) + 줄사다리 + 두 망대를 잇는 공중 흔들다리
-func _tops_and_bridge() -> void:
-	var deck := smat(Color(0.42, 0.29, 0.18), "wood", 0.22, Vector3(1, 0, 0))
-	var dark := smat(Color(0.22, 0.14, 0.09), "wood", 0.0, Vector3(0, 1, 0))
-	for mi in [1, 2]:
-		var x: float = MASTS[mi][0]
-		var y := top_y(mi)
-		var tx: float = TILES["T1" if mi == 1 else "T2"].x
-		var x0 := minf(tx, x) - 1.8
-		var x1 := maxf(tx, x) + 1.8
-		if mi == 1:
-			x1 = x + 1.0      # 큰 돛대 망대는 돛(앞쪽)에 닿지 않게 뒤로만
-		_box(Vector3(x1 - x0, 0.3, 7.6), deck, Vector3((x0 + x1) * 0.5, y - 0.15, 0))
-		_mi(w._cyl(2.8, 2.6, 0.3, 24), deck, Vector3(x, y - 0.15, 0))
-		for s: float in [-1.0, 1.0]:
-			for e: float in [-1.0, 1.0]:
-				_rod(Vector3(x, y - 3.4, 0), Vector3((x0 + x1) * 0.5 + e * (x1 - x0) * 0.42, y - 0.3, s * 1.8), 0.12, dark, -1.0, 8)
-		# 둘레 난간 (기둥 + 밧줄). 흔들다리 쪽은 비움
-		var corners := [Vector3(x0, y, -3.8), Vector3(x1, y, -3.8), Vector3(x1, y, 3.8), Vector3(x0, y, 3.8)]
-		for c in corners:
-			_rod(c, c + Vector3(0, 1.1, 0), 0.07, dark, -1.0, 6)
-		for k in 4:
-			if (mi == 1 and k == 3) or (mi == 2 and k == 1):
-				continue
-			var a: Vector3 = corners[k]
-			var b: Vector3 = corners[(k + 1) % 4]
-			rope(a + Vector3(0, 1.05, 0), b + Vector3(0, 1.05, 0))
-			rope(a + Vector3(0, 0.55, 0), b + Vector3(0, 0.55, 0), true)
-		_lantern(Vector3(x1 if mi == 2 else x0, y + 1.6, 3.8), 0.85, true, true)
-	# 줄사다리: 갑판 칸 옆에서 망대 끝까지
-	_ladder(Vector3(-10.0, 0.1, 8.4), Vector3(-8.6, top_y(1), 3.6))
-	_ladder(Vector3(-37.6, QD_Y + 0.1, -8.4), Vector3(-38.2, top_y(2), -3.6))
-	# 흔들다리: 널판 + 양옆 손잡이 밧줄 + 매단 줄
-	var xa: float = TILES["T1"].x - 1.6
-	var xb: float = TILES["T2"].x + 1.6
-	var plank := smat(Color(0.45, 0.31, 0.19), "wood", 0.0, Vector3(0, 0, 1))
-	var xs := []
-	var x := xa
-	while x > xb:
-		var y := _bridge_y(x)
-		var yn := _bridge_y(x - 0.4)
-		xs.append(Transform3D(Basis(Vector3(0, 0, 1), atan2(y - yn, 0.4)).scaled(Vector3(0.32, 0.08, 2.6)), Vector3(x, y - 0.04, 0.0)))
-		x -= 0.42
-	_multi(BoxMesh.new(), plank, xs)
-	for s: float in [-1.0, 1.0]:
-		var prev := Vector3(xa, _bridge_y(xa) + 1.1, s * 1.35)
-		var prev_low := Vector3(xa, _bridge_y(xa) - 0.05, s * 1.3)
-		var n := 40
-		for k in range(1, n + 1):
-			var xx := lerpf(xa, xb, float(k) / n)
-			var hand := Vector3(xx, _bridge_y(xx) + 1.1 + sin(float(k) / n * PI) * 0.5, s * 1.35)
-			var low := Vector3(xx, _bridge_y(xx) - 0.05, s * 1.3)
-			rope(prev, hand)
-			rope(prev_low, low, true)
-			if k % 2 == 0:
-				rope(hand, low, true)
-			prev = hand
-			prev_low = low
-
-
-func _ladder(a: Vector3, b: Vector3) -> void:
-	var side := Vector3(0.45, 0, 0)
-	rope(a - side, b - side)
-	rope(a + side, b + side)
-	var n := int((b - a).length() / 0.4)
-	for k in range(1, n):
-		var p := a.lerp(b, float(k) / n)
-		rope(p - side, p + side, true)
-
-
-## 우현 바깥 공중 발판: 뱃전 밖에 쇠 받침 · 밧줄로 매단 널판 길 (발아래는 구름)
-func _catwalk() -> void:
-	var x0: float = TILES["C1"].x - 2.4
-	var x1: float = TILES["C3"].x + 2.4
-	var y: float = TILES["C1"].y
-	var zo := MID + 0.42 + 4.6
-	var plank := smat(Color(0.44, 0.31, 0.2), "wood", 0.0, Vector3(0, 0, 1))
-	var xs := []
-	var x := x0
-	while x < x1:
-		xs.append(Transform3D(Basis().scaled(Vector3(0.36, 0.1, 4.6)), Vector3(x, y - 0.06, zo - 2.3)))
-		x += 0.4
-	_multi(BoxMesh.new(), plank, xs)
-	var dark := smat(Color(0.2, 0.13, 0.08), "wood", 0.0, Vector3(1, 0, 0))
-	_box(Vector3(x1 - x0, 0.2, 0.2), dark, Vector3((x0 + x1) * 0.5, y - 0.18, zo))
-	_box(Vector3(x1 - x0, 0.2, 0.2), dark, Vector3((x0 + x1) * 0.5, y - 0.18, zo - 4.4))
-	var k := 0
-	x = x0 + 0.3
-	while x <= x1 + 0.01:
-		# 쇠 받침 (선체에서 비스듬히) + 위에서 매단 밧줄 + 바깥 난간 기둥
-		var hp := hull_pt(x, t_at(x, y - 2.4), 1.0)
-		_rod(hp, Vector3(x, y - 0.2, zo - 0.3), 0.07, iron(), -1.0, 6)
-		rope(Vector3(x, gunwale(x) + 0.4, hw(x)), Vector3(x, y, zo))
-		_rod(Vector3(x, y, zo), Vector3(x, y + 1.15, zo), 0.06, dark, -1.0, 6)
-		if k % 2 == 0:
-			_lantern(Vector3(x, y + 1.45, zo), 0.6, k % 4 == 0, true)
-		x += (x1 - x0 - 0.6) / 5.0
-		k += 1
-	rope(Vector3(x0 + 0.3, y + 1.1, zo), Vector3(x1, y + 1.1, zo))
-	rope(Vector3(x0 + 0.3, y + 0.55, zo), Vector3(x1, y + 0.55, zo), true)
-	# 뱃전을 넘나드는 짧은 나무 계단 (안 · 밖)
-	for n in ["S3", "S7"]:
-		var px: float = TILES[n].x + (2.6 if n == "S3" else -2.6)
-		var ytop := gunwale(px)
-		for s: float in [-1.0, 1.0]:
-			var ybot := y if s > 0.0 else 0.0
-			for q in 5:
-				var f := (q + 0.5) / 5.0
-				var zz := hw(px) + s * (0.45 + (1.0 - f) * 1.2)
-				_box(Vector3(0.9, 0.08, 0.32), plank, Vector3(px, lerpf(ybot, ytop, f), zz))
-			_rod(Vector3(px - 0.45, ybot, hw(px) + s * 1.65), Vector3(px - 0.45, ytop, hw(px) + s * 0.45), 0.05, dark, -1.0, 6)
-			_rod(Vector3(px + 0.45, ybot, hw(px) + s * 1.65), Vector3(px + 0.45, ytop, hw(px) + s * 0.45), 0.05, dark, -1.0, 6)
-
-
-## 좌현 '널빤지 걷기': 뱃전 밖으로 길게 뻗은 널빤지 (끝에 칸)
-func _plank() -> void:
-	var p: Vector3 = TILES["PL"]
-	var wood := smat(Color(0.5, 0.36, 0.22), "wood", 0.0, Vector3(0, 0, 1))
-	var z_in := -(hb(p.x) - 2.4)
-	var z_out := p.z - 1.6
-	_box(Vector3(2.7, 0.18, absf(z_out - z_in)), wood, Vector3(p.x, p.y - 0.09, (z_in + z_out) * 0.5))
-	_box(Vector3(2.9, 0.5, 0.5), smat(Color(0.25, 0.16, 0.1), "wood", 0.0), Vector3(p.x, p.y + 0.15, z_in + 0.4))
-	for s: float in [-1.0, 1.0]:
-		_mi(w._cyl(0.36, 0.36, 0.95, 14), smat(Color(0.45, 0.29, 0.16), "wood", 0.12, Vector3(0, 1, 0)), Vector3(p.x + s * 1.0, p.y + 0.48, z_in + 1.2))
-	# 갑판에서 널빤지로 오르는 계단
-	for q in 3:
-		_box(Vector3(2.4, 0.5 * (q + 1), 0.45), wood, Vector3(p.x, 0.25 * (q + 1), z_in + 2.4 - q * 0.45))
-
-
 # ── 뱃머리 · 고물 ────────────────────────────────────────────
 func _bow() -> void:
 	var spar := smat(Color(0.34, 0.22, 0.13), "wood", 0.0, Vector3(1, 0, 0))
@@ -1146,7 +992,7 @@ func _deck_props() -> void:
 	for s: float in [-1.0, 1.0]:
 		for cx: float in [-30.2, -24.7, -19.2, -13.7, -8.2, -2.7, 2.7, 8.2, 13.7, 19.2, 24.7, 30.2, 35.6]:
 			var z := s * (hb(cx) - 1.4)
-			if near_tile(Vector3(cx, 0, z), 2.1) or (s > 0.0 and cx > -15.0 and cx < 4.0) or (s < 0.0 and absf(cx) < 3.0):
+			if near_tile(Vector3(cx, 0, z), 2.1):
 				continue
 			_box(Vector3(0.75, 0.42, 1.3), dark, Vector3(cx, 0.36, z))
 			for wx: float in [-0.38, 0.38]:
@@ -1162,7 +1008,7 @@ func _deck_props() -> void:
 		# 아래층 대포 구멍
 		for k in 18:
 			var gx := -46.0 + k * 5.6
-			if gx > 50.0 or (s > 0.0 and gx > -16.0 and gx < 5.0):
+			if gx > 50.0:
 				continue
 			var y := deck_y(gx) - 4.8
 			var hp := hull_pt(gx, t_at(gx, y), s)
@@ -1226,8 +1072,6 @@ func _deck_props() -> void:
 	# 뱃전 위 등불
 	for s: float in [-1.0, 1.0]:
 		for x: float in [-58.0, -42.0, -25.0, -14.0, -3.0, 9.0, 19.5, 30.5, 46.0, 58.0]:
-			if s > 0.0 and x > -15.0 and x < 4.0:
-				continue
 			var p := Vector3(x, gunwale(x) + 0.05, s * (hw(x) - 0.12))
 			_rod(p, p + Vector3(0, 1.0, 0), 0.05, dark, -1.0, 6)
 			_rod(p + Vector3(0, 1.0, 0), p + Vector3(0, 1.0, -s * 0.5), 0.04, iron(), -1.0, 6)
