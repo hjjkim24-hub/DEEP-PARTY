@@ -6,6 +6,7 @@ uniform vec4 border_color : source_color = vec4(0.93, 0.94, 0.9, 1.0);
 uniform sampler2D icon_tex : source_color, filter_linear_mipmap;
 uniform sampler2D border_tex : source_color, filter_linear_mipmap;
 uniform float icon_scale = 0.62;
+uniform float caustics = 1.0;   // 물속 빛 무늬 (하늘 위 배에서는 0)
 varying vec3 wpos;
 varying vec3 ax;    // 칸의 로컬 x · z 축 (월드)
 varying vec3 az;
@@ -87,5 +88,5 @@ void fragment() {
 	ROUGHNESS = mix(mix(0.12 + 0.1 * flow, 0.34, max(b, ic)), 0.9, grit * 0.8);
 	SPECULAR = 0.7;
 	float t = TIME * 0.5;
-	EMISSION = vec3(0.35, 0.62, 0.52) * (caustic(wpos.xz * 0.35, t) + 0.6 * caustic(wpos.xz * 0.6 + 3.1, t * 1.3)) * 0.18;
+	EMISSION = vec3(0.35, 0.62, 0.52) * (caustic(wpos.xz * 0.35, t) + 0.6 * caustic(wpos.xz * 0.6 + 3.1, t * 1.3)) * 0.18 * caustics;
 }

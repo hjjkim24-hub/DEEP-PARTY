@@ -7,6 +7,7 @@ uniform int kind = 0;
 uniform float rough = 0.85;
 uniform float moss = 0.6;
 uniform vec3 grain = vec3(0.0, 0.0, 1.0);   // 나뭇결 방향 (로컬)
+uniform float caustics = 1.0;     // 물속 빛 무늬 (하늘 위 배에서는 0)
 uniform float plank_w = 0.3;                // 널 너비 (0 = 통널 한 장: 틈 없음)
 uniform float radial = 0.0;       // > 0: 둥근 벽 · 원뿔 지붕 (값 = 대략의 반지름)
 uniform sampler2D det_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
@@ -250,5 +251,5 @@ void fragment() {
 	}
 	float t = TIME * 0.5;
 	float cs = caustic(wpos.xz * 0.35, t) + 0.6 * caustic(wpos.xz * 0.6 + 3.1, t * 1.3);
-	EMISSION = vec3(0.35, 0.62, 0.52) * cs * 0.16 * clamp(wn.y, 0.0, 1.0);
+	EMISSION = vec3(0.35, 0.62, 0.52) * cs * 0.16 * clamp(wn.y, 0.0, 1.0) * caustics;
 }

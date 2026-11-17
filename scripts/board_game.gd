@@ -16,6 +16,7 @@ var _attacks := 0             ## 지금까지 크라켄 차례 수 (공격이 �
 var _strike_due := {}         ## 칸 → 이 라운드가 끝날 때 내려침
 var _spines := {}             ## 독가시 칸 → {"until": 이 라운드 끝에 풀림, "prev": 원래 칸 변화}
 var _surge_until := -1        ## 이 라운드 끝에 상점 가격이 돌아옴
+var _ship_until := -1         ## 이 라운드 끝에 크라켄의 배에서 섬으로 돌아옴
 
 
 func survival() -> bool:
@@ -77,7 +78,11 @@ func _game_loop() -> void:
 ## 왼쪽 위: 라운드 + 크라켄 차례까지 남은 라운드 + 걸려 있는 효과
 func _update_round_label() -> void:
 	var t := tr("ROUND %d / %d") % [_round, _round_limit()]
-	t += "\n" + (tr("Kraken's turn: end of this round") if _attack_cd <= 1 else tr("Kraken's turn: in %d rounds") % _attack_cd)
+	if world.on_ship:
+		var left := mini(_ship_until - _round + 1, Rules.SHIP_ROUNDS)
+		t += "\n" + (tr("Kraken's ship: back to the island after this round") if left <= 1 else tr("Kraken's ship: %d rounds left") % left)
+	else:
+		t += "\n" + (tr("Kraken's turn: end of this round") if _attack_cd <= 1 else tr("Kraken's turn: in %d rounds") % _attack_cd)
 	if _surge_until >= _round:
 		t += "\n" + tr("Shop prices x2")
 	if not _spines.is_empty():
@@ -140,6 +145,14 @@ func _kraken_wakes() -> void:
 ## 라운드 끝: 때가 된 칸 내려치기 → 효과 풀기 → 부하들이 칸 고르기 → (2 라운드마다) 크라켄 차례
 func _kraken_phase(r: int) -> void:
 	_highlight_chip({})
+	# 크라켄의 배 위: 공격 없음. 때가 되면 섬으로 돌아가고, 그때부터 다음 크라켄 차례를 다시 셈
+	if world.on_ship:
+		if r >= _ship_until:
+			await _ship_return()
+			_attack_cd = Rules.KRAKEN_ATTACK_EVERY
+			_update_round_label()
+			await _expire_effects(r)
+		return
 	await _kraken_strikes(r)
 	if _over():
 		return
@@ -273,6 +286,8 @@ func _kraken_turn(r: int) -> void:
 			await _kraken_spines(r)
 		"surge":
 			await _kraken_surge(r)
+		"ship":
+			await _kraken_ship(r)
 
 
 ## 크라켄 행동 카드: 크라켄 눈이 그려진 카드가 떠올라 부르르 떨다가 뒤집히며 행동 그림 · 이름 · 설명
@@ -283,6 +298,8 @@ const KRAKEN_CARDS := {
 		"text": "Turns random spaces into poison spine spaces that instantly hurt players who land on them."},
 	"surge": {"title": "SHOP PANIC", "art": preload("res://textures/ui/kraken/art_surge.png"),
 		"text": "The frightened merchant doubles shop prices for 2 rounds."},
+	"ship": {"title": "THE KRAKEN'S SHIP", "art": preload("res://textures/ui/kraken/art_ship.png"),
+		"text": "Portals open beneath every player, dropping them onto the kraken's flying ship for 2 rounds."},
 }
 const KRAKEN_CARD_BACK := preload("res://textures/ui/kraken/back_board.png")   ## tools/make_card_back.py
 const KCARD_NEON := Color(0.45, 1.0, 0.32)
@@ -342,7 +359,7 @@ func _wrap_words(text: String, font: Font, fs: int, width: float) -> String:
 ## 행동마다 오라 색 (촉수 폭풍 초록 · 독 가시 보라 · 상점 주황 · 크라켄의 배 검붉은색)
 const KRAKEN_AURA := {
 	"barrage": Color(0.4, 1.0, 0.3), "spines": Color(0.72, 0.3, 1.0),
-	"surge": Color(1.0, 0.55, 0.12), "belly": Color(0.5, 0.02, 0.04),
+	"surge": Color(1.0, 0.55, 0.12), "ship": Color(0.62, 0.03, 0.05),
 }
 const CardAuraShader := preload("res://shaders/card_aura.gdshader")
 const KCARD_SIZE := Vector2(400, 580)
@@ -572,6 +589,163 @@ func _kraken_surge(r: int) -> void:
 	_surge_until = r + Rules.KRAKEN_EFFECT_ROUNDS
 	shot_hint = "60_kraken_surge"
 	await get_tree().create_timer(0.8, false).timeout
+
+
+## 3) 크라켄의 배: 모두의 발밑에 포탈이 열려 밤하늘을 나는 배로 떨어짐 → Rules.SHIP_ROUNDS 라운드 뒤 섬으로
+func _kraken_ship(r: int) -> void:
+	if world.ship == null:
+		return
+	_ship_until = r + Rules.SHIP_ROUNDS
+	# 섬에 남아 있던 붉은 칸은 거둠 (크라켄이 배를 띄우느라 바쁨)
+	world.clear_all_dangers()
+	_strike_due.clear()
+	var alive := _alive_pawns()
+	for q in _pawns:
+		q["island_tile"] = q["tile"]
+		q["island_prev"] = q["prev"]
+	await _fall_through(alive, false)
+	# 배 위 내려앉을 칸 (서로 멀리)
+	var drops: Array = world.ship.drop_tiles.duplicate()
+	for k in alive.size():
+		var q: Dictionary = alive[k]
+		var t: int = drops[k % drops.size()]
+		q["tile"] = t
+		q["prev"] = _prev_on_loop(t)
+	await _arrive(alive, true)
+	_update_round_label()
+	shot_hint = "60_kraken_ship"
+	await _banner(tr("THE KRAKEN'S SHIP"), tr("Back to the island after %d rounds.") % Rules.SHIP_ROUNDS, 1.6)
+
+
+## 배에서 섬으로: 갑판에 포탈이 열려 떨어짐 → 원래 있던 칸 위 하늘에서 내려앉음
+func _ship_return() -> void:
+	var alive := _alive_pawns()
+	_follow = null
+	_move_camera(world.overview, world.overview_zoom * 0.85, 0.8)
+	await get_tree().create_timer(0.8, false).timeout
+	await _banner(tr("BACK TO THE ISLAND"), "", 0.9)
+	await _fall_through(alive, true)
+	for q in _pawns:
+		if q.has("island_tile"):
+			q["tile"] = q["island_tile"]
+			q["prev"] = q["island_prev"]
+			q.erase("island_tile")
+			q.erase("island_prev")
+	await _arrive(alive, false)
+	_ship_until = -1
+
+
+## 말들 발밑에 검붉은 포탈이 열리고 빙글빙글 빨려 들어감 → 화면이 까매짐
+func _fall_through(alive: Array, from_ship: bool) -> void:
+	_follow = null
+	_move_camera(world.overview, world.overview_zoom * (0.85 if from_ship else 0.7), 0.8)
+	await get_tree().create_timer(0.8, false).timeout
+	var portals := []
+	for q in alive:
+		portals.append(world.drop_portal((q["node"] as Node3D).position + Vector3(0, 0.04, 0)))
+		Audio.play("tick")
+		await get_tree().create_timer(0.12, false).timeout
+	Audio.play("box_rumble")
+	_shake_camera(0.35, 1.0)
+	await get_tree().create_timer(0.7, false).timeout
+	shot_hint = "60b_ship_portals" if not from_ship else "60e_ship_leave"
+	await get_tree().create_timer(0.4, false).timeout
+	Audio.play("bubbles")
+	for q in alive:
+		var node: Node3D = q["node"]
+		var t := create_tween().set_parallel(true)
+		t.tween_property(node, "position:y", node.position.y - 2.6, 0.75).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		t.tween_property(node, "rotation:y", node.rotation.y + TAU * 1.5, 0.75)
+		t.tween_property(node, "scale", Vector3.ONE * PAWN_SCALE * 0.5, 0.75)
+	await get_tree().create_timer(0.8, false).timeout
+	for q in alive:
+		(q["node"] as Node3D).visible = false
+	for p in portals:
+		world.close_portal(p)
+	await get_tree().create_timer(0.35, false).timeout
+	_fade.get_parent().move_child(_fade, -1)
+	await _fade_black(_fade, 1.0, 0.45)
+	# 탈락한 말은 섬에 남음 (배 위에선 안 보이게)
+	for q in _pawns:
+		if not bool(q["alive"]):
+			(q["node"] as Node3D).visible = from_ship
+	if from_ship:
+		world.leave_ship()
+	else:
+		world.enter_ship()
+	_update_round_label()
+
+
+## 화면이 밝아지며 하늘에 포탈이 열리고 말들이 하나씩 떨어져 칸에 내려앉음
+func _arrive(alive: Array, to_ship: bool) -> void:
+	if to_ship:
+		# 밤하늘을 나는 배를 옆에서 먼저 보여 줌
+		var at: Vector3 = world.ship.AT
+		_cinematic(at + Vector3(24.0, 9.0, 112.0), at + Vector3(3.0, 11.0, 0.0), 1.0, 0.01)
+		_move_camera(world.overview, world.overview_zoom, 0.01)
+		await get_tree().create_timer(0.15, false).timeout
+		await _fade_black(_fade, 0.0, 0.7)
+		shot_hint = "60c_ship_reveal"
+		await get_tree().create_timer(1.6, false).timeout
+		_cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 1.4)
+		await get_tree().create_timer(1.4, false).timeout
+	else:
+		_move_camera(world.overview, world.overview_zoom * 0.7, 0.01)
+		await get_tree().create_timer(0.15, false).timeout
+		await _fade_black(_fade, 0.0, 0.6)
+	var portals := []
+	for q in alive:
+		var node: Node3D = q["node"]
+		var spot := _spot_on(int(q["tile"]), q)
+		portals.append(world.drop_portal(spot + Vector3(0, 7.5, 0), true))
+		node.position = spot + Vector3(0, 7.0, 0)
+		node.rotation.y = 0.0
+		node.scale = Vector3.ONE * PAWN_SCALE * 0.5
+		Audio.play("tick")
+		await get_tree().create_timer(0.15, false).timeout
+	await get_tree().create_timer(0.45, false).timeout
+	for k in alive.size():
+		var q: Dictionary = alive[k]
+		var node: Node3D = q["node"]
+		var spot := _spot_on(int(q["tile"]), q)
+		node.visible = true
+		var t := create_tween().set_parallel(true)
+		t.tween_property(node, "position", spot, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		t.tween_property(node, "scale", Vector3.ONE * PAWN_SCALE, 0.35)
+		t.tween_property(node, "rotation:y", TAU, 0.5)
+		get_tree().create_timer(0.5, false).timeout.connect(func() -> void:
+			Audio.play("box_burst", 60)
+			_squash(node)
+			world.bubbles_at(spot + Vector3(0, 0.2, 0), 10, 0.5, true))
+		if k == 1:
+			shot_hint = "60d_ship_drop"
+		await get_tree().create_timer(0.3, false).timeout
+	await get_tree().create_timer(0.55, false).timeout
+	_shake_camera(0.3, 0.4)
+	for p in portals:
+		world.close_portal(p)
+	await get_tree().create_timer(0.5, false).timeout
+
+
+## 배 위 한 바퀴 길에서 t 바로 앞 칸 (떨어진 뒤 앞으로 가는 방향을 정함)
+func _prev_on_loop(t: int) -> int:
+	for i in world.spaces.size():
+		if world.in_play(i) and (world.spaces[i]["next"] as Array).has(t) and (world.spaces[i]["links"] as Array).size() <= 2:
+			return i
+	for i in world.spaces.size():
+		if world.in_play(i) and (world.spaces[i]["next"] as Array).has(t):
+			return i
+	return -1
+
+
+## 배 위에서는 '크라켄 미끼' 카드가 나오지 않음 (크라켄이 배를 붙들고 있어서)
+func _draw_card(p: Dictionary) -> void:
+	if world.on_ship and rig_card == "":
+		var c: Dictionary = Rules.random_card(_rng, true)
+		while String(c["id"]) == "bait":
+			c = Rules.random_card(_rng, true)
+		rig_card = String(c["id"])
+	await super(p)
 
 
 ## 크라켄이 다음에 내려칠 칸들 (대개 누군가 다음 차례에 멈출 만한 곳)

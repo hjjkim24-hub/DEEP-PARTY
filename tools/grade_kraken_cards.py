@@ -15,6 +15,7 @@ JOBS = {
     "art_barrage": ("il_storm_b.png", (400, 0, 1440), (0.92, 1.0, 0.95)),
     "art_spines": ("il_spines_a.png", (150, 0, 1440), (0.95, 0.92, 1.0)),
     "art_surge": ("il_surge_a.png", (420, 40, 1380), (1.0, 0.98, 0.9)),
+    "art_ship": ("il_ship_b.png", (360, 0, 1440), (0.96, 0.95, 1.0)),
 }
 
 
@@ -32,7 +33,10 @@ def grade(bgr, tint):
     return np.clip(img, 0, 1)
 
 
+ONLY = sys.argv[2:]    # 이름을 주면 그 카드만 다시 만듦
 for name, (f, (x, y, cw), tint) in JOBS.items():
+    if ONLY and name not in ONLY:
+        continue
     bgr = cv2.imread(os.path.join(SRC, f))
     ch = cw * 3 // 4
     bgr = bgr[y:y + ch, x:x + cw]

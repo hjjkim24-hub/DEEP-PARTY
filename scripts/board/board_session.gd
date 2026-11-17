@@ -332,8 +332,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_follow = null
 		var k := 0.02 * _zoom
 		_focus += Vector3(-mm.relative.x * k, 0, -mm.relative.y * k)
-		_focus.x = clampf(_focus.x, -world.half_w, world.half_w)
-		_focus.z = clampf(_focus.z, -world.half_d, world.half_d)
+		_focus.x = clampf(_focus.x, world.view_center.x - world.half_w, world.view_center.x + world.half_w)
+		_focus.z = clampf(_focus.z, world.view_center.z - world.half_d, world.view_center.z + world.half_d)
 
 
 # ── 화면 UI ──────────────────────────────────────────────────
@@ -828,9 +828,17 @@ func _hop(p: Dictionary, nxt: int) -> void:
 	var to := _spot_on(nxt, p)
 	p["prev"] = p["tile"]
 	p["tile"] = nxt
-	var lift := 0.9 + maxf(0.0, to.y - from.y)
+	var dy := to.y - from.y
 	var t := create_tween()
-	t.tween_method(func(f: float) -> void: node.position = from.lerp(to, f) + Vector3(0, sin(f * PI) * lift, 0), 0.0, 1.0, HOP_TIME)
+	if absf(dy) > 4.0:
+		# 줄사다리 오르내리기 (크라켄의 배 돛대 망대): 천천히, 좌우로 살짝 흔들리며
+		var dur := 0.35 + absf(dy) * 0.045
+		t.tween_method(func(f: float) -> void:
+			var e := f * f * (3.0 - 2.0 * f)
+			node.position = from.lerp(to, e) + Vector3(0, sin(f * PI) * 0.6, 0) + Vector3(sin(f * TAU * 3.0) * 0.12, 0, 0), 0.0, 1.0, dur)
+	else:
+		var lift := 0.9 + maxf(0.0, dy)
+		t.tween_method(func(f: float) -> void: node.position = from.lerp(to, f) + Vector3(0, sin(f * PI) * lift, 0), 0.0, 1.0, HOP_TIME)
 	await t.finished
 	Audio.play("tick")
 	_squash(node)
@@ -2015,7 +2023,7 @@ func _on_pick_input(event: InputEvent) -> void:
 		var bd := 70.0
 		for i in world.spaces.size():
 			var wp: Vector3 = world.spaces[i]["pos"]
-			if _camera.is_position_behind(wp) or i == world.start_index:
+			if _camera.is_position_behind(wp) or i == world.start_index or not world.in_play(i):
 				continue
 			var d := _camera.unproject_position(wp).distance_to(mm.position)
 			if d < bd:
@@ -2206,6 +2214,8 @@ func _tile_near(x: float, z: float) -> int:
 	var best := 0
 	var bd := INF
 	for i in world.spaces.size():
+		if not world.in_play(i):
+			continue
 		var q: Vector3 = world.spaces[i]["base"]
 		var d := Vector2(q.x - x, q.z - z).length()
 		if d < bd:

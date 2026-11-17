@@ -42,10 +42,11 @@ const HEARTS_MAX := 3
 ##   barrage: 많은 칸을 붉게 표시 → 다음 라운드 끝에 내려침
 ##   spines : 적은 칸을 2 라운드 동안 독가시 칸으로 (멈추면 하트 -1, 상점 · 포털 등도 바뀔 수 있음)
 ##   surge  : 2 라운드 동안 상점 가격 2 배
-##   (belly : 모두를 '크라켄의 배' 맵으로 2 라운드 — 맵 추가 후 KRAKEN_ACTIONS 에 넣을 것.
-##            배에서 나온 뒤부터 다음 차례까지 다시 셈)
+##   ship   : 모두의 발밑에 포탈이 열려 하늘을 나는 '크라켄의 배'로 2 라운드 (배에선 크라켄 공격 없음).
+##            섬으로 돌아온 뒤부터 다음 크라켄 차례까지 다시 셈
 const KRAKEN_ATTACK_EVERY := 2
-const KRAKEN_ACTIONS := ["barrage", "spines", "surge"]
+const KRAKEN_ACTIONS := ["barrage", "spines", "surge", "ship"]
+const SHIP_ROUNDS := 2              ## ship: 배 위에서 보내는 라운드 수
 const KRAKEN_TARGETS_BASE := 40     ## barrage: 첫 공격에 노리는 칸 수 (판은 약 180칸)
 const KRAKEN_TARGETS_GROW := 5.0    ## 크라켄 차례마다 늘어나는 수
 const KRAKEN_TARGETS_MAX := 60

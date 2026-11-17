@@ -22,6 +22,18 @@ func _ready() -> void:
 	_run()
 
 
+## 게임이 shot_hint 를 차례로 내보낼 때마다 한 장씩
+func _catch(g: Node, hints: Array, prefix: String) -> void:
+	var got := {}
+	var t0 := Time.get_ticks_msec()
+	while got.size() < hints.size() and Time.get_ticks_msec() - t0 < 90000:
+		var h := String(g.shot_hint)
+		if hints.has(h) and not got.has(h):
+			got[h] = true
+			await _shot(prefix + h)
+		await get_tree().process_frame
+
+
 func _shot(shot_name: String) -> void:
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
@@ -180,6 +192,102 @@ func _run() -> void:
 		print("STORM struck t=", (Time.get_ticks_msec() - t1) / 1000.0, " fps=", Engine.get_frames_per_second())
 		get_tree().quit(0)
 		return
+	# ship: 크라켄의 배 (밤하늘) 여러 각도
+	if "ship" in _want:
+		var gp: Node = null
+		while gp == null or not ("hold_loop" in gp):
+			await get_tree().process_frame
+			gp = get_tree().current_scene
+		gp.hold_loop = true
+		while String(gp.shot_hint) != "34_kraken_awakens":
+			await get_tree().process_frame
+		await get_tree().create_timer(3.0).timeout
+		var ws: Node = gp.world
+		ws.enter_ship()
+		for q in gp._pawns:
+			(q["node"] as Node3D).visible = false
+		for cl in get_tree().root.find_children("*", "CanvasLayer", true, false):
+			(cl as CanvasLayer).visible = false
+		var at: Vector3 = ws.ship.AT
+		gp._cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.01)
+		gp._move_camera(ws.overview, ws.overview_zoom, 0.01)
+		await get_tree().create_timer(2.0).timeout
+		await _shot("ship_overview")
+		var views := {"ship_side": [Vector3(6, 10, 110), Vector3(3, 10, 0)], "ship_bow": [Vector3(92, 26, 58), Vector3(4, 8, 0)],
+			"ship_stern": [Vector3(-84, 24, 48), Vector3(-22, 8, 0)], "ship_top": [Vector3(-10, 34, 26), Vector3(-14, 15, 0)],
+			"ship_deck": [Vector3(2, 12, 30), Vector3(4, 0, 2)]}
+		for k in views:
+			gp._cinematic(at + views[k][0], at + views[k][1], 1.0, 0.01)
+			await get_tree().create_timer(1.2).timeout
+			await _shot(k)
+		get_tree().quit(0)
+		return
+	# shipart: '크라켄의 배' 카드 일러스트 (달빛 아래 하늘을 나는 배 + 하늘에 열린 포탈에서 떨어지는 말)
+	if "shipart" in _want:
+		var gq: Node = null
+		while gq == null or not ("hold_loop" in gq):
+			await get_tree().process_frame
+			gq = get_tree().current_scene
+		gq.hold_loop = true
+		while String(gq.shot_hint) != "34_kraken_awakens":
+			await get_tree().process_frame
+		await get_tree().create_timer(3.0).timeout
+		var wq: Node = gq.world
+		wq.enter_ship()
+		for cl in get_tree().root.find_children("*", "CanvasLayer", true, false):
+			(cl as CanvasLayer).visible = false
+		get_viewport().msaa_3d = Viewport.MSAA_8X
+		get_viewport().scaling_3d_scale = 2.0
+		var atq: Vector3 = wq.ship.AT
+		var tiles: Array = wq.ship.drop_tiles
+		for k in gq._pawns.size():
+			var pn: Node3D = gq._pawns[k]["node"]
+			pn.visible = k < 2
+			var tp: Vector3 = wq.spaces[tiles[k % tiles.size()]]["pos"]
+			pn.position = tp + Vector3(0, 3.4 + k * 1.5, 0)
+			pn.rotation = Vector3(0.3, 0.6 + k, 0.2)
+			if k < 2:
+				wq.drop_portal(tp + Vector3(0, 7.5 + k * 1.5, 0), true)
+		gq._camera.fov = 44.0
+		gq._cinematic(atq + Vector3(60.0, 24.0, 104.0), atq + Vector3(-3.0, 11.0, 0.0), 1.0, 0.01)
+		await get_tree().create_timer(2.5).timeout
+		await _shot("il_ship")
+		gq._cinematic(atq + Vector3(16.0, 14.0, 118.0), atq + Vector3(-2.0, 19.0, 0.0), 1.0, 0.01)
+		await get_tree().create_timer(1.5).timeout
+		await _shot("il_ship_b")
+		get_tree().quit(0)
+		return
+	# shipdrop: 실제 게임 흐름으로 '크라켄의 배' 카드 → 포탈 → 배 → 섬으로 귀환
+	if "shipdrop" in _want:
+		var gd: Node = null
+		while gd == null or not ("hold_loop" in gd):
+			await get_tree().process_frame
+			gd = get_tree().current_scene
+		gd.hold_loop = true
+		while String(gd.shot_hint) != "34_kraken_awakens":
+			await get_tree().process_frame
+		await get_tree().create_timer(4.0).timeout
+		gd._round = 1
+		gd._update_round_label()
+		gd.rig_kraken = "ship"
+		gd._kraken_turn(1)
+		await _catch(gd, ["60_kraken_card_ship", "60b_ship_portals", "60c_ship_reveal", "60d_ship_drop", "60_kraken_ship"], "sd_")
+		await get_tree().create_timer(2.5).timeout
+		gd._round = 2
+		gd._update_round_label()
+		gd.focus_on(gd._my_pawn())
+		await get_tree().create_timer(1.5).timeout
+		await _shot("sd_play")
+		print("SHIP tiles=", gd.world.regular_tiles().size(), " my tile=", gd._my_pawn()["tile"], " opts=", gd._next_options(gd._my_pawn()))
+		gd._round = 3
+		gd._kraken_phase(3)
+		await _catch(gd, ["60e_ship_leave"], "sd_")
+		while gd.world.on_ship or gd._ship_until >= 0:
+			await get_tree().process_frame
+		await get_tree().create_timer(1.0).timeout
+		await _shot("sd_back")
+		get_tree().quit(0)
+		return
 	# backmap: 카드 뒷면용 SUNKEN ISLAND 판 전체 (글씨 · 말 없이, 거의 위에서)
 	if "backmap" in _want:
 		var gb: Node = null
@@ -223,7 +331,7 @@ func _run() -> void:
 		while String(gk.shot_hint) != "34_kraken_awakens":
 			await get_tree().process_frame
 		await get_tree().create_timer(4.0).timeout
-		for a in ["barrage", "spines", "surge"]:
+		for a in ["barrage", "spines", "surge", "ship"]:
 			Engine.time_scale = 0.25
 			gk._kraken_card(a)
 			if a == "barrage":

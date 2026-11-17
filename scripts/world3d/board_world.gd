@@ -93,6 +93,7 @@ const KIND_NAMES := {
 const COOP_KIND_ORDER := ["plain", "treasure", "supply", "heal", "shop", "urchin", "whirlpool", "boss"]
 
 const BoardMaps := preload("res://scripts/world3d/board_maps.gd")
+const SkyShip := preload("res://scripts/world3d/sky_ship.gd")
 const STEP := 0.5             ## 바닥 격자 간격
 const TILE := 2.2
 const TILE_H := 0.45
@@ -113,6 +114,12 @@ var zoom_max := 4.5           ## 카메라가 가장 멀리 (보드 전체)
 var overview := Vector3(0, 0, 1.5)
 var overview_zoom := 3.4
 
+var ship = null               ## 크라켄의 배 (SUNKEN ISLAND 에만). on_ship = 지금 배 위에서 노는 중
+var on_ship := false
+var view_center := Vector3.ZERO   ## 카메라를 끌 수 있는 범위의 가운데 (배 위에선 배 가운데)
+var _island_nodes: Array = []
+var _island_view := {}
+var _we: WorldEnvironment
 var spaces: Array = []        ## {pos: Vector3 (칸 윗면 가운데), kind, links: Array[int], yaw}
 var start_index := 0
 var _rng := RandomNumberGenerator.new()
@@ -161,6 +168,8 @@ func _ready() -> void:
 	_effects()
 	_outer_seabed()
 	_sea_life()
+	if map_id == "sunken_island":
+		_build_ship()
 
 
 # ── 칸 배치 ──────────────────────────────────────────────────
@@ -621,6 +630,7 @@ func _environment() -> void:
 	env.adjustment_contrast = 1.12
 	we.environment = env
 	add_child(we)
+	_we = we
 	world_env = env
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-58, -32, 0)
@@ -778,10 +788,17 @@ func _board_rim() -> void:
 
 
 # ── 칸 ───────────────────────────────────────────────────────
-func _tile_top_mat(kind: String) -> ShaderMaterial:
-	var key := "tile_" + kind
+func _tile_top_mat(kind: String, on_ship_: bool = false) -> ShaderMaterial:
+	var key := ("tile_ship_" if on_ship_ else "tile_") + kind
 	if _mats.has(key):
 		return _mats[key]
+	if on_ship_:
+		# 하늘 위 배: 물속 빛 무늬 없는 복사본
+		var sm := (_tile_top_mat(kind) as ShaderMaterial).duplicate() as ShaderMaterial
+		if kind != "portal":
+			sm.set_shader_parameter("caustics", 0.0)
+		_mats[key] = sm
+		return sm
 	var m := ShaderMaterial.new()
 	if kind == "portal":
 		m.shader = PortalShader
@@ -1722,6 +1739,18 @@ func mark_danger(i: int, light: bool = true) -> void:
 	create_tween().tween_property(root, "position:y", best.y, 0.7).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	bubbles_at(best, 14, 0.4, true)
 	_dust(best, 0.6)
+
+
+## 붉은 칸 전부 거두기 (크라켄이 배를 띄울 때)
+func clear_all_dangers() -> void:
+	for i in _dangers.keys():
+		var d: Dictionary = _dangers[i]
+		var root: Node3D = d["tn"]["root"]
+		_clear_danger(i)
+		if is_instance_valid(root):
+			var t := create_tween()
+			t.tween_property(root, "position:y", root.position.y - 5.0, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+			t.tween_callback(root.queue_free)
 
 
 func danger_tiles() -> Array:
@@ -3398,6 +3427,8 @@ func _shop_stall(i: int) -> void:
 
 
 func _stall_ok(c: Vector3, own: int) -> bool:
+	if spaces[own].get("ship", false):
+		return ship.deck_free(c, own)
 	if _in_chasm(c.x, c.z) or absf(c.x) > half_w - 1.5 or absf(c.z) > half_d - 1.5:
 		return false
 	if absf(natural_height(c.x, c.z) - (spaces[own]["base"] as Vector3).y) > 0.9:
@@ -3676,7 +3707,7 @@ func _manta(center: Vector3, radius: Vector2, speed: float, phase: float) -> voi
 func regular_tiles() -> Array:
 	var out := []
 	for i in spaces.size():
-		if String(spaces[i]["kind"]) in ["plain", "minigame", "chance"]:
+		if in_play(i) and String(spaces[i]["kind"]) in ["plain", "minigame", "chance"]:
 			out.append(i)
 	return out
 
@@ -3686,7 +3717,7 @@ func set_tile_look(i: int, kind: String) -> void:
 	var sp: Dictionary = spaces[i]
 	if not sp.has("top_mi"):
 		return
-	(sp["top_mi"] as MeshInstance3D).material_override = _tile_top_mat(kind)
+	(sp["top_mi"] as MeshInstance3D).material_override = _tile_top_mat(kind, sp.get("ship", false))
 	(sp["body_mi"] as MeshInstance3D).material_override = _mat((TILE_COLORS[kind] as Color).darkened(0.2), 0.25)
 	var body := sp["body_mi"] as Node3D
 	var top := sp["top_mi"] as Node3D
@@ -3776,7 +3807,7 @@ func hide_trophy(burst: bool = true) -> void:
 func spaces_of_kind(kind: String) -> Array:
 	var out := []
 	for i in spaces.size():
-		if spaces[i]["kind"] == kind:
+		if spaces[i]["kind"] == kind and in_play(i):
 			out.append(i)
 	return out
 
@@ -3837,3 +3868,92 @@ func start_spots(n: int) -> Array:
 	for i in n:
 		out.append(top + offs[i % 4])
 	return out
+
+
+# ── 크라켄의 배 ──────────────────────────────────────────────
+## 지금 노는 곳의 칸인지 (섬 칸 / 배 칸)
+func in_play(i: int) -> bool:
+	return bool(spaces[i].get("ship", false)) == on_ship
+
+
+func _build_ship() -> void:
+	ship = SkyShip.new()
+	ship.w = self
+	add_child(ship)
+	ship.build()
+	ship.strip_caustics(ship)
+
+
+## 섬 ↔ 배 바꾸기 (화면이 까맣게 가려진 사이에 부름)
+func enter_ship() -> void:
+	if ship == null or on_ship:
+		return
+	on_ship = true
+	_island_view = {"overview": overview, "overview_zoom": overview_zoom, "zoom_max": zoom_max, "half_w": half_w, "half_d": half_d, "center": view_center}
+	# 섬 쪽 것은 전부 숨김 (구름 틈으로 멀리 비치지 않게)
+	_island_nodes.clear()
+	for c in get_children():
+		if c is Node3D and c != ship and not ship.lights.has(c) and (c as Node3D).visible:
+			_island_nodes.append(c)
+			(c as Node3D).visible = false
+	ship.visible = true
+	for l in ship.lights:
+		(l as Node3D).visible = true
+	_we.environment = ship.env
+	overview = ship.AT + Vector3(2.0, 0, -5.0)
+	overview_zoom = 6.6
+	zoom_max = 7.5
+	half_w = 52.0
+	half_d = 16.0
+	view_center = ship.AT
+
+
+func leave_ship() -> void:
+	if not on_ship:
+		return
+	on_ship = false
+	for n in _island_nodes:
+		if is_instance_valid(n):
+			(n as Node3D).visible = true
+	_island_nodes.clear()
+	ship.visible = false
+	for l in ship.lights:
+		(l as Node3D).visible = false
+	_we.environment = world_env
+	overview = _island_view["overview"]
+	overview_zoom = _island_view["overview_zoom"]
+	zoom_max = _island_view["zoom_max"]
+	half_w = _island_view["half_w"]
+	half_d = _island_view["half_d"]
+	view_center = _island_view["center"]
+
+
+## 배로 떨어지는 포탈 (칸 위 바닥 / 배 위 하늘에서 아래를 향함). open 0→1 로 열림
+const DropPortalShader := preload("res://shaders/drop_portal.gdshader")
+func drop_portal(p: Vector3, facing_down: bool = false) -> MeshInstance3D:
+	var q := PlaneMesh.new()
+	q.size = Vector2(3.8, 3.8)
+	var m := ShaderMaterial.new()
+	m.shader = DropPortalShader
+	m.set_shader_parameter("open", 0.0)
+	var mi := _mi(q, m, p, Basis(Vector3(1, 0, 0), PI) if facing_down else Basis())
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.25, 0.25)
+	l.light_energy = 0.0
+	l.omni_range = 5.0
+	l.position = Vector3(0, 0.6, 0) if not facing_down else Vector3(0, 0.6, 0)
+	mi.add_child(l)
+	var t := create_tween().set_parallel(true)
+	t.tween_method(func(v: float) -> void: m.set_shader_parameter("open", v), 0.0, 1.0, 0.6).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(l, "light_energy", 2.2, 0.6)
+	return mi
+
+
+func close_portal(mi: MeshInstance3D) -> void:
+	if not is_instance_valid(mi):
+		return
+	var m := mi.material_override as ShaderMaterial
+	var t := create_tween()
+	t.tween_method(func(v: float) -> void: m.set_shader_parameter("open", v), 1.0, 0.0, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	t.tween_callback(mi.queue_free)
