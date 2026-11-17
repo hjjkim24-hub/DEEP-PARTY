@@ -10,8 +10,8 @@ from skimage import measure
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(os.path.dirname(HERE), "models", "kraken_body.obj")
 STEP = 0.062
-lo = np.array([-4.6, -3.6, -4.8])
-hi = np.array([4.6, 5.4, 3.6])
+lo = np.array([-5.6, -3.6, -5.2])
+hi = np.array([5.6, 5.6, 5.4])
 xs = np.arange(lo[0], hi[0], STEP, dtype=np.float32)
 ys = np.arange(lo[1], hi[1], STEP, dtype=np.float32)
 zs = np.arange(lo[2], hi[2], STEP, dtype=np.float32)
@@ -55,32 +55,71 @@ def noise3(scale, amp, seed):
     return ndimage.map_coordinates(g, idx, order=1, mode="wrap").astype(np.float32) * amp
 
 
-# 외투막: 뒤로 젖혀진 커다란 주머니
-d = ellipsoid(0, 2.0, -1.9, 1.75, 2.75, 1.8, tilt=-0.62)
-# 머리 (눈이 붙은 넓적한 부분)
-d = smin(d, ellipsoid(0, 0.15, 0.35, 2.05, 1.15, 1.6), 0.7)
-# 눈두덩 (양옆으로 불룩)
+# ── 문어 모양: 커다란 외투막(머리 주머니)이 뒤로 처지고, 그 아래 눈 달린 머리, 머리 밑에서 물갈퀴로 이어진 팔 8개
+# 외투막: 몸에서 가장 큰 부분. 뒤로 젖혀지며 끝이 살짝 뾰족
+d = ellipsoid(0, 2.25, -1.25, 2.3, 2.65, 2.55, tilt=-0.55)
+d = smin(d, ellipsoid(0, 4.0, -2.75, 1.25, 1.35, 1.4, tilt=-0.7), 1.1)
+# 머리: 외투막과 목 없이 매끈하게
+d = smin(d, ellipsoid(0, 0.25, 0.65, 1.85, 1.2, 1.65), 1.2)
+# 눈두덩 (양옆으로 불룩) + 눈 위 주름진 눈썹
 for sx in (-1, 1):
-    d = smin(d, ellipsoid(sx * 1.25, 0.62, 1.05, 0.72, 0.62, 0.66), 0.35)
-# 눈 구멍 (눈알이 들어갈 자리, 위쪽은 눈꺼풀처럼 덮임)
+    d = smin(d, ellipsoid(sx * 1.45, 0.75, 1.0, 0.82, 0.78, 0.78), 0.45)
+    d = smin(d, capsule((sx * 1.0, 1.32, 1.25), (sx * 1.85, 1.2, 0.95), 0.2, 0.14), 0.2)
+# 눈 구멍 (옆 · 앞을 봄)
 for sx in (-1, 1):
-    d = smax(d, -ellipsoid(sx * 1.42, 0.6, 1.5, 0.42, 0.3, 0.36), 0.08)
-# 팔 뿌리 8개: 머리 아래에서 바깥으로 퍼졌다가 심연 아래로
+    d = smax(d, -ellipsoid(sx * 1.66, 0.74, 1.4, 0.44, 0.33, 0.4), 0.08)
+# 물갈퀴: 머리 밑에 넓게 퍼져 팔 뿌리를 잇는 막
+d = smin(d, ellipsoid(0, -0.85, 0.45, 2.75, 0.5, 2.55), 0.7)
+# 팔 뿌리 8개: 머리 밑에서 바닥을 따라 바깥으로 뻗다가 심연 아래로 (앞쪽 두 개는 피함 — 얼굴 가리지 않게)
 for k in range(8):
     a = (k + 0.5) / 8 * np.pi * 2
     ca, sa = np.cos(a), np.sin(a)
-    p0 = (ca * 0.6, -0.55, 0.3 + sa * 0.6)
-    p1 = (ca * 2.2, -1.2, 0.3 + sa * 2.0)
-    p2 = (ca * 3.4, -3.4, 0.3 + sa * 3.0)
-    d = smin(d, capsule(p0, p1, 0.72, 0.6), 0.5)
-    d = smin(d, capsule(p1, p2, 0.6, 0.48), 0.25)
+    tw = 0.25 * (1 if k % 2 else -1)
+    p0 = (ca * 0.8, -0.8, 0.45 + sa * 0.8)
+    p1 = (ca * 2.7, -1.25, 0.45 + sa * 2.5)
+    p2 = (np.cos(a + tw) * 4.2, -2.1, 0.45 + np.sin(a + tw) * 3.9)
+    p3 = (np.cos(a + tw * 2) * 4.9, -3.5, 0.45 + np.sin(a + tw * 2) * 4.5)
+    d = smin(d, capsule(p0, p1, 0.8, 0.66), 0.55)
+    d = smin(d, capsule(p1, p2, 0.66, 0.55), 0.3)
+    d = smin(d, capsule(p2, p3, 0.55, 0.46), 0.25)
 # 깔때기 (옆구리 숨구멍)
-d = smin(d, capsule((1.5, -0.2, -0.6), (2.0, -0.45, -0.1), 0.32, 0.22), 0.25)
-# 주름 · 혹: 외투막 쪽에 큰 굴곡, 전체에 잔 주름
-wr = np.sin((Y * 7.0 + noise3(2.0, 1.6, 5)) * 1.0) * 0.012
-d = d + noise3(3.0, 0.06, 1) + noise3(7.0, 0.018, 2) + wr
+d = smin(d, capsule((1.55, -0.1, -0.5), (2.1, -0.35, 0.0), 0.34, 0.24), 0.25)
+d = smax(d, -capsule((2.05, -0.33, -0.05), (2.3, -0.4, 0.2), 0.14, 0.14), 0.05)
+# 외투막의 혹 (크고 작은 돌기)
+r2 = np.random.default_rng(11)
+for _ in range(70):
+    u, v = r2.uniform(0, 2 * np.pi), r2.uniform(-0.2, 1.0)
+    cx, cy, cz = 2.2 * np.cos(u) * np.sqrt(1 - v * v), 2.25 + 2.5 * v, -1.25 + 2.45 * np.sin(u) * np.sqrt(1 - v * v)
+    if cz > 0.6 and cy < 1.8:
+        continue
+    rr = r2.uniform(0.07, 0.17)
+    d = smin(d, np.sqrt((X - cx) ** 2 + (Y - cy) ** 2 + (Z - cz) ** 2) - rr, 0.12)
+# 주름 · 결: 외투막 둘레로 굵은 주름, 전체에 잔 주름
+wr = np.sin(Y * 5.5 + noise3(2.0, 1.8, 5)) * 0.018 * np.clip((Y - 0.8) / 2.0, 0, 1)
+d = d + noise3(3.0, 0.05, 1) + noise3(7.0, 0.016, 2) + wr
 d[:, :, :] = np.where(Y < -3.45, np.maximum(d, -(Y + 3.45)), d)   # 바닥 자르기
 
+if os.environ.get("PREVIEW"):
+    from PIL import Image
+    occ = d < 0
+    ims = []
+    for axis, flip, name in ((2, True, "front"), (0, True, "side"), (1, True, "top")):
+        o = np.flip(occ, axis) if flip else occ
+        hit = o.any(axis)
+        depth = np.argmax(o, axis).astype(np.float32)
+        gy, gx = np.gradient(depth)
+        shade = np.clip(0.75 - gx * 0.25 - gy * 0.25, 0.2, 1.0) * (1 - depth / depth.max() * 0.5)
+        img = np.where(hit, shade, 0.0)
+        img = np.rot90(img) if axis != 1 else img.T
+        ims.append(Image.fromarray((img * 255).astype(np.uint8)).resize((img.shape[1] * 2, img.shape[0] * 2)))
+    W = sum(i.width for i in ims)
+    S = Image.new("L", (W, max(i.height for i in ims)))
+    x = 0
+    for i in ims:
+        S.paste(i, (x, 0))
+        x += i.width
+    S.save("/tmp/kraken_preview.png")
+    raise SystemExit
 verts, faces, normals, _ = measure.marching_cubes(d, 0.0, spacing=(STEP, STEP, STEP), allow_degenerate=False)
 verts += lo
 # 마칭 큐브 노멀은 바깥쪽 = 거리 증가 방향 (부호 맞추기)

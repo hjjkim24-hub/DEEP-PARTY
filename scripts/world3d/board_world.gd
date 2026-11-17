@@ -1508,7 +1508,7 @@ func _kraken_lair(at: Vector2) -> void:
 		eye.height = 0.72
 		eye.radial_segments = 48
 		eye.rings = 24
-		var e := _mi(eye, em, Vector3(sd * 1.37, 0.6, 1.3), Basis(Vector3.UP, sd * 0.38), kraken_root)
+		var e := _mi(eye, em, Vector3(sd * 1.57, 0.74, 1.3), Basis(Vector3.UP, sd * 0.72), kraken_root)
 		kraken_eyes.append(e)
 	var gl := OmniLight3D.new()
 	gl.light_color = Color(0.45, 1.0, 0.35)
@@ -1569,6 +1569,39 @@ func _tube_mesh() -> ArrayMesh:
 	return _tube
 
 
+## 빨판 하나 (컵 모양, 반지름 1): 바깥으로 말린 두툼한 테 + 깊게 파인 안쪽. UV.x = 안쪽(0)~테두리(1), UV2.x = 1 (빨판 표시)
+var _sucker: ArrayMesh
+
+
+func _sucker_mesh() -> ArrayMesh:
+	if _sucker:
+		return _sucker
+	var prof := [Vector2(0.0, -0.3), Vector2(0.14, -0.29), Vector2(0.3, -0.22), Vector2(0.46, -0.06), Vector2(0.58, 0.14),
+		Vector2(0.68, 0.27), Vector2(0.8, 0.31), Vector2(0.9, 0.24), Vector2(0.98, 0.08), Vector2(1.04, -0.12), Vector2(1.08, -0.45)]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var seg := 20
+	var w := seg + 1
+	for k in prof.size():
+		var pr: Vector2 = prof[k]
+		for j in w:
+			var a := TAU * j / seg
+			st.set_uv(Vector2(clampf(pr.x / 0.8, 0.0, 1.0), 0.0))
+			st.set_uv2(Vector2(1.0, 0.0))
+			st.add_vertex(Vector3(cos(a) * pr.x, pr.y, sin(a) * pr.x))
+	for k in prof.size() - 1:
+		for j in seg:
+			var i0 := k * w + j
+			var i1 := i0 + 1
+			var i2 := i0 + w
+			var i3 := i2 + 1
+			st.add_index(i0); st.add_index(i1); st.add_index(i3)
+			st.add_index(i0); st.add_index(i3); st.add_index(i2)
+	st.generate_normals()
+	_sucker = st.commit()
+	return _sucker
+
+
 func make_tentacle(n: int, r0: float, seg_len: float, dir: Vector3 = Vector3(0, 0, 1)) -> Dictionary:
 	var length := n * seg_len
 	var mat := ShaderMaterial.new()
@@ -1586,6 +1619,29 @@ func make_tentacle(n: int, r0: float, seg_len: float, dir: Vector3 = Vector3(0, 
 	if d.length() < 0.01:
 		d = Vector3(0, 0, 1)
 	mi.basis = Basis.looking_at(-d.normalized(), Vector3.UP)
+	# 빨판 두 줄 (배 쪽, 엇갈려서). 끝으로 갈수록 작고 촘촘
+	var cups := []
+	var u := 0.05
+	var row := 0
+	while u < 0.96:
+		var r := r0 * lerpf(1.0, 0.1, pow(u, 0.85))
+		cups.append(Vector3(u, 0.4 if row % 2 == 0 else -0.4, 0.3))
+		u += r * 0.46 / length
+		row += 1
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.mesh = _sucker_mesh()
+	mm.instance_count = cups.size()
+	for k in cups.size():
+		var c: Vector3 = cups[k]
+		mm.set_instance_transform(k, Transform3D.IDENTITY)
+		mm.set_instance_custom_data(k, Color(c.x, c.y, c.z, 0.0))
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = mat
+	mmi.custom_aabb = mi.custom_aabb
+	mi.add_child(mmi)
 	return {"root": mi, "mat": mat}
 
 
@@ -1869,7 +1925,7 @@ func _kraken_coils() -> void:
 ## 크라켄 두 눈 사이 (깨어난 자세 기준) — 카메라 연출용
 func kraken_eye_pos() -> Vector3:
 	var p := Vector3(kraken_root.position.x, KRAKEN_AWAKE_Y, kraken_root.position.z)
-	return p + Basis(Vector3.RIGHT, KRAKEN_TILT).scaled(Vector3.ONE * KRAKEN_SCALE) * Vector3(0, 0.6, 1.3)
+	return p + Basis(Vector3.RIGHT, KRAKEN_TILT).scaled(Vector3.ONE * KRAKEN_SCALE) * Vector3(0, 0.74, 1.3)
 
 
 ## g = 0: 곧게 선 촉수, 1: 판을 움켜쥔 자세. 움켜쥔 채로 천천히 조였다 풀었다

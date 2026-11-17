@@ -391,7 +391,7 @@ func _debug_showcase() -> void:
 		await get_tree().create_timer(2.4, false).timeout
 	# 크라켄 얼굴 · 촉수 가까이
 	if world.kraken_root:
-		var eye := world.kraken_eye_pos() + Vector3(1.37 * world.KRAKEN_SCALE, 0, 0)
+		var eye := world.kraken_eye_pos() + Vector3(1.57 * world.KRAKEN_SCALE, 0, 0)
 		_cinematic(eye + Vector3(10.0, -4.0, 16.0), eye, 1.0, 1.0)
 		await get_tree().create_timer(1.3, false).timeout
 		shot_hint = "35_kraken_eye"

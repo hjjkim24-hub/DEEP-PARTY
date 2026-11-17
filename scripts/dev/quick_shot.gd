@@ -193,13 +193,18 @@ func _run() -> void:
 			"kraken":
 				g._cinematic(Vector3(eye.x - 16.0, 20.0, -w.half_d + 46.0), eye + Vector3(0, 2.0, -6.0), 1.0, 0.01)
 			"eye":
-				var e2 := eye + Vector3(1.37 * sc, 0, 0)
+				var e2 := eye + Vector3(1.57 * sc, 0, 0)
 				g._cinematic(e2 + Vector3(10.0, -4.0, 16.0), e2, 1.0, 0.01)
 			"danger":
 				var ts: Array = w.spaces_of_kind("minigame")
 				for k in mini(8, ts.size()):
 					w.mark_danger(int(ts[k]))
 				g._cinematic(Vector3(0, 0.95 * w.half_d + 40.0, w.half_d + 52.0), Vector3(0, 2.0, -w.half_d * 0.22), 1.0, 0.01)
+			"coil":
+				var c3: Dictionary = w.kraken_coils[3]
+				var hit: Vector3 = c3["hit"]
+				var dd: Vector3 = c3["dir"]
+				g._cinematic(hit + dd * 10.0 + Vector3(0, 9.0, 0) + Vector3(-dd.z, 0, dd.x) * 12.0, hit - dd * 6.0 + Vector3(0, 4.0, 0), 1.0, 0.01)
 			"tile":
 				var sp: Dictionary = w.spaces[int(w.spaces[w.start_index]["links"][0])]
 				var tp: Vector3 = sp["pos"]

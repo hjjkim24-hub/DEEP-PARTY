@@ -1,7 +1,8 @@
 shader_type spatial;
 // 크라켄 촉수: 곧은 관(tentacle_tube)을 정점 셰이더에서 휘게 만듦 (마디 없이 매끈하게).
 // 촉수는 로컬 +Y 로 뻗고, +Z 쪽으로 휨. 휘는 각도 θ(u) = pitch + curl·segs·(0.4u + 0.5u²) + 출렁임
-// 배 쪽(+Z, 휘는 안쪽)에 빨판 두 줄을 셰이더로 그림.
+// 빨판: 같은 재질을 쓰는 MultiMesh (UV2.x = 1 인 컵 모양 메쉬). 인스턴스마다 INSTANCE_CUSTOM =
+//   (촉수 위 위치 u, 둘레 각도 — 0 = 배 쪽, 크기 — 그 자리 굵기에 대한 비율). 관과 똑같이 휘어서 늘 촉수에 붙어 있음.
 render_mode blend_mix, depth_draw_always, cull_back, specular_schlick_ggx;
 #include "res://shaders/kraken_common.gdshaderinc"
 uniform float arm_len = 8.0;
@@ -20,6 +21,8 @@ varying float vs;                    // 뿌리부터 거리 (m)
 varying vec2 vring;                  // 둘레 좌표 (각도는 조각에서 계산 — 이음새 없게)
 varying float vrad;
 varying vec3 lp;
+varying float vsuck;                 // 1 = 빨판
+varying float vcup;                  // 빨판 안쪽(0) ~ 테두리(1)
 
 float theta(float u) {
 	return pitch + curl * segs * (0.4 * u + 0.5 * u * u) + wave * sin(wtime * 5.0 - u * segs * 0.7) * u
@@ -31,7 +34,9 @@ float rad_at(float u) {
 }
 
 void vertex() {
-	float u = clamp(VERTEX.y, 0.0, 1.0);    // 관 메쉬는 길이 1
+	vsuck = step(0.5, UV2.x);
+	vcup = UV.x;
+	float u = vsuck > 0.5 ? INSTANCE_CUSTOM.x : clamp(VERTEX.y, 0.0, 1.0);    // 관 메쉬는 길이 1
 	// 중심선: (z, y) 평면 위 곡선을 적분
 	vec2 c = vec2(0.0);
 	const int N = 28;
@@ -46,10 +51,22 @@ void vertex() {
 	vec3 Nn = vec3(0.0, -sin(th), cos(th));
 	vec3 B = vec3(1.0, 0.0, 0.0);
 	float r = rad_at(u);
-	vec2 rr = VERTEX.xz;              // 반지름 1 관의 둘레
 	vec3 center = vec3(sin(u * 3.0 + wtime * 0.7) * sway * u * arm_len * 0.1, c.y, c.x);
-	VERTEX = center + B * rr.x * r + Nn * rr.y * r;
-	NORMAL = normalize(B * NORMAL.x + Nn * NORMAL.z + T * NORMAL.y);
+	vec2 rr;
+	if (vsuck > 0.5) {
+		// 빨판 컵: 로컬 y = 피부 바깥쪽, z = 촉수 길이 방향
+		float a = INSTANCE_CUSTOM.y;
+		rr = vec2(sin(a), cos(a));
+		vec3 n = B * rr.x + Nn * rr.y;
+		vec3 side = normalize(cross(T, n));
+		float sz = r * INSTANCE_CUSTOM.z;
+		VERTEX = center + n * r + (side * VERTEX.x + T * VERTEX.z + n * VERTEX.y) * sz;
+		NORMAL = normalize(side * NORMAL.x + T * NORMAL.z + n * NORMAL.y);
+	} else {
+		rr = VERTEX.xz;              // 반지름 1 관의 둘레
+		VERTEX = center + B * rr.x * r + Nn * rr.y * r;
+		NORMAL = normalize(B * NORMAL.x + Nn * NORMAL.z + T * NORMAL.y);
+	}
 	vs = u * arm_len;
 	vring = rr;
 	vrad = r;
@@ -60,21 +77,8 @@ void fragment() {
 	vec3 q = lp * pattern_scale;
 	float vang = atan(vring.x, vring.y);
 	float belly = smoothstep(1.2, 0.3, abs(vang));
-	// 빨판: 배 쪽 두 줄, 굵기에 맞춰 간격
-	float spacing = vrad * 1.15;
-	float row_off = 0.42;
 	float sk = 0.0;
 	vec2 bump = vec2(0.0);
-	for (int side = -1; side <= 1; side += 2) {
-		float a = vang - float(side) * row_off;
-		float along = vs / spacing + (side > 0 ? 0.5 : 0.0);
-		vec2 d = vec2(a * vrad / spacing, fract(along) - 0.5);
-		float rr = length(d) / 0.34;
-		float cup = smoothstep(1.0, 0.85, rr);
-		sk = max(sk, cup * smoothstep(1.5, 0.6, abs(vang)));
-		// 테두리는 볼록, 가운데는 오목
-		bump += normalize(d + 1e-5) * (smoothstep(0.7, 0.95, rr) - smoothstep(0.95, 1.1, rr) - smoothstep(0.5, 0.0, rr) * 0.6) * cup;
-	}
 	float b1 = kn(q * 9.0) - 0.5;
 	float wr = sin(vs * 6.0 / max(vrad, 0.1) + kn(q * 3.0) * 4.0);
 	vec3 nb = vec3(bump.x * 0.8 + b1 * 0.3, wr * 0.12 + bump.y * 0.8, b1 * 0.3);
@@ -83,9 +87,15 @@ void fragment() {
 	vec3 emi;
 	float al;
 	kraken_skin(q, dot(NORMAL, VIEW), belly, TIME, alb, emi, al);
-	// 빨판: 연한 연두 테 + 가운데 어두운 구멍
-	alb = mix(alb, vec3(0.75, 0.95, 0.5), sk * 0.7);
-	emi += vec3(0.5, 1.0, 0.3) * sk * 0.25;
+	if (vsuck > 0.5) {
+		// 빨판: 피부와 같은 젤리 살. 테두리는 살짝 밝고 도톰, 안쪽 컵은 그늘지고 깊음, 가운데 작은 구멍
+		float rim = smoothstep(0.55, 0.85, vcup);
+		vec3 pale = mix(alb, vec3(0.62, 0.84, 0.42), 0.55);
+		vec3 cup = mix(alb * 0.35, alb * 0.75, smoothstep(0.1, 0.6, vcup));
+		alb = mix(cup, pale, rim);
+		emi = emi * mix(0.35, 0.8, rim) + vec3(0.4, 0.9, 0.25) * rim * 0.08;
+		al = mix(0.97, 0.9, rim);
+	}
 	ALBEDO = alb;
 	EMISSION = emi;
 	ALPHA = clamp(al + sk * 0.4, 0.0, 1.0);
