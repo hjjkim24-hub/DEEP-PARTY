@@ -129,6 +129,25 @@ func _run() -> void:
 		print("STORM marked=", gs.world.danger_tiles().size(), " t=", (Time.get_ticks_msec() - t1) / 1000.0)
 		await _shot("s_marked")
 		var tg: Array = gs.world.danger_tiles()
+		if "close" in _want:
+			# 한 칸만 가까이서: 솟구침 → 버팀 → 내려침 → 들어감을 여러 장
+			var t0i: int = tg[0]
+			var tp: Vector3 = gs.world.spaces[t0i]["pos"]
+			gs._move_camera(tp, 1.6, 0.01)
+			await get_tree().create_timer(0.5).timeout
+			var dd: Dictionary = gs.world._dangers[t0i]
+			var dv: Vector3 = dd["dir"]
+			var sideways := Vector3(-dv.z, 0, dv.x)
+			gs._cinematic(tp + sideways * 11.0 - dv * 1.0 + Vector3(0, 4.0, 0), tp - dv * 1.2 + Vector3(0, 1.6, 0), 1.0, 0.01)
+			await get_tree().create_timer(0.5).timeout
+			Engine.time_scale = 0.1
+			gs.world.tentacle_strike(t0i)
+			for k in 16:
+				await _shot("c_%02d" % k)
+				await get_tree().create_timer(1.6, true, false, true).timeout
+			Engine.time_scale = 1.0
+			get_tree().quit(0)
+			return
 		gs.call("_mass_strike", tg)
 		while String(gs.shot_hint) != "49b_kraken_strike" and Time.get_ticks_msec() - t1 < 120000:
 			await get_tree().process_frame

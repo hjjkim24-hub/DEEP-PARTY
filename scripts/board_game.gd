@@ -201,7 +201,7 @@ func _mass_strike(targets: Array) -> void:
 	await _banner(tr("TENTACLE STORM!"), "", 0.6)
 	for t in targets:
 		world.tentacle_strike(t, _rng.randf_range(0.0, 0.9))
-	# 솟구침(0.55) + 버팀(0.32) + 내려침(0.2) 뒤 쾅쾅쾅
+	# 솟구침(0.5) + 젖힘(0.35) + 내려침(0.22) 뒤 쾅쾅쾅
 	await get_tree().create_timer(1.1, false).timeout
 	Audio.play("box_burst")
 	_shake_camera(1.0, 1.1)

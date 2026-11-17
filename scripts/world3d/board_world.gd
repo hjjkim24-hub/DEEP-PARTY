@@ -1752,46 +1752,62 @@ func tentacle_strike(i: int, delay: float = 0.0) -> void:
 		var dir0 := Vector3(top.x - b.x, 0, top.z - b.z).normalized()
 		d = {"root": b, "dir": dir0, "axis": Vector3.UP.cross(dir0).normalized()}
 	_clear_danger(i)
+	# 칸 옆 땅에서 굵은 촉수가 솟구쳐 뒤로 젖혔다가, 칸 위로 휘어지며 쾅 덮침 (끝은 살짝 말려 올라감).
+	# 자세값은 tools 로 맞춤: 길이 7.5, 굵기 1.0, 뿌리는 칸 바닥보다 0.9 아래 · 옆으로 3 m
 	var base: Vector3 = d["root"]
-	var axis: Vector3 = d["axis"]
-	var tn := make_tentacle(9, 1.35, 1.2, d["dir"])
-	base.y = top.y + 0.5      # 눕혔을 때 칸 윗면을 덮게
+	base.y = top.y - 0.9
+	var tn := make_tentacle(1, 1.0, 7.5, d["dir"])
 	var root: Node3D = tn["root"]
-	root.position = base + Vector3(0, -12.0, 0)
-	add_child(root)
 	var mat: ShaderMaterial = tn["mat"]
-	# 1) 땅이 터지며 솟구침 (뒤로 젖혀 말림)
+	mat.set_shader_parameter("tip", 0.22)
+	mat.set_shader_parameter("hook_at", 0.2)
+	root.position = base + Vector3(0, -9.0, 0)
+	add_child(root)
+	# 자세: [pitch, curl(=굽힘 총량), hook, tipback, wave]
+	var raised := [-0.25, 0.9, 0.0, -0.5, 0.25]
+	var wound := [-0.6, 1.5, 0.0, -0.9, 0.1]
+	var slammed := [0.5, 0.0, 1.2, 1.0, 0.0]
+	var pose := func(a: Array, b: Array, f: float, extra_wave: float = 0.0) -> void:
+		mat.set_shader_parameter("pitch", lerpf(a[0], b[0], f))
+		mat.set_shader_parameter("curl", lerpf(a[1], b[1], f))
+		mat.set_shader_parameter("hook", lerpf(a[2], b[2], f))
+		mat.set_shader_parameter("tipback", lerpf(a[3], b[3], f))
+		mat.set_shader_parameter("wave", lerpf(a[4], b[4], f) + extra_wave)
+		mat.set_shader_parameter("wtime", _time)
+	pose.call(raised, raised, 0.0)
+	# 1) 땅이 터지며 솟구침
 	_dust(base, 1.2)
 	bubbles_at(base, 30, 0.8, true)
 	var rise := create_tween().set_parallel(true)
-	rise.tween_property(root, "position:y", base.y, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	rise.tween_property(root, "position:y", base.y, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	rise.tween_method(func(f: float) -> void:
-		_pose_tentacle(tn, axis, lerpf(0.0, -0.35, f), lerpf(0.0, -0.32, f), 0.25, _time)
-		mat.set_shader_parameter("glow", f * 0.6), 0.0, 1.0, 0.55)
+		pose.call(raised, raised, 0.0)
+		mat.set_shader_parameter("glow", f * 0.6), 0.0, 1.0, 0.5)
 	await rise.finished
-	# 2) 잠깐 버팀 (출렁)
-	var hold := create_tween()
-	hold.tween_method(func(f: float) -> void: _pose_tentacle(tn, axis, -0.35 - f * 0.12, -0.32 - f * 0.06, 0.35, _time), 0.0, 1.0, 0.32)
-	await hold.finished
-	# 3) 내려침: 칸 쪽으로 넘어지며 쫙 펴짐 (끝이 칸을 덮음)
+	# 2) 뒤로 크게 젖히며 힘을 모음
+	var wind := create_tween()
+	wind.tween_method(func(f: float) -> void: pose.call(raised, wound, f), 0.0, 1.0, 0.35).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	await wind.finished
+	# 3) 채찍처럼 휘어지며 칸 위로 쾅
 	var slam := create_tween()
-	slam.tween_method(func(f: float) -> void:
-		var e := f * f
-		_pose_tentacle(tn, axis, lerpf(-0.47, PI * 0.5 - 0.05, e), lerpf(-0.38, 0.02, e), 0.0, _time), 0.0, 1.0, 0.2)
+	slam.tween_method(func(f: float) -> void: pose.call(wound, slammed, f * f), 0.0, 1.0, 0.22)
 	await slam.finished
 	_dust(top, 1.6)
 	bubbles_at(top, 40, 1.0, true)
 	_impact_ring(top)
 	tentacle_slammed.emit()
-	# 4) 꿈틀대다가 땅속으로 쑥
-	var wr := create_tween()
-	wr.tween_method(func(f: float) -> void:
-		_pose_tentacle(tn, axis, PI * 0.5 - 0.05 - f * 0.2, 0.02 + sin(f * 9.0) * 0.04, 0.0, _time)
-		mat.set_shader_parameter("glow", 0.6 * (1.0 - f)), 0.0, 1.0, 0.5)
-	await wr.finished
+	# 4) 칸을 누른 채 꿈틀 (끝이 말렸다 펴졌다)
+	var squirm := create_tween()
+	squirm.tween_method(func(f: float) -> void:
+		pose.call(slammed, slammed, 0.0)
+		mat.set_shader_parameter("tipback", 1.0 + sin(f * 10.0) * 0.25 * (1.0 - f))
+		mat.set_shader_parameter("hook", 1.2 + sin(f * 7.0 + 1.0) * 0.06 * (1.0 - f))
+		mat.set_shader_parameter("glow", 0.6 * (1.0 - f)), 0.0, 1.0, 0.75)
+	await squirm.finished
+	# 5) 들어 올리며 땅속으로 스르륵
 	var back := create_tween().set_parallel(true)
-	back.tween_method(func(f: float) -> void: _pose_tentacle(tn, axis, lerpf(PI * 0.5 - 0.25, 0.0, f), lerpf(0.0, -0.4, f), 0.2, _time), 0.0, 1.0, 0.35)
-	back.tween_property(root, "position:y", base.y - 13.0, 0.6).set_delay(0.2).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	back.tween_method(func(f: float) -> void: pose.call(slammed, raised, f), 0.0, 1.0, 0.5).set_trans(Tween.TRANS_SINE)
+	back.tween_property(root, "position:y", base.y - 9.0, 0.8).set_delay(0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	back.finished.connect(root.queue_free)
 	_dust(base, 0.7)
 
