@@ -465,7 +465,7 @@ func _illust() -> void:
 	var env: Environment = w.world_env
 	# 영화 같은 심해 분위기: 어둡고 깊은 안개, 약한 해, 대상에만 강한 빛
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.0, 0.05, 0.06)
+	env.background_color = Color(0.02, 0.12, 0.14)
 	env.fog_enabled = true
 	env.fog_density = 0.045
 	env.fog_light_color = Color(0.01, 0.09, 0.1)
@@ -475,12 +475,12 @@ func _illust() -> void:
 	env.glow_bloom = 0.08
 	env.glow_hdr_threshold = 0.8
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 0.9
-	env.ambient_light_energy = 0.16
+	env.tonemap_exposure = 1.15
+	env.ambient_light_energy = 0.32
 	env.adjustment_contrast = 1.18
 	env.adjustment_saturation = 1.05
 	for dl in w.find_children("*", "DirectionalLight3D", true, false):
-		(dl as DirectionalLight3D).light_energy *= 0.45
+		(dl as DirectionalLight3D).light_energy *= 0.75
 	# 화질: 2 배로 그려서 줄이기 + 계단 현상 없애기
 	get_viewport().msaa_3d = Viewport.MSAA_8X
 	get_viewport().scaling_3d_scale = 2.0
@@ -603,15 +603,18 @@ func _illust() -> void:
 	w.add_child(spike_root)
 	var rr := RandomNumberGenerator.new()
 	rr.seed = 11
-	for k in 70:
+	# 칸 윗면에서 바로 돋아난 가시 (밑동은 칸 속에 박힘) — 짧고 굵은 가시가 밑을 빽빽이 채움
+	for k in 140:
 		var a := rr.randf() * TAU
-		var d := sqrt(rr.randf()) * 1.05
-		var base := sp + Vector3(cos(a) * d, 0.42, sin(a) * d)
-		var outw := Vector3(cos(a), 0, sin(a)) * d * 0.7
+		var d := sqrt(rr.randf()) * 1.15
+		var short := k >= 70
+		var base := sp + Vector3(cos(a) * d, 0.38, sin(a) * d)
+		var outw := Vector3(cos(a), 0, sin(a)) * d * 0.8
 		var up := (Vector3.UP * 1.0 + outw + Vector3(rr.randf_range(-0.2, 0.2), 0, rr.randf_range(-0.2, 0.2))).normalized()
 		var x := up.cross(Vector3(0, 0, 1)).normalized()
 		var bz := x.cross(up)
-		_neon_cone(spike_root, base, Basis(x, up, bz), rr.randf_range(0.05, 0.11), rr.randf_range(0.6, 2.0) * (1.2 - d * 0.5), spm)
+		var hh := rr.randf_range(0.25, 0.6) if short else rr.randf_range(0.7, 2.1) * (1.25 - d * 0.5)
+		_neon_cone(spike_root, base, Basis(x, up, bz), rr.randf_range(0.07, 0.13) if short else rr.randf_range(0.06, 0.12), hh, spm)
 	var dm := StandardMaterial3D.new()
 	dm.albedo_color = Color(0.4, 1.0, 0.3)
 	dm.emission_enabled = true
@@ -640,7 +643,7 @@ func _illust() -> void:
 	gl.global_position = sp + Vector3(0, 2.2, 0) - to_k * 1.0
 	w._poison_mist(spike_root, sp + Vector3(0, 0.6, 0), 1.6, 30)
 	cam.fov = 45.0
-	g._cinematic(sp - to_k * 4.6 + Vector3(0, 0.7, 0) + side * 1.0, sp + Vector3(0, 1.3, 0), 1.0, 0.01)
+	g._cinematic(sp - to_k * 4.4 + Vector3(0, 2.3, 0) + side * 1.0, sp + Vector3(0, 0.9, 0), 1.0, 0.01)
 	await get_tree().create_timer(1.6).timeout
 	await _shot("il_spines_a")
 	g._cinematic(sp - to_k * 4.0 + Vector3(0, 0.55, 0) - side * 1.8, sp + Vector3(0, 1.2, 0), 1.0, 0.01)

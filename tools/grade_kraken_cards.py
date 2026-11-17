@@ -28,8 +28,8 @@ def grade(bgr, tint):
     img *= np.array(tint[::-1], np.float32)
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     r = np.sqrt(((xx / w - 0.5) * 1.5) ** 2 + ((yy / h - 0.5) * 1.5) ** 2)
-    img *= (1 - 0.6 * np.clip(r - 0.42, 0, 1) ** 1.3)[..., None]
-    img = (img - 0.5) * 1.04 + 0.49
+    img *= (1 - 0.4 * np.clip(r - 0.5, 0, 1) ** 1.3)[..., None]
+    img = (img - 0.5) * 1.02 + 0.53
     return np.clip(img, 0, 1)
 
 
