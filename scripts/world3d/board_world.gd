@@ -1576,8 +1576,8 @@ var _sucker: ArrayMesh
 func _sucker_mesh() -> ArrayMesh:
 	if _sucker:
 		return _sucker
-	var prof := [Vector2(0.0, -0.3), Vector2(0.14, -0.29), Vector2(0.3, -0.22), Vector2(0.46, -0.06), Vector2(0.58, 0.14),
-		Vector2(0.68, 0.27), Vector2(0.8, 0.31), Vector2(0.9, 0.24), Vector2(0.98, 0.08), Vector2(1.04, -0.12), Vector2(1.08, -0.45)]
+	var prof := [Vector2(0.0, -0.16), Vector2(0.16, -0.15), Vector2(0.32, -0.1), Vector2(0.46, 0.0), Vector2(0.58, 0.1),
+		Vector2(0.7, 0.16), Vector2(0.82, 0.17), Vector2(0.92, 0.12), Vector2(1.02, 0.02), Vector2(1.12, -0.1), Vector2(1.22, -0.35)]
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var seg := 20
@@ -1625,7 +1625,9 @@ func make_tentacle(n: int, r0: float, seg_len: float, dir: Vector3 = Vector3(0, 
 	var row := 0
 	while u < 0.96:
 		var r := r0 * lerpf(1.0, 0.1, pow(u, 0.85))
-		cups.append(Vector3(u, 0.4 if row % 2 == 0 else -0.4, 0.3))
+		# 줄이 살짝 구불구불하고, 크기도 조금씩 달라서 찍어낸 느낌이 안 나게
+		var ang := (0.4 if row % 2 == 0 else -0.4) + sin(u * 23.0) * 0.06 + _rng.randf_range(-0.05, 0.05)
+		cups.append(Vector3(u, ang, 0.3 * _rng.randf_range(0.82, 1.12)))
 		u += r * 0.46 / length
 		row += 1
 	var mm := MultiMesh.new()

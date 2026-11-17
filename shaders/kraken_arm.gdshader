@@ -87,20 +87,24 @@ void fragment() {
 	vec3 emi;
 	float al;
 	kraken_skin(q, dot(NORMAL, VIEW), belly, TIME, alb, emi, al);
+	float rimlit = 0.4;
+	float spec = 0.6;
 	if (vsuck > 0.5) {
-		// 빨판: 피부와 같은 젤리 살. 테두리는 살짝 밝고 도톰, 안쪽 컵은 그늘지고 깊음, 가운데 작은 구멍
-		float rim = smoothstep(0.55, 0.85, vcup);
-		vec3 pale = mix(alb, vec3(0.62, 0.84, 0.42), 0.55);
-		vec3 cup = mix(alb * 0.35, alb * 0.75, smoothstep(0.1, 0.6, vcup));
-		alb = mix(cup, pale, rim);
-		emi = emi * mix(0.35, 0.8, rim) + vec3(0.4, 0.9, 0.25) * rim * 0.08;
-		al = mix(0.97, 0.9, rim);
+		// 빨판: 피부와 같은 살 색. 가장자리 형광(프레넬)을 빼서 하얀 고리처럼 빛나지 않게.
+		// 테두리는 몸 색 그대로 살짝 밝게, 안쪽 컵은 그늘지게
+		float rim = smoothstep(0.6, 0.9, vcup);
+		float inner = 1.0 - smoothstep(0.15, 0.6, vcup);
+		alb = mix(alb * 0.75, alb * 1.2 + vec3(0.03, 0.06, 0.02), rim) * (1.0 - inner * 0.3);
+		emi = emi * 0.3 * (1.0 - inner * 0.6) + neon * 0.04 * rim + neon * glow * 0.3;
+		al = 0.94;
+		rimlit = 0.0;
+		spec = 0.35;
 	}
 	ALBEDO = alb;
 	EMISSION = emi;
 	ALPHA = clamp(al + sk * 0.4, 0.0, 1.0);
-	ROUGHNESS = 0.14 + 0.1 * kn(q * 14.0);
-	SPECULAR = 0.6;
-	RIM = 0.4;
+	ROUGHNESS = 0.14 + 0.1 * kn(q * 14.0) + (0.25 - rimlit * 0.6) * vsuck;
+	SPECULAR = spec;
+	RIM = rimlit;
 	RIM_TINT = 0.7;
 }
