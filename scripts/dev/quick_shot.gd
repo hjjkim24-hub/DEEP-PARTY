@@ -180,6 +180,115 @@ func _run() -> void:
 		print("STORM struck t=", (Time.get_ticks_msec() - t1) / 1000.0, " fps=", Engine.get_frames_per_second())
 		get_tree().quit(0)
 		return
+	# kcards: 크라켄 행동 카드 (뒷면 · 앞면 3 장)
+	if "kcards" in _want:
+		var gk: Node = null
+		while gk == null or not ("hold_loop" in gk):
+			await get_tree().process_frame
+			gk = get_tree().current_scene
+		gk.hold_loop = true
+		while String(gk.shot_hint) != "34_kraken_awakens":
+			await get_tree().process_frame
+		await get_tree().create_timer(4.0).timeout
+		for a in ["barrage", "spines", "surge"]:
+			Engine.time_scale = 0.25
+			gk._kraken_card(a)
+			while String(gk.shot_hint) != "60_kraken_card_" + a:
+				await get_tree().process_frame
+			await _shot("kc_" + a)
+			Engine.time_scale = 1.0
+			await get_tree().create_timer(3.0).timeout
+		get_tree().quit(0)
+		return
+	# cardart: 크라켄 행동 카드에 넣을 그림을 게임 화면에서 찍음
+	if "cardart" in _want:
+		var ga: Node = null
+		while ga == null or not ("hold_loop" in ga):
+			await get_tree().process_frame
+			ga = get_tree().current_scene
+		ga.hold_loop = true
+		while String(ga.shot_hint) != "34_kraken_awakens":
+			await get_tree().process_frame
+		await get_tree().create_timer(5.0).timeout
+		var wa: Node = ga.world
+		for q in ga._pawns:
+			(q["node"] as Node3D).visible = false
+		# 화면 글씨 · 버튼 숨기기 (그림만)
+		for cl in get_tree().root.find_children("*", "CanvasLayer", true, false):
+			(cl as CanvasLayer).visible = false
+		# 구조물이 적은 탁 트인 칸 찾기 (주변 6 m 안에 장식이 적은 곳)
+		var open_tiles := []
+		for i in wa.spaces.size():
+			var pp: Vector3 = wa.spaces[i]["pos"]
+			if i != wa.start_index and String(wa.spaces[i]["kind"]) in ["plain", "minigame", "chance"] and absf(pp.y) < 0.6:
+				open_tiles.append(i)
+		# 1) 촉수 폭풍: 위에서 비스듬히 내려다본 길 위로 붉은 칸 4 개, 촉수가 차례로 내려침
+		var anchor: int = open_tiles[open_tiles.size() / 3]
+		var ap: Vector3 = wa.spaces[anchor]["pos"]
+		var picks := []
+		var near_sorted := open_tiles.duplicate()
+		near_sorted.sort_custom(func(a: int, b: int) -> bool: return (wa.spaces[a]["pos"] as Vector3).distance_to(ap) < (wa.spaces[b]["pos"] as Vector3).distance_to(ap))
+		for i in near_sorted:
+			var ok := true
+			for j in picks:
+				if (wa.spaces[i]["pos"] as Vector3).distance_to(wa.spaces[j]["pos"]) < 4.5:
+					ok = false
+			if ok:
+				picks.append(i)
+			if picks.size() >= 4:
+				break
+		var c := Vector3.ZERO
+		for i in picks:
+			wa.mark_danger(i)
+			c += wa.spaces[i]["pos"]
+		c /= picks.size()
+		var to_k := (Vector3(wa.kraken_root.position.x, 0, wa.kraken_root.position.z) - Vector3(c.x, 0, c.z)).normalized()
+		var cam := c - to_k * 13.0 + Vector3(0, 12.0, 0)
+		ga._cinematic(cam, c + to_k * 2.0, 1.0, 0.01)
+		await get_tree().create_timer(2.0).timeout
+		await _shot("art_marked")
+		wa.strike_slow = 5.0
+		for k in picks.size():
+			wa.tentacle_strike(picks[k], k * 0.5)
+		for k in 7:
+			await get_tree().create_timer(1.0).timeout
+			await _shot("art_storm_%d" % k)
+		await get_tree().create_timer(9.0).timeout
+		# 2) 독 가시: 보라색 가시 칸 가까이 (위에서 비스듬히)
+		for i in picks:
+			wa.set_tile_look(i, "urchin")
+		await get_tree().create_timer(1.0).timeout
+		var tp: Vector3 = wa.spaces[picks[0]]["pos"]
+		ga._cinematic(tp - to_k * 3.2 + Vector3(0, 4.2, 0), tp + to_k * 0.3, 1.0, 0.01)
+		await get_tree().create_timer(1.5).timeout
+		await _shot("art_spines_0")
+		ga._cinematic(c - to_k * 9.0 + Vector3(0, 8.0, 0), c, 1.0, 0.01)
+		await get_tree().create_timer(1.5).timeout
+		await _shot("art_spines_1")
+		# 3) 상점 대혼란: 위에서 본 상점 칸 + 촉수가 상점을 내려침
+		var shops: Array = wa.spaces_of_kind("shop")
+		for st0 in shops:
+			var st: int = int(st0)
+			var spos: Vector3 = wa.spaces[st]["pos"]
+			ga._cinematic(spos + Vector3(3.5, 7.0, 6.0), spos + Vector3(0, 0.8, 0), 1.0, 0.01)
+			await get_tree().create_timer(1.2).timeout
+			await _shot("art_shop%d_0" % st)
+		var sb: int = 135 if shops.has(135) else int(shops[shops.size() - 1])
+		var sbp: Vector3 = wa.spaces[sb]["pos"]
+		ga._cinematic(sbp + Vector3(3.0, 8.0, 9.0), sbp + Vector3(0, 1.5, 0), 1.0, 0.01)
+		await get_tree().create_timer(1.0).timeout
+		wa.strike_slow = 5.0
+		wa.tentacle_strike(sb)
+		for k in 10:
+			await get_tree().create_timer(0.6).timeout
+			await _shot("art_shop_hit_%d" % k)
+		# 4) 카드 뒷면용: 크라켄 눈
+		var eye: Vector3 = wa.kraken_eye_pos() + Vector3(1.57 * wa.KRAKEN_SCALE, 0, 0)
+		ga._cinematic(eye + Vector3(6.0, -1.0, 9.0), eye, 1.0, 0.01)
+		await get_tree().create_timer(2.0).timeout
+		await _shot("art_eye")
+		get_tree().quit(0)
+		return
 	# count: 맵의 칸 수 (종류별)
 	if "count" in _want:
 		var gc: Node = null

@@ -1037,8 +1037,6 @@ func _tile_effect(p: Dictionary) -> void:
 
 ## 성게 함정 칸에 멈춤 (생존전에서 크라켄이 만든 칸)
 func _urchin_trap(p: Dictionary) -> void:
-	Audio.play("remove")
-	await _banner(tr("SPIKED!"), tr("Sea urchin spines! -1 heart"), 0.5)
 	await _damage(p, 1)
 
 
@@ -1051,7 +1049,7 @@ func _damage(p: Dictionary, n: int) -> void:
 		p["shield"] = int(p["shield"]) - 1
 		_refresh_chip(p)
 		Audio.play("toggle_off")
-		_float_text(p, tr("BLOCKED!"), Color("bfe9ff"), SHIELD_TEX)
+		_float_text(p, tr("PROTECTED!"), Color("bfe9ff"), SHIELD_TEX)
 		world.bubbles_at(node.position + Vector3(0, 1.0, 0), 18, 0.6, true)
 		await get_tree().create_timer(0.7, false).timeout
 		return

@@ -198,7 +198,7 @@ func _mass_strike(targets: Array) -> void:
 	await get_tree().create_timer(0.9, false).timeout
 	Audio.play("box_rumble")
 	_shake_camera(0.3, 1.2)
-	await _banner(tr("TENTACLE STORM!"), "", 0.6)
+	await _banner(tr("TENTACLE STORM"), "", 0.6)
 	for t in targets:
 		world.tentacle_strike(t, _rng.randf_range(0.0, 0.9))
 	# 솟구침(0.5) + 젖힘(0.35) + 내려침(0.22) 뒤 쾅쾅쾅
@@ -214,7 +214,7 @@ func _mass_strike(targets: Array) -> void:
 		if targets.has(int(q["tile"])):
 			hit.append(q)
 	if hit.is_empty():
-		await _banner(tr("NOBODY WAS HIT!"), tr("Everyone dodged the storm."), 0.9)
+		await get_tree().create_timer(0.4, false).timeout
 		return
 	for q in hit:
 		if _over():
@@ -246,7 +246,7 @@ func _expire_effects(r: int) -> void:
 				world.set_tile_look(t, prev)
 			Audio.play("toast")
 			await get_tree().create_timer(0.15, false).timeout
-		await _banner(tr("THE SPINES WITHER"), tr("The poison spaces are back to normal."), 0.9)
+		await _banner(tr("The poison spines fade"), "", 0.9)
 	if _surge_until >= 0 and _surge_until <= r:
 		_surge_until = -1
 		shop_price_mult = 1
@@ -265,7 +265,7 @@ func _kraken_turn(r: int) -> void:
 	Audio.play("box_rumble")
 	_shake_camera(0.4, 1.0)
 	await get_tree().create_timer(0.9, false).timeout
-	await _banner(tr("THE KRAKEN'S TURN!"), "", 0.9)
+	await _kraken_card(a)
 	match a:
 		"barrage":
 			await _kraken_barrage(r)
@@ -275,12 +275,174 @@ func _kraken_turn(r: int) -> void:
 			await _kraken_surge(r)
 
 
+## 크라켄 행동 카드: 크라켄 눈이 그려진 카드가 떠올라 부르르 떨다가 뒤집히며 행동 그림 · 이름 · 설명
+const KRAKEN_CARDS := {
+	"barrage": {"title": "TENTACLE STORM", "art": preload("res://textures/ui/kraken/art_barrage.png"),
+		"text": "At the end of next round, it smashes every area marked in red."},
+	"spines": {"title": "POISON SPINES", "art": preload("res://textures/ui/kraken/art_spines.png"),
+		"text": "Turns random spaces into poison spine spaces that instantly hurt players who land on them."},
+	"surge": {"title": "SHOP PANIC", "art": preload("res://textures/ui/kraken/art_surge.png"),
+		"text": "The frightened merchant doubles shop prices for 2 rounds."},
+}
+const KRAKEN_CARD_BACK := preload("res://textures/ui/kraken/back_eye.png")
+const KCARD_NEON := Color(0.45, 1.0, 0.32)
+const KCARD_DARK := Color(0.02, 0.08, 0.06)
+
+
+func _kraken_card_frame(size: Vector2) -> StyleBoxFlat:
+	var st := StyleBoxFlat.new()
+	st.bg_color = KCARD_DARK
+	st.border_color = KCARD_NEON.darkened(0.15)
+	st.set_border_width_all(5)
+	st.set_corner_radius_all(24)
+	st.shadow_color = Color(KCARD_NEON, 0.35)
+	st.shadow_size = 26
+	st.anti_aliasing = true
+	return st
+
+
+## 둥근 창 안에 그림 (그림이 창 모양으로 잘림)
+func _kraken_card_window(tex: Texture2D, size: Vector2, radius: int) -> Panel:
+	var win := Panel.new()
+	win.custom_minimum_size = size
+	win.size = size
+	win.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ws := StyleBoxFlat.new()
+	ws.bg_color = Color.WHITE
+	ws.set_corner_radius_all(radius)
+	ws.anti_aliasing = true
+	win.add_theme_stylebox_override("panel", ws)
+	win.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
+	var art := TextureRect.new()
+	art.texture = tex
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	win.add_child(art)
+	return win
+
+
+## 띄어쓰기 단위로 줄바꿈 (한 줄이 width 를 넘지 않게)
+func _wrap_words(text: String, font: Font, fs: int, width: float) -> String:
+	var lines := []
+	var cur := ""
+	for w in text.split(" ", false):
+		var t := w if cur == "" else cur + " " + w
+		if cur != "" and font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > width:
+			lines.append(cur)
+			cur = w
+		else:
+			cur = t
+	if cur != "":
+		lines.append(cur)
+	return "\n".join(lines)
+
+
+func _kraken_card(a: String) -> void:
+	var data: Dictionary = KRAKEN_CARDS[a]
+	var v := get_viewport().get_visible_rect().size
+	var size := Vector2(400, 580)
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_popup_root.add_child(holder)
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0.02, 0.01, 0.0)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	holder.add_child(dim)
+	var center := Vector2(v.x * 0.5 - size.x * 0.5, v.y * 0.5 - size.y * 0.5)
+	# 뒷면: 크라켄의 눈
+	var back := Panel.new()
+	back.size = size
+	back.pivot_offset = size * 0.5
+	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	back.add_theme_stylebox_override("panel", _kraken_card_frame(size))
+	back.position = Vector2(center.x, v.y + 60)
+	back.rotation = -0.25
+	holder.add_child(back)
+	var bw := _kraken_card_window(KRAKEN_CARD_BACK, size - Vector2(44, 44), 16)
+	bw.position = Vector2(22, 22)
+	back.add_child(bw)
+	# 앞면
+	var front := Panel.new()
+	front.size = size
+	front.pivot_offset = size * 0.5
+	front.position = center
+	front.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	front.add_theme_stylebox_override("panel", _kraken_card_frame(size))
+	front.scale = Vector2(0.05, 1.0)
+	front.visible = false
+	holder.add_child(front)
+	var fv := VBoxContainer.new()
+	fv.position = Vector2(22, 18)
+	fv.size = Vector2(size.x - 44, size.y - 36)
+	fv.add_theme_constant_override("separation", 12)
+	fv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	front.add_child(fv)
+	var head := Label.new()
+	head.text = tr("KRAKEN'S MOVE")
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	head.add_theme_font_size_override("font_size", 20)
+	head.add_theme_color_override("font_color", KCARD_NEON)
+	fv.add_child(head)
+	var aw := _kraken_card_window(data["art"], Vector2(size.x - 44, (size.x - 44) * 0.75), 14)
+	fv.add_child(aw)
+	var t1 := Label.new()
+	t1.text = tr(String(data["title"]))
+	t1.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	t1.add_theme_font_size_override("font_size", 44)
+	t1.add_theme_color_override("font_color", Color(0.86, 1.0, 0.78))
+	t1.add_theme_color_override("font_outline_color", Color(0.0, 0.12, 0.05))
+	t1.add_theme_constant_override("outline_size", 8)
+	fv.add_child(t1)
+	var t2 := Label.new()
+	t2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	t2.custom_minimum_size = Vector2(size.x - 60, 0)
+	t2.add_theme_font_size_override("font_size", 22)
+	fv.add_child(t2)
+	# 한글은 글자 단위로 끊기니, 띄어쓰기 단위로 직접 줄바꿈
+	t2.text = _wrap_words(tr(String(data["text"])), t2.get_theme_font("font"), 22, size.x - 64)
+	t2.add_theme_color_override("font_color", Color(0.78, 0.92, 0.8))
+	t2.add_theme_constant_override("line_spacing", 4)
+	# 1) 바닥에서 떠오름
+	Audio.play("box_rumble")
+	var t := create_tween()
+	t.tween_property(dim, "color:a", 0.5, 0.3)
+	t.parallel().tween_property(back, "position:y", center.y, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.parallel().tween_property(back, "rotation", 0.0, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	await t.finished
+	# 2) 크라켄이 고르는 듯 부르르 떨림
+	var shake := create_tween()
+	for k in 8:
+		shake.tween_property(back, "position:x", center.x + (9.0 if k % 2 == 0 else -9.0) * (1.0 - k / 8.0), 0.05)
+	shake.tween_property(back, "position:x", center.x, 0.05)
+	_shake_camera(0.25, 0.4)
+	await shake.finished
+	# 3) 뒤집힘
+	Audio.play("box_burst")
+	var flip := create_tween()
+	flip.tween_property(back, "scale:x", 0.05, 0.14)
+	flip.tween_callback(func() -> void:
+		back.visible = false
+		front.visible = true)
+	flip.tween_property(front, "scale:x", 1.0, 0.22).set_trans(Tween.TRANS_BACK)
+	await flip.finished
+	shot_hint = "60_kraken_card_" + a
+	await get_tree().create_timer(2.6, false).timeout
+	var out := create_tween()
+	out.tween_property(holder, "modulate:a", 0.0, 0.3)
+	await out.finished
+	holder.queue_free()
+
+
 ## 1) 많은 칸을 붉게 표시 → 다음 라운드 끝에 내려침
 func _kraken_barrage(r: int) -> void:
 	var n := mini(Rules.KRAKEN_TARGETS_MAX, int(Rules.KRAKEN_TARGETS_BASE + Rules.KRAKEN_TARGETS_GROW * (_attacks - 1)))
 	await _kraken_aim(n, r + 1)
 	shot_hint = "60_kraken_barrage"
-	await _banner(tr("TENTACLE STORM!"), tr("It will smash every red space at the end of next round!"), 1.4)
+	await get_tree().create_timer(0.8, false).timeout
 
 
 ## 2) 적은 칸을 2 라운드 동안 독가시 칸으로 (상점 · 포털 · 미니게임 칸도 바뀔 수 있음)
@@ -310,7 +472,7 @@ func _kraken_spines(r: int) -> void:
 		Audio.play("remove")
 		await get_tree().create_timer(0.3, false).timeout
 	shot_hint = "60_kraken_spines"
-	await _banner(tr("POISON SPINES!"), tr("Stopping on a purple space costs a heart — for %d rounds!") % Rules.KRAKEN_EFFECT_ROUNDS, 1.4)
+	await get_tree().create_timer(0.8, false).timeout
 
 
 ## 4) 2 라운드 동안 상점 가격 2 배
@@ -327,7 +489,7 @@ func _kraken_surge(r: int) -> void:
 	shop_price_mult = Rules.KRAKEN_SURGE_MULT
 	_surge_until = r + Rules.KRAKEN_EFFECT_ROUNDS
 	shot_hint = "60_kraken_surge"
-	await _banner(tr("SHOP PANIC!"), tr("The kraken scared the merchant. Prices x%d for %d rounds!") % [Rules.KRAKEN_SURGE_MULT, Rules.KRAKEN_EFFECT_ROUNDS], 1.4)
+	await get_tree().create_timer(0.8, false).timeout
 
 
 ## 크라켄이 다음에 내려칠 칸들 (대개 누군가 다음 차례에 멈출 만한 곳)
