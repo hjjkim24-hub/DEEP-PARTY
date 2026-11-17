@@ -1487,7 +1487,7 @@ func _kraken_lair(at: Vector2) -> void:
 	# 골짜기 속에 몸을 숨긴 크라켄: 머리(외투막) 꼭대기만 바위처럼 보이다가, 깨어나면 솟아올라 눈을 뜸
 	# 판 북쪽 바깥 심연에 몸을 숨긴 거대 크라켄 (판만 한 크기). 처음엔 깊이 잠겨 있다가 솟아오름
 	kraken_root = Node3D.new()
-	kraken_root.position = Vector3(at.x, KRAKEN_SLEEP_Y, at.y - 17.0)
+	kraken_root.position = Vector3(at.x, KRAKEN_SLEEP_Y, at.y - 30.0)
 	kraken_root.basis = Basis(Vector3.RIGHT, KRAKEN_TILT).scaled(Vector3.ONE * KRAKEN_SCALE)
 	add_child(kraken_root)
 	# 몸통: 외투막 · 머리 · 눈두덩 · 팔 뿌리가 하나로 이어진 조각 (tools/make_kraken.py)

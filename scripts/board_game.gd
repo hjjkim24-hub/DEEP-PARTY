@@ -128,7 +128,9 @@ func _kraken_wakes() -> void:
 	await get_tree().create_timer(1.6, false).timeout
 	shot_hint = "34_kraken_awakens"
 	await _banner(tr("THE KRAKEN AWAKENS!"), tr("Dodge its tentacles. Last one standing wins!"), 1.8)
-	_cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 1.4)
+	# 연출 카메라에서 판 전체 보기로 (크라켄이 판을 움켜쥔 모습이 한눈에), 그다음 첫 차례로
+	_move_camera(world.overview, world.overview_zoom, 0.01)
+	_cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 1.6)
 	await _banner(tr("EVERY 2 ROUNDS..."), tr("...the kraken takes its turn. Stay alert!"), 1.4)
 
 

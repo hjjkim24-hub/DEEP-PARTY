@@ -98,6 +98,20 @@ func _run() -> void:
 	GameState.players[1] = {"kind": "cpu", "level": 1, "color": 2}
 	GameState.players[2] = {"kind": "cpu", "level": 1, "color": 5}
 	get_tree().change_scene_to_file("res://scenes/board.tscn")
+	# wake: 크라켄이 깨어나는 장면을 일정 간격으로 촬영
+	if "wake" in _want:
+		var g0: Node = null
+		while g0 == null or not ("world" in g0) or g0.world == null or g0.world.kraken_root == null:
+			await get_tree().process_frame
+			g0 = get_tree().current_scene
+		while g0.world.kraken_root.position.y <= g0.world.KRAKEN_SLEEP_Y + 0.5:
+			await get_tree().process_frame
+		await get_tree().create_timer(0.6).timeout
+		for k in 12:
+			await _shot("w_%d" % k)
+			await get_tree().create_timer(0.95).timeout
+		get_tree().quit(0)
+		return
 	# 크라켄이 다 솟아오를 때까지
 	var g: Node = null
 	while true:
@@ -106,7 +120,10 @@ func _run() -> void:
 		if g and "world" in g and g.world and g.world.kraken_root \
 				and g.world.kraken_root.position.y >= g.world.KRAKEN_AWAKE_Y - 0.3:
 			break
-	await get_tree().create_timer(3.0).timeout
+	# 등장 연출이 끝나고 첫 라운드가 시작될 때까지
+	while not String(g.shot_hint).begins_with("39_round"):
+		await get_tree().process_frame
+	await get_tree().create_timer(2.5).timeout
 	var w: Node = g.world
 	# turns: 자동 진행하며 크라켄 차례 행동을 하나씩 강제로 → 장면마다 촬영
 	if "turns" in _want:
