@@ -1603,73 +1603,258 @@ func _kraken_chest() -> void:
 	root.position = CHEST_AT
 	root.basis = Basis(Vector3.UP, -PI * 0.5)       # 상자 앞(+z)이 칸(-x) 쪽을 봄
 	add_child(root)
-	var wood := smat(Color(0.32, 0.17, 0.09), "wood", 0.22, Vector3(1, 0, 0))
-	var dark := smat(Color(0.16, 0.09, 0.05), "wood", 0.0)
-	var w_ := 2.6
-	var d_ := 1.7
-	var h_ := 1.3
-	# 받침 단 + 상자 몸통 + 금테 · 쇠 모서리
-	_mi(w._rbox(Vector3(w_ + 1.2, 0.3, d_ + 1.2), 0.08), dark, Vector3(0, 0.15, 0), Basis(), root)
-	_mi(w._box(Vector3(w_, h_, d_)), wood, Vector3(0, 0.3 + h_ * 0.5, 0), Basis(), root)
-	for bx: float in [-w_ * 0.36, 0.0, w_ * 0.36]:
-		_mi(w._box(Vector3(0.14, h_ + 0.04, d_ + 0.06)), gold(), Vector3(bx, 0.3 + h_ * 0.5, 0), Basis(), root)
+	var cw := 2.8                 # 폭
+	var cd := 1.8                 # 깊이
+	var ch := 1.25                # 몸통 높이
+	var y0 := 0.42                # 받침 위
+	var plank := smat(Color(0.36, 0.19, 0.1), "wood", 0.26, Vector3(1, 0, 0), 0.0)
+	var plank_side := smat(Color(0.33, 0.17, 0.09), "wood", 0.26, Vector3(0, 0, 1), 0.0)
+	var dark := smat(Color(0.14, 0.08, 0.05), "wood", 0.0)
+	var brass := mat(Color(0.9, 0.68, 0.3), 0.26, 0.92)
+	var iron_m := mat(Color(0.14, 0.13, 0.12), 0.38, 0.85)
+	var rivet := SphereMesh.new()
+	rivet.radius = 0.045
+	rivet.height = 0.07
+	rivet.radial_segments = 8
+	rivet.rings = 4
+	var rivets := []
+	# 받침: 금테 두른 검은 나무 단 (둥근 모서리) + 붉은 천
+	_mi(w._rbox(Vector3(cw + 1.6, 0.26, cd + 1.6), 0.1), dark, Vector3(0, 0.13, 0), Basis(), root)
+	_mi(w._rbox(Vector3(cw + 1.7, 0.06, cd + 1.7), 0.03), brass, Vector3(0, 0.24, 0), Basis(), root)
+	_mi(w._rbox(Vector3(cw + 0.9, 0.14, cd + 0.9), 0.06), mat(Color(0.45, 0.06, 0.08), 0.85), Vector3(0, 0.33, 0), Basis(), root)
+	# 몸통: 앞뒤는 가로 널, 옆은 세로 결 + 아랫단 굽
+	_mi(w._rbox(Vector3(cw, ch, cd), 0.05), plank, Vector3(0, y0 + ch * 0.5, 0), Basis(), root)
+	_mi(w._rbox(Vector3(cw + 0.02, ch - 0.1, cd - 0.1), 0.04), plank_side, Vector3(0, y0 + ch * 0.5, 0), Basis(), root)
+	_mi(w._rbox(Vector3(cw + 0.12, 0.16, cd + 0.12), 0.04), dark, Vector3(0, y0 + 0.08, 0), Basis(), root)
+	_mi(w._rbox(Vector3(cw + 0.1, 0.1, cd + 0.1), 0.03), brass, Vector3(0, y0 + ch - 0.05, 0), Basis(), root)
+	# 세로 띠 (몸통 감싼 놋쇠) + 징
+	for bx: float in [-cw * 0.36, cw * 0.36]:
+		_mi(w._box(Vector3(0.2, ch + 0.02, cd + 0.05)), brass, Vector3(bx, y0 + ch * 0.5, 0), Basis(), root)
+		for k in 4:
+			var yy := y0 + 0.2 + k * (ch - 0.4) / 3.0
+			for sz: float in [-1.0, 1.0]:
+				rivets.append(Transform3D(Basis(), Vector3(bx, yy, sz * (cd * 0.5 + 0.03))))
+	# 모서리 쇠 장식 (ㄱ자) + 징
 	for cx: float in [-1.0, 1.0]:
 		for cz: float in [-1.0, 1.0]:
-			_mi(w._box(Vector3(0.22, h_ + 0.06, 0.22)), iron(), Vector3(cx * w_ * 0.5, 0.3 + h_ * 0.5, cz * d_ * 0.5), Basis(), root)
-	# 안쪽: 빛나는 금화 더미 (뚜껑이 열리면 보임)
-	chest_glow = _glow(Color(1.0, 0.75, 0.3), 1.2)
-	var pile := SphereMesh.new()
-	pile.radius = 1.0
-	pile.height = 0.7
-	_mi(pile, chest_glow, Vector3(0, 0.3 + h_ - 0.15, 0), Basis().scaled(Vector3(w_ * 0.45, 0.45, d_ * 0.42)), root)
-	# 뚜껑 (뒤쪽 경첩을 축으로 열림): 둥근 지붕 + 금테 + 앞쪽 크라켄 자물쇠
+			for cy: float in [0.0, 1.0]:
+				var py := y0 + 0.12 + cy * (ch - 0.24)
+				_mi(w._box(Vector3(0.36, 0.26, 0.05)), iron_m, Vector3(cx * (cw * 0.5 - 0.16), py, cz * (cd * 0.5 + 0.02)), Basis(), root)
+				_mi(w._box(Vector3(0.05, 0.26, 0.36)), iron_m, Vector3(cx * (cw * 0.5 + 0.02), py, cz * (cd * 0.5 - 0.16)), Basis(), root)
+				rivets.append(Transform3D(Basis(), Vector3(cx * (cw * 0.5 - 0.22), py, cz * (cd * 0.5 + 0.05))))
+	# 옆 손잡이 (쇠고리)
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.16
+	ring.outer_radius = 0.22
+	ring.rings = 24
+	ring.ring_segments = 8
+	for cx: float in [-1.0, 1.0]:
+		_mi(w._box(Vector3(0.06, 0.24, 0.3)), iron_m, Vector3(cx * (cw * 0.5 + 0.03), y0 + ch * 0.62, 0), Basis(), root)
+		_mi(ring, iron_m, Vector3(cx * (cw * 0.5 + 0.08), y0 + ch * 0.5, 0), Basis(Vector3(0, 0, 1), PI * 0.5), root)
+	# 앞 자물쇠판 + 열쇠 구멍 + 크라켄 눈 보석
+	var front := cd * 0.5 + 0.03
+	_mi(w._rbox(Vector3(0.56, 0.66, 0.07), 0.05), brass, Vector3(0, y0 + ch - 0.3, front), Basis(), root)
+	_mi(w._box(Vector3(0.07, 0.16, 0.02)), mat(Color(0.02, 0.02, 0.02), 0.6), Vector3(0, y0 + ch - 0.42, front + 0.04), Basis(), root)
+	_mi(w._cyl(0.05, 0.05, 0.02, 12), mat(Color(0.02, 0.02, 0.02), 0.6), Vector3(0, y0 + ch - 0.33, front + 0.04), Basis(Vector3(1, 0, 0), PI * 0.5), root)
+	var gem := SphereMesh.new()
+	gem.radius = 0.13
+	gem.height = 0.2
+	_mi(gem, _glow(Color(0.4, 1.0, 0.35), 3.0), Vector3(0, y0 + ch - 0.13, front + 0.05), Basis(), root)
+	_mi(w._box(Vector3(0.03, 0.15, 0.02)), mat(Color(0.02, 0.04, 0.02), 0.3), Vector3(0, y0 + ch - 0.13, front + 0.16), Basis(), root)
+	for k in 6:
+		var a := TAU * k / 6.0
+		rivets.append(Transform3D(Basis(), Vector3(cos(a) * 0.2, y0 + ch - 0.3 + sin(a) * 0.24, front + 0.04)))
+	# 안쪽: 넘칠 듯 쌓인 진짜 금화 더미 (한 닢씩 겹겹이 기울어 쌓임 · 빛나지 않는 금속)
+	chest_glow = StandardMaterial3D.new()
+	chest_glow.albedo_color = Color(0.86, 0.62, 0.24)
+	chest_glow.metallic = 1.0
+	chest_glow.roughness = 0.4
+	chest_glow.emission_enabled = true
+	chest_glow.emission = Color(1.0, 0.7, 0.25)
+	chest_glow.emission_energy_multiplier = 0.0
+	var coin_m := _coin_mesh()
+	var coins := []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 31
+	var top_y := y0 + ch - 0.35          # 더미 바닥 (몸통 안)
+	var hx := cw * 0.5 - 0.14
+	var hz := cd * 0.5 - 0.14
+	for layer in 9:
+		var ly := top_y + layer * 0.045
+		var shrink := 1.0 - pow(layer / 9.0, 1.6) * 0.75     # 위로 갈수록 가운데만 (둥근 더미)
+		var n := int(260 * shrink)
+		for k in n:
+			var u := rng.randf_range(-1, 1) * shrink
+			var v := rng.randf_range(-1, 1) * shrink
+			var tilt := Basis(Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized(), rng.randf_range(0.0, 0.55))
+			coins.append(Transform3D(tilt.rotated(Vector3.UP, rng.randf() * TAU), Vector3(u * hx, ly + rng.randf() * 0.03, v * hz)))
+	# 앞 테두리에 걸쳐 흘러내린 금화
+	for k in 26:
+		var x := rng.randf_range(-cw * 0.42, cw * 0.42)
+		coins.append(Transform3D(Basis(Vector3(1, 0, 0), rng.randf_range(0.6, 1.3)).rotated(Vector3.UP, rng.randf_range(-0.4, 0.4)),
+			Vector3(x, y0 + ch + 0.02 + rng.randf() * 0.05, cd * 0.5 - 0.05)))
+	var cmm := MultiMesh.new()
+	cmm.transform_format = MultiMesh.TRANSFORM_3D
+	cmm.mesh = coin_m
+	cmm.instance_count = coins.size()
+	for k in coins.size():
+		cmm.set_instance_transform(k, coins[k])
+	var cmi := MultiMeshInstance3D.new()
+	cmi.multimesh = cmm
+	cmi.material_override = chest_glow
+	root.add_child(cmi)
+	# 더미 아래는 어두운 바닥 (틈 사이가 빛나지 않게)
+	_mi(w._box(Vector3(cw - 0.12, 0.1, cd - 0.12)), mat(Color(0.12, 0.07, 0.03), 0.9), Vector3(0, top_y - 0.04, 0), Basis(), root)
+	for g in [[Color(0.9, 0.08, 0.15), Vector3(-0.7, 0.32, 0.2)], [Color(0.1, 0.8, 0.35), Vector3(0.4, 0.38, -0.25)], [Color(0.15, 0.35, 1.0), Vector3(0.9, 0.28, 0.35)],
+			[Color(0.75, 0.2, 1.0), Vector3(-0.2, 0.4, -0.4)], [Color(0.9, 0.08, 0.15), Vector3(1.1, 0.25, -0.3)]]:
+		var gm := _glow(g[0], 0.25)
+		gm.metallic_specular = 1.0
+		gm.roughness = 0.05
+		_mi(w._prism(0.2, 0.2, 0.2), gm, Vector3(0, y0 + ch - 0.12, 0) + g[1], Basis(Vector3(rng.randf(), 1, rng.randf()).normalized(), rng.randf() * TAU), root)
+	# 진주 목걸이 (앞으로 늘어짐)
+	var pearl := SphereMesh.new()
+	pearl.radius = 0.045
+	pearl.height = 0.09
+	pearl.radial_segments = 8
+	pearl.rings = 4
+	var pearls := []
+	for k in 26:
+		var f := k / 25.0
+		pearls.append(Transform3D(Basis(), Vector3(lerpf(-0.9, 0.2, f), y0 + ch + 0.08 - sin(f * PI) * 0.45 * smoothstep(0.3, 0.6, f), cd * 0.5 + 0.06 * sin(f * PI))))
+	_multi_in(root, pearl, mat(Color(0.96, 0.94, 0.9), 0.15, 0.1), pearls)
+	# 뚜껑: 반원통 (가로 널) + 끝 마구리 + 놋쇠 띠 3 줄 + 징. 뒤쪽 위 모서리 경첩을 축으로 열림
 	chest_lid = Node3D.new()
-	chest_lid.position = Vector3(0, 0.3 + h_, -d_ * 0.5)
+	chest_lid.position = Vector3(0, y0 + ch, -cd * 0.5)
 	root.add_child(chest_lid)
-	_mi(w._cyl(d_ * 0.5, d_ * 0.5, w_, 24), wood, Vector3(0, 0, d_ * 0.5), Basis(Vector3(0, 0, 1), PI * 0.5).scaled(Vector3(1.0, 1.0, 0.62)), chest_lid)
-	for bx: float in [-w_ * 0.36, 0.0, w_ * 0.36]:
-		_mi(w._cyl(d_ * 0.52, d_ * 0.52, 0.14, 24), gold(), Vector3(bx, 0, d_ * 0.5), Basis(Vector3(0, 0, 1), PI * 0.5).scaled(Vector3(1.0, 1.0, 0.63)), chest_lid)
-	var lock := Node3D.new()
-	lock.position = Vector3(0, 0.05, d_ + 0.04)
-	lock.scale = Vector3.ONE * 0.16
-	lock.basis = Basis().scaled(Vector3.ONE * 0.16)
-	chest_lid.add_child(lock)
-	var body := MeshInstance3D.new()
-	body.mesh = w.KRAKEN_BODY
-	body.material_override = mat(Color(0.85, 0.62, 0.26), 0.3, 0.9)
-	lock.add_child(body)
-	for sd: float in [-1.0, 1.0]:
-		var eye := SphereMesh.new()
-		eye.radius = 0.36
-		eye.height = 0.72
-		_mi(eye, _glow(Color(0.5, 1.0, 0.35), 4.0), Vector3(sd * 1.57, 0.74, 1.3), Basis(), lock)
-	chest_lid.rotation.x = -0.18     # 살짝 들린 뚜껑 틈으로 금빛이 새어 나옴
-	# 상자를 휘감은 작은 크라켄 촉수 (상자 뒤 갑판 가장자리에서 기어 올라옴)
+	var lr := cd * 0.5
+	_mi(_half_drum(cw, lr, 0.62, 0.0), plank, Vector3(0, 0, lr), Basis(), chest_lid)
+	for bx: float in [-cw * 0.36, cw * 0.36]:
+		_mi(_half_drum(0.2, lr + 0.025, 0.62, 0.0), brass, Vector3(bx, 0, lr), Basis(), chest_lid)
+		for k in 5:
+			var a := PI * (k + 0.5) / 5.0
+			rivets.append(Transform3D(Basis(), chest_lid.position + Vector3(bx, sin(a) * (lr + 0.04) * 0.62, lr + cos(a) * (lr + 0.04))))
+	_mi(_half_drum(cw + 0.1, lr + 0.03, 0.62, 0.0, 0.08), brass, Vector3(0, 0, lr), Basis(), chest_lid)
+	_mi(w._box(Vector3(cw + 0.08, 0.08, cd + 0.08)), dark, Vector3(0, 0.04, lr), Basis(), chest_lid)
+	# 경첩
+	for bx: float in [-cw * 0.36, cw * 0.36]:
+		_mi(w._cyl(0.07, 0.07, 0.3, 10), iron_m, Vector3(bx, 0.0, -0.02), Basis(Vector3(0, 0, 1), PI * 0.5), chest_lid)
+	_multi_in(root, rivet, brass, rivets.filter(func(x: Transform3D) -> bool: return x.origin.y < y0 + ch + 0.01))
+	var lid_rivets := []
+	for x: Transform3D in rivets:
+		if x.origin.y >= y0 + ch + 0.01:
+			lid_rivets.append(Transform3D(x.basis, x.origin - chest_lid.position))
+	_multi_in(chest_lid, rivet, brass, lid_rivets)
+	chest_lid.rotation.x = -0.22     # 살짝 들린 뚜껑 틈으로 금빛이 새어 나옴
+	# 상자를 휘감은 크라켄 촉수 (뒤쪽 갑판에서 기어 올라 옆을 감고 뚜껑 위를 꽉 누름)
 	var g := root.global_transform
 	var to_ship := func(lp: Vector3) -> Vector3: return (g * lp) - global_transform.origin
 	var pts := []
-	for lp in [Vector3(-2.6, 0.2, -2.6), Vector3(-1.9, 0.6, -1.3), Vector3(-1.5, 1.3, -0.2), Vector3(-1.45, 1.75, 0.95),
-			Vector3(-0.6, 2.05, 1.2), Vector3(0.4, 2.1, 0.9), Vector3(1.0, 1.95, 0.2), Vector3(0.7, 1.75, -0.4)]:
+	for lp in [Vector3(-3.4, 0.25, -3.2), Vector3(-2.3, 0.35, -2.0), Vector3(-1.75, 0.8, -1.05), Vector3(-1.62, 1.35, -0.1),
+			Vector3(-1.58, 1.65, 0.75), Vector3(-1.1, 2.15, 0.95), Vector3(-0.3, 2.32, 0.6), Vector3(0.45, 2.3, 0.0),
+			Vector3(0.95, 2.1, -0.55), Vector3(1.25, 1.85, -0.2), Vector3(1.05, 1.95, 0.2)]:
 		pts.append(to_ship.call(lp))
-	_spline_tentacle(pts, 0.55, func(p: Vector3) -> Vector3: return ((CHEST_AT + Vector3(0, 1.0, 0)) - p).normalized())
-	# 흩어진 금화 + 불빛
-	var coin := _glow(Color(1.0, 0.76, 0.3), 0.5)
-	coin.metallic = 0.9
-	coin.roughness = 0.3
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 77
-	for k in 26:
-		var a := rng.randf() * TAU
-		var r := rng.randf_range(1.8, 3.0)
-		_mi(w._cyl(0.11, 0.11, 0.04, 10), coin, CHEST_AT + Vector3(cos(a) * r, 0.32, sin(a) * r), Basis(Vector3(1, 0, 0), rng.randf_range(-0.2, 0.2)))
+	_spline_tentacle(pts, 0.42, func(p: Vector3) -> Vector3: return ((CHEST_AT + Vector3(0, 1.1, 0)) - p).normalized(), 0.12)
+	# 흩어진 금화 · 쌓인 금화 · 보석
+	var spill := []
+	for k in 60:
+		var a := rng.randf_range(-1.3, 1.3)
+		var r := rng.randf_range(1.6, 2.9)
+		spill.append(Transform3D(Basis(Vector3(1, 0, 0), rng.randf_range(-0.25, 0.25)).rotated(Vector3.UP, rng.randf() * TAU),
+			Vector3(sin(a) * r, 0.43 if r < 2.3 else 0.27, cos(a) * r * 0.9)))
+	for k in 3:
+		var sx: float = [-1.6, 1.5, 0.9][k]
+		var sz: float = [1.4, 1.3, 1.9][k]
+		for q in 5 + k * 2:
+			spill.append(Transform3D(Basis().rotated(Vector3.UP, q * 0.7), Vector3(sx + rng.randf_range(-0.02, 0.02), 0.42 + q * 0.032, sz)))
+	_multi_in(root, coin_m, chest_glow, spill)
 	chest_light = OmniLight3D.new()
 	chest_light.light_color = Color(1.0, 0.72, 0.35)
-	chest_light.light_energy = 1.4
+	chest_light.light_energy = 1.6
 	chest_light.omni_range = 7.0
 	chest_light.position = CHEST_AT + Vector3(0, 2.2, 0)
 	add_child(chest_light)
-	_lantern(CHEST_AT + Vector3(0.6, 0.0, 2.8) + Vector3(0, 1.0, 0), 0.8, false, false, Color(0.55, 1.0, 0.45))
-	_lantern(CHEST_AT + Vector3(0.6, 0.0, -2.8) + Vector3(0, 1.0, 0), 0.8, false, false, Color(0.55, 1.0, 0.45))
+	var gl := OmniLight3D.new()
+	gl.light_color = Color(1.0, 0.8, 0.5)
+	gl.light_energy = 0.5
+	gl.omni_range = 2.6
+	gl.position = Vector3(0, y0 + ch + 0.4, 0.3)
+	root.add_child(gl)
+	_lantern(CHEST_AT + Vector3(0.6, 1.0, 3.0), 0.8, false, false, Color(0.55, 1.0, 0.45))
+	_lantern(CHEST_AT + Vector3(0.6, 1.0, -3.0), 0.8, false, false, Color(0.55, 1.0, 0.45))
+
+
+## 금화 한 닢: 테두리가 도톰하고 가운데가 살짝 파인 동전 (반지름 0.1)
+var _coin: ArrayMesh
+func _coin_mesh() -> ArrayMesh:
+	if _coin:
+		return _coin
+	var prof := [Vector2(0.0, 0.009), Vector2(0.07, 0.008), Vector2(0.078, 0.013), Vector2(0.094, 0.014), Vector2(0.1, 0.008),
+		Vector2(0.1, -0.008), Vector2(0.094, -0.014), Vector2(0.078, -0.013), Vector2(0.07, -0.008), Vector2(0.0, -0.009)]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var seg := 18
+	for k in prof.size() - 1:
+		var p0: Vector2 = prof[k]
+		var p1: Vector2 = prof[k + 1]
+		for j in seg:
+			var a0 := TAU * j / seg
+			var a1 := TAU * (j + 1) / seg
+			var v00 := Vector3(cos(a0) * p0.x, p0.y, sin(a0) * p0.x)
+			var v01 := Vector3(cos(a1) * p0.x, p0.y, sin(a1) * p0.x)
+			var v10 := Vector3(cos(a0) * p1.x, p1.y, sin(a0) * p1.x)
+			var v11 := Vector3(cos(a1) * p1.x, p1.y, sin(a1) * p1.x)
+			var mid := (v00 + v11) * 0.5
+			var out := Vector3(mid.x, mid.y * 6.0, mid.z).normalized()
+			ReefKit._tri(st, v00, v01, v11, out)
+			ReefKit._tri(st, v00, v11, v10, out)
+	st.generate_normals()
+	_coin = st.commit()
+	return _coin
+
+
+func _multi_in(parent: Node, mesh: Mesh, m: Material, xs: Array) -> void:
+	if xs.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = xs.size()
+	for k in xs.size():
+		mm.set_instance_transform(k, xs[k])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = m
+	parent.add_child(mmi)
+
+
+## 반원통 (뚜껑): 길이 ln (x), 반지름 r, 높이 비율 k (둥근 지붕이 납작하게). band > 0 이면 테 (안쪽 없이 바깥 면만, 그 폭만큼)
+func _half_drum(ln: float, r: float, k: float, _unused: float, band := 0.0) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var n := 24
+	var hx := ln * 0.5
+	var arc := func(a: float) -> Vector2: return Vector2(cos(a) * r, sin(a) * r * k)    # (z, y)
+	for i in n:
+		var a0 := PI * i / n
+		var a1 := PI * (i + 1) / n
+		var p0: Vector2 = arc.call(a0)
+		var p1: Vector2 = arc.call(a1)
+		var o := Vector3(0, (p0.y + p1.y) * 0.5, (p0.x + p1.x) * 0.5).normalized()
+		if band > 0.0:
+			for e: float in [-1.0, 1.0]:
+				# 테의 양쪽 끝 둘레 띠 (x = ±hx 에서 band 폭)
+				var xa := e * hx
+				var xb := e * (hx - band)
+				ReefKit._tri(st, Vector3(xa, p0.y, p0.x), Vector3(xb, p0.y, p0.x), Vector3(xb, p1.y, p1.x), o)
+				ReefKit._tri(st, Vector3(xa, p0.y, p0.x), Vector3(xb, p1.y, p1.x), Vector3(xa, p1.y, p1.x), o)
+			continue
+		ReefKit._tri(st, Vector3(-hx, p0.y, p0.x), Vector3(hx, p0.y, p0.x), Vector3(hx, p1.y, p1.x), o)
+		ReefKit._tri(st, Vector3(-hx, p0.y, p0.x), Vector3(hx, p1.y, p1.x), Vector3(-hx, p1.y, p1.x), o)
+		if band <= 0.0:
+			for e: float in [-1.0, 1.0]:
+				ReefKit._tri(st, Vector3(e * hx, 0, 0), Vector3(e * hx, p0.y, p0.x), Vector3(e * hx, p1.y, p1.x), Vector3(e, 0, 0))
+	st.generate_normals()
+	return st.commit()
 
 
 ## 보물상자 뚜껑 연출: win = 활짝 열리며 금빛, 아니면 크라켄 초록빛으로 쾅
@@ -1678,9 +1863,9 @@ func chest_reveal(win: bool) -> void:
 	t.tween_property(chest_lid, "rotation:x", -1.7 if win else -1.1, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	chest_light.light_color = Color(1.0, 0.75, 0.35) if win else Color(0.45, 1.0, 0.35)
 	t.tween_property(chest_light, "light_energy", 6.0, 0.25)
-	t.tween_method(func(v: float) -> void: chest_glow.emission_energy_multiplier = v, 1.2, 5.0 if win else 1.2, 0.3)
+	t.tween_method(func(v: float) -> void: chest_glow.emission_energy_multiplier = v, 0.0, 0.5 if win else 0.0, 0.3)
 	t.chain().tween_interval(1.4)
 	t.chain().set_parallel(true)
-	t.tween_property(chest_lid, "rotation:x", -0.18, 0.5).set_trans(Tween.TRANS_CUBIC)
+	t.tween_property(chest_lid, "rotation:x", -0.22, 0.5).set_trans(Tween.TRANS_CUBIC)
 	t.tween_property(chest_light, "light_energy", 1.4, 0.6)
-	t.tween_method(func(v: float) -> void: chest_glow.emission_energy_multiplier = v, 5.0 if win else 1.2, 1.2, 0.6)
+	t.tween_method(func(v: float) -> void: chest_glow.emission_energy_multiplier = v, 0.5 if win else 0.0, 0.0, 0.6)

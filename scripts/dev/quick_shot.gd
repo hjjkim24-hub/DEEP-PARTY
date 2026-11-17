@@ -311,10 +311,19 @@ func _run() -> void:
 		gc._cinematic(tp + Vector3(-7.0, 6.0, 6.0), tp + Vector3(3.0, 0.5, 0.0), 1.0, 0.01)
 		await get_tree().create_timer(1.5).timeout
 		await _shot("ch_tile")
+		var cpos: Vector3 = wc.ship.global_transform.origin + wc.ship.CHEST_AT
+		gc._cinematic(cpos + Vector3(-6.0, 3.2, 3.4), cpos + Vector3(0.0, 1.2, 0.0), 1.0, 0.01)
+		await get_tree().create_timer(1.2).timeout
+		await _shot("ch_close")
+		wc.ship.chest_reveal(true)
+		await get_tree().create_timer(0.5).timeout
+		await _shot("ch_open")
+		await get_tree().create_timer(2.5).timeout
 		gc._cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.01)
 		gc.rig_chest = 1
 		gc._kraken_chest(me)
 		await _catch(gc, ["62a_chest_bet", "62b_chest_spin", "62c_chest_win"], "ch_")
+
 		await get_tree().create_timer(4.0).timeout
 		gc.rig_chest = 0
 		gc._kraken_chest(me)
