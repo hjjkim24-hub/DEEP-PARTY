@@ -213,9 +213,9 @@ func _run() -> void:
 		gp._move_camera(ws.overview, ws.overview_zoom, 0.01)
 		await get_tree().create_timer(2.0).timeout
 		await _shot("ship_overview")
-		var views := {"ship_side": [Vector3(6, 10, 110), Vector3(3, 10, 0)], "ship_bow": [Vector3(92, 26, 58), Vector3(4, 8, 0)],
-			"ship_stern": [Vector3(-84, 24, 48), Vector3(-22, 8, 0)], "ship_top": [Vector3(-10, 34, 26), Vector3(-14, 15, 0)],
-			"ship_deck": [Vector3(2, 12, 30), Vector3(4, 0, 2)]}
+		var views := {"ship_side": [Vector3(9, 15, 165), Vector3(4, 15, 0)], "ship_bow": [Vector3(138, 39, 87), Vector3(6, 12, 0)],
+			"ship_stern": [Vector3(-126, 36, 72), Vector3(-33, 12, 0)], "ship_top": [Vector3(-15, 51, 39), Vector3(-21, 23, 0)],
+			"ship_deck": [Vector3(3, 18, 45), Vector3(6, 0, 3)]}
 		for k in views:
 			gp._cinematic(at + views[k][0], at + views[k][1], 1.0, 0.01)
 			await get_tree().create_timer(1.2).timeout
@@ -252,7 +252,7 @@ func _run() -> void:
 		gq._cinematic(atq + Vector3(60.0, 24.0, 104.0), atq + Vector3(-3.0, 11.0, 0.0), 1.0, 0.01)
 		await get_tree().create_timer(2.5).timeout
 		await _shot("il_ship")
-		gq._cinematic(atq + Vector3(16.0, 14.0, 118.0), atq + Vector3(-2.0, 19.0, 0.0), 1.0, 0.01)
+		gq._cinematic(atq + Vector3(24.0, 21.0, 177.0), atq + Vector3(-3.0, 28.0, 0.0), 1.0, 0.01)
 		await get_tree().create_timer(1.5).timeout
 		await _shot("il_ship_b")
 		get_tree().quit(0)

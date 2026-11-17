@@ -681,7 +681,7 @@ func _arrive(alive: Array, to_ship: bool) -> void:
 	if to_ship:
 		# 밤하늘을 나는 배를 옆에서 먼저 보여 줌
 		var at: Vector3 = world.ship.AT
-		_cinematic(at + Vector3(24.0, 9.0, 112.0), at + Vector3(3.0, 11.0, 0.0), 1.0, 0.01)
+		_cinematic(at + Vector3(36.0, 14.0, 168.0), at + Vector3(4.0, 16.0, 0.0), 1.0, 0.01)
 		_move_camera(world.overview, world.overview_zoom, 0.01)
 		await get_tree().create_timer(0.15, false).timeout
 		await _fade_black(_fade, 0.0, 0.7)

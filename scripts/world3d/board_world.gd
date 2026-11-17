@@ -3900,11 +3900,11 @@ func enter_ship() -> void:
 	for l in ship.lights:
 		(l as Node3D).visible = true
 	_we.environment = ship.env
-	overview = ship.AT + Vector3(2.0, 0, -5.0)
-	overview_zoom = 6.6
-	zoom_max = 7.5
-	half_w = 52.0
-	half_d = 16.0
+	overview = ship.AT + Vector3(2.0, 0, -8.0)
+	overview_zoom = 8.6
+	zoom_max = 10.5
+	half_w = 74.0
+	half_d = 24.0
 	view_center = ship.AT
 
 
