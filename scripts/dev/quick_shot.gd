@@ -322,7 +322,7 @@ func _run() -> void:
 		gc._cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.01)
 		gc.rig_chest = 1
 		gc._kraken_chest(me)
-		await _catch(gc, ["62a_chest_bet", "62b_chest_spin", "62c_chest_win"], "ch_")
+		await _catch(gc, ["62a_chest_bet", "62b_chest_spin", "62e_chest_wheel_stop", "62c_chest_win"], "ch_")
 
 		await get_tree().create_timer(4.0).timeout
 		gc.rig_chest = 0

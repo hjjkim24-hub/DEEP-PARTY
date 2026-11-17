@@ -15,7 +15,6 @@ const TutorialOverlay := preload("res://scripts/ui/tutorial_overlay.gd")
 const PathArrow := preload("res://scripts/ui/path_arrow.gd")
 const PauseMenu := preload("res://scripts/ui/pause_menu.gd")
 const MinigameIntro := preload("res://scripts/minigames/minigame_intro.gd")
-const KrakenRoulette := preload("res://scripts/ui/kraken_roulette.gd")
 const PirateFonts := preload("res://scripts/ui/pirate_fonts.gd")
 const CARD_TEX := preload("res://textures/tiles/card_chance.png")
 const COIN_TEX := preload("res://textures/ui/coin.png")
@@ -1063,32 +1062,32 @@ func _kraken_chest(p: Dictionary) -> void:
 	await get_tree().create_timer(0.45, false).timeout
 	var win: bool = _rng.randf() < Rules.KRAKEN_CHEST_WIN if rig_chest < 0 else rig_chest == 1
 	rig_chest = -1
-	var dim := _modal_dim()
-	dim.color = Color(0, 0.03, 0.05, 0.4)
-	var box := VBoxContainer.new()
-	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_theme_constant_override("separation", 6)
-	dim.add_child(box)
-	var title := _outlined_label(tr("KRAKEN'S CHEST"), 46)
+	# 상자 옆 크라켄의 행운 바퀴를 정면에서 보며 돌림
+	var view: Array = world.ship.wheel_view()
+	_cinematic(view[0], view[1], 1.0, 0.9)
+	var cap := VBoxContainer.new()
+	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cap.add_theme_constant_override("separation", 2)
+	_popup_root.add_child(cap)
+	var title := _outlined_label(tr("KRAKEN'S CHEST"), 44)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_color_override("font_color", GOLD)
-	box.add_child(title)
+	cap.add_child(title)
 	var sub := _outlined_label(tr("%s bets %d coins") % [p["name"], bet], 26)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(sub)
-	var wheel := KrakenRoulette.new()
-	wheel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	box.add_child(wheel)
+	cap.add_child(sub)
 	await get_tree().process_frame
-	box.position = (get_viewport().get_visible_rect().size - box.size) * 0.5
-	box.pivot_offset = box.size * 0.5
-	box.scale = Vector2.ONE * 0.6
-	create_tween().tween_property(box, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	await get_tree().create_timer(0.4, false).timeout
+	var vs := get_viewport().get_visible_rect().size
+	cap.position = Vector2((vs.x - cap.size.x) * 0.5, vs.y - cap.size.y - 70.0)
+	await get_tree().create_timer(1.0, false).timeout
 	Audio.play("box_rumble")
-	get_tree().create_timer(1.6, false).timeout.connect(func() -> void: shot_hint = "62b_chest_spin")
-	await wheel.spin(win)
-	dim.queue_free()
+	get_tree().create_timer(1.8, false).timeout.connect(func() -> void: shot_hint = "62b_chest_spin")
+	await world.ship.wheel_spin(win)
+	shot_hint = "62e_chest_wheel_stop"
+	await get_tree().create_timer(0.6, false).timeout
+	cap.queue_free()
+	_cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.8)
+	await get_tree().create_timer(0.6, false).timeout
 	if world.ship:
 		world.ship.chest_reveal(win)
 	if win:

@@ -58,6 +58,10 @@ const DROPS := ["S3", "M6", "F2", "P2"]
 ## 특별한 칸 (나머지는 일반 칸)
 const SPECIAL := {"F3": "kraken_chest"}
 const CHEST_AT := Vector3(53.6, FC_Y, 0.0)   ## 크라켄의 보물상자 (보물상자 칸 바로 앞, 뱃머리 쪽)
+const WHEEL_AT := Vector3(55.6, FC_Y, -5.8)  ## 크라켄의 행운 바퀴 (상자 옆에 세워 둔 커다란 나무 바퀴, 앞이 +z)
+const WHEEL_R := 1.8
+const WHEEL_H := 2.75                        ## 갑판에서 바퀴 축까지
+const WHEEL_SEGS := 10
 
 var w                                ## board_world
 var env: Environment
@@ -245,6 +249,7 @@ func build() -> void:
 	_kraken_arms()
 	_kraken_things()
 	_kraken_chest()
+	_fortune_wheel()
 	_lights_decor()
 	_flush_ropes()
 	_sky_clouds()
@@ -1204,6 +1209,7 @@ func _process(delta: float) -> void:
 		(l[0] as OmniLight3D).light_energy = float(l[1]) * (0.85 + 0.1 * sin(_t * 9.0 + float(l[2])) + 0.05 * sin(_t * 23.0 + float(l[2]) * 2.0))
 	for s in _swing:
 		(s[0] as Node3D).rotation.x = sin(_t * 1.1 + float(s[2])) * float(s[1])
+	_wheel_process(delta)
 
 
 
@@ -1869,3 +1875,186 @@ func chest_reveal(win: bool) -> void:
 	t.tween_property(chest_lid, "rotation:x", -0.22, 0.5).set_trans(Tween.TRANS_CUBIC)
 	t.tween_property(chest_light, "light_energy", 1.4, 0.6)
 	t.tween_method(func(v: float) -> void: chest_glow.emission_energy_multiplier = v, 0.5 if win else 0.0, 0.0, 0.6)
+
+
+
+# ── 크라켄의 행운 바퀴 (보물상자 칸의 룰렛): 세워 둔 커다란 칠한 나무 바퀴 ──────
+## 바퀴 판 · 놋쇠 칸막이 · 테두리 못(딸깍) · 조타륜 손잡이 · 가운데 금빛 크라켄. 위쪽 가죽 혀가 못에 걸려 튐
+var wheel_disc: Node3D
+var _wheel_mat: ShaderMaterial
+var _flapper: Node3D
+var _wheel_r := 0.0
+var _wheel_seg := 0
+var _wheel_kick := 0.0
+var _wheel_hl := -1
+var _wheel_t := 0.0
+const FortuneShader := preload("res://shaders/fortune_wheel.gdshader")
+
+func _fortune_wheel() -> void:
+	var root := Node3D.new()
+	root.position = WHEEL_AT
+	add_child(root)
+	var wood := smat(Color(0.32, 0.18, 0.09), "wood", 0.0, Vector3(0, 1, 0), 0.0)
+	var wood_h := smat(Color(0.36, 0.2, 0.1), "wood", 0.0, Vector3(1, 0, 0), 0.0)
+	var dark := smat(Color(0.14, 0.08, 0.05), "wood", 0.0)
+	var brass := mat(Color(0.9, 0.68, 0.3), 0.24, 0.92)
+	var iron_m := mat(Color(0.14, 0.13, 0.12), 0.38, 0.85)
+	var c := Vector3(0, WHEEL_H, 0)
+	# 받침: 무거운 나무 받침대 + 양쪽 기둥(비스듬히) + 가로대 + 축
+	# 받침대는 바퀴 뒤쪽 (앞에서 보면 바퀴를 가리지 않게)
+	_mi(w._rbox(Vector3(3.2, 0.32, 1.5), 0.06), dark, Vector3(0, 0.16, -0.75), Basis(), root)
+	_mi(w._rbox(Vector3(3.3, 0.06, 1.6), 0.03), brass, Vector3(0, 0.33, -0.75), Basis(), root)
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			_rod(Vector3(sx * 1.25, 0.3, -0.75 + sz * 0.5), c + Vector3(sx * 0.2, 0, -0.42 + sz * 0.08), 0.09, wood, 0.12, 8, root)
+		_mi(w._box(Vector3(0.16, 0.16, 1.1)), wood_h, Vector3(sx * 0.98, 0.95, -0.75), Basis(), root)
+	_mi(w._cyl(0.09, 0.09, 0.7, 12), iron_m, c + Vector3(0, 0, -0.3), Basis(Vector3(1, 0, 0), PI * 0.5), root)
+	# 위쪽: 가죽 혀를 단 놋쇠 걸이 + 등불
+	var top := c + Vector3(0, WHEEL_R + 0.55, 0.0)
+	_rod(Vector3(-1.3, 0.3, -1.1), top + Vector3(-0.05, 0.2, -0.32), 0.07, wood, 0.09, 8, root)
+	_rod(Vector3(1.3, 0.3, -1.1), top + Vector3(0.05, 0.2, -0.32), 0.07, wood, 0.09, 8, root)
+	_mi(w._box(Vector3(0.5, 0.18, 0.7)), wood_h, top + Vector3(0, 0.2, -0.05), Basis(), root)
+	_mi(w._box(Vector3(0.54, 0.05, 0.74)), brass, top + Vector3(0, 0.31, -0.05), Basis(), root)
+	_flapper = Node3D.new()
+	_flapper.position = top + Vector3(0, 0.08, 0.26)
+	root.add_child(_flapper)
+	_mi(w._cyl(0.05, 0.05, 0.22, 10), brass, Vector3.ZERO, Basis(Vector3(0, 0, 1), PI * 0.5), _flapper)
+	var tongue := PrismMesh.new()
+	tongue.size = Vector3(0.22, 0.62, 0.05)
+	_mi(tongue, mat(Color(0.45, 0.07, 0.05), 0.55), Vector3(0, -0.34, 0), Basis(Vector3(0, 0, 1), PI), _flapper)
+	_mi(w._box(Vector3(0.05, 0.5, 0.06)), brass, Vector3(0, -0.28, 0.01), Basis(), _flapper)
+	_lantern(top + Vector3(0, 0.75, -0.05), 0.85, true, false, Color(1.0, 0.7, 0.35))
+	# 돌아가는 바퀴
+	wheel_disc = Node3D.new()
+	wheel_disc.position = c
+	root.add_child(wheel_disc)
+	# 두꺼운 나무 바퀴판 (옆면 나무) + 칠한 앞면
+	_mi(w._cyl(WHEEL_R, WHEEL_R, 0.2, 48), wood, Vector3.ZERO, Basis(Vector3(1, 0, 0), PI * 0.5), wheel_disc)
+	var face := QuadMesh.new()
+	face.size = Vector2(WHEEL_R, WHEEL_R) * 2.0
+	_wheel_mat = ShaderMaterial.new()
+	_wheel_mat.shader = FortuneShader
+	_wheel_mat.set_shader_parameter("chest_tex", w._mip_tex(w.ICONS["treasure"]))
+	_wheel_mat.set_shader_parameter("kraken_tex", w._mip_tex(w.ICONS["boss"]))
+	_wheel_mat.set_shader_parameter("segs", float(WHEEL_SEGS))
+	_wheel_mat.set_shader_parameter("radius", WHEEL_R)
+	_mi(face, _wheel_mat, Vector3(0, 0, 0.101), Basis(), wheel_disc)
+	# 놋쇠 테 (바깥 · 안쪽) + 칸막이 + 테두리 못
+	var rim := TorusMesh.new()
+	rim.inner_radius = WHEEL_R - 0.03
+	rim.outer_radius = WHEEL_R + 0.09
+	rim.rings = 64
+	rim.ring_segments = 10
+	for rz: float in [-0.06, 0.06]:
+		_mi(rim, brass, Vector3(0, 0, rz), Basis(Vector3(1, 0, 0), PI * 0.5), wheel_disc)
+	var sw := TAU / WHEEL_SEGS
+	var peg := CylinderMesh.new()
+	peg.top_radius = 0.04
+	peg.bottom_radius = 0.05
+	peg.height = 0.2
+	peg.radial_segments = 10
+	var cap := SphereMesh.new()
+	cap.radius = 0.06
+	cap.height = 0.1
+	for k in WHEEL_SEGS:
+		var a := k * sw
+		var dir := Vector3(sin(a), cos(a), 0)
+		var bas := Basis(Vector3(0, 0, 1), -a)
+		# 칸막이: 가운데 축에서 테두리까지 볼록한 놋쇠 띠
+		_mi(w._box(Vector3(0.05, WHEEL_R * 0.66, 0.03)), brass, dir * WHEEL_R * 0.57 + Vector3(0, 0, 0.115), bas, wheel_disc)
+		# 못 (가죽 혀가 걸림)
+		var pp := dir * (WHEEL_R * 0.95) + Vector3(0, 0, 0.2)
+		_mi(peg, brass, pp, Basis(Vector3(1, 0, 0), PI * 0.5), wheel_disc)
+		_mi(cap, brass, pp + Vector3(0, 0, 0.1), Basis(), wheel_disc)
+		# 조타륜 손잡이 (바깥으로 뻗은 나무 손잡이, 칸 사이마다 하나 건너)
+		if k % 2 == 0:
+			_rod(dir * (WHEEL_R + 0.05), dir * (WHEEL_R + 0.62), 0.06, wood_h, 0.075, 10, wheel_disc)
+			_mi(w._cyl(0.085, 0.085, 0.06, 10), brass, dir * (WHEEL_R + 0.12), bas, wheel_disc)
+			var knob := SphereMesh.new()
+			knob.radius = 0.09
+			knob.height = 0.16
+			_mi(knob, wood_h, dir * (WHEEL_R + 0.66), Basis(), wheel_disc)
+	# 가운데 축: 놋쇠 돔 + 금빛 크라켄
+	_mi(w._cyl(0.42, 0.46, 0.14, 32), brass, Vector3(0, 0, 0.14), Basis(Vector3(1, 0, 0), PI * 0.5), wheel_disc)
+	var hubring := TorusMesh.new()
+	hubring.inner_radius = 0.38
+	hubring.outer_radius = 0.48
+	hubring.rings = 32
+	hubring.ring_segments = 8
+	_mi(hubring, brass, Vector3(0, 0, 0.13), Basis(Vector3(1, 0, 0), PI * 0.5), wheel_disc)
+	# 가운데 돔 + 크라켄 눈 보석 (세로 동공)
+	var dome := SphereMesh.new()
+	dome.radius = 0.3
+	dome.height = 0.3
+	dome.is_hemisphere = true
+	_mi(dome, brass, Vector3(0, 0, 0.2), Basis(Vector3(1, 0, 0), PI * 0.5), wheel_disc)
+	var gem := SphereMesh.new()
+	gem.radius = 0.13
+	gem.height = 0.16
+	_mi(gem, _glow(Color(0.4, 1.0, 0.32), 2.0), Vector3(0, 0, 0.47), Basis(), wheel_disc)
+	_mi(w._box(Vector3(0.035, 0.17, 0.02)), mat(Color(0.02, 0.05, 0.02), 0.3), Vector3(0, 0, 0.55), Basis(), wheel_disc)
+	# 바퀴 앞 놋쇠 이름판
+	_mi(w._rbox(Vector3(1.3, 0.34, 0.06), 0.04), brass, Vector3(0, 0.55, -0.02), Basis(Vector3(1, 0, 0), -0.25), root)
+	# 불빛: 앞에서 바퀴를 비추는 따뜻한 등
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.8, 0.55)
+	l.light_energy = 1.6
+	l.omni_range = 6.5
+	l.position = c + Vector3(0.6, 0.8, 2.6)
+	root.add_child(l)
+	_wheel_r = randf() * TAU
+	wheel_disc.rotation.z = _wheel_r
+
+
+## 바퀴를 정면에서 보는 카메라 자리 (월드 좌표): [카메라, 바라볼 곳]
+func wheel_view() -> Array:
+	var c := global_transform.origin + WHEEL_AT + Vector3(0, WHEEL_H, 0)
+	return [c + Vector3(1.3, 0.6, 7.2), c + Vector3(0, 0.15, 0)]
+
+
+## 바퀴 돌리기: win 이면 보물상자 칸, 아니면 크라켄 칸이 맨 위(가죽 혀 아래)에 멈춤 (await)
+func wheel_spin(win: bool) -> void:
+	_wheel_hl = -1
+	_wheel_mat.set_shader_parameter("highlight", -1)
+	var picks := []
+	for k in WHEEL_SEGS:
+		if (k % 2 == 0) == win:
+			picks.append(k)
+	var k: int = picks[randi() % picks.size()]
+	var sw := TAU / WHEEL_SEGS
+	# 앞에서 볼 때 칸 k 가 맨 위로: 바퀴 각도 r ≡ (k + 0.5) · 칸 폭 (반시계로 돌수록 r 증가)
+	var base := fposmod(_wheel_r, TAU)
+	var want := (k + 0.5) * sw + randf_range(-0.28, 0.28) * sw
+	var target := _wheel_r - base + want + TAU * 6.0
+	if target - _wheel_r < TAU * 5.5:
+		target += TAU
+	_wheel_seg = int(floor(_wheel_r / sw))
+	var t := create_tween()
+	t.tween_method(_set_wheel, _wheel_r, target, 5.6).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	await t.finished
+	_wheel_hl = k
+	_wheel_t = 0.0
+	await get_tree().create_timer(1.2, false).timeout
+
+
+func _set_wheel(r: float) -> void:
+	_wheel_r = r
+	wheel_disc.rotation.z = r
+	var sw := TAU / WHEEL_SEGS
+	var seg := int(floor(r / sw))
+	if seg != _wheel_seg:
+		_wheel_seg = seg
+		Audio.play("tick", 25)
+		_wheel_kick = 1.0
+
+
+func _wheel_process(delta: float) -> void:
+	if _flapper == null:
+		return
+	_wheel_kick = maxf(_wheel_kick - delta * 7.0, 0.0)
+	# 못이 왼쪽으로 지나가며 혀를 밀었다가 놓음
+	_flapper.rotation.z = -0.55 * sin(clampf(_wheel_kick, 0.0, 1.0) * PI * 0.5)
+	if _wheel_hl >= 0:
+		_wheel_t += delta
+		_wheel_mat.set_shader_parameter("highlight", _wheel_hl)
+		_wheel_mat.set_shader_parameter("flash", 0.5 + 0.5 * sin(_wheel_t * 10.0))
