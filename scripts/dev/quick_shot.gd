@@ -108,6 +108,41 @@ func _run() -> void:
 			break
 	await get_tree().create_timer(3.0).timeout
 	var w: Node = g.world
+	# turns: 자동 진행하며 크라켄 차례 행동을 하나씩 강제로 → 장면마다 촬영
+	if "turns" in _want:
+		var order := ["barrage", "spines", "surge"]
+		var seen := {}
+		var t0 := Time.get_ticks_msec()
+		g.rig_kraken = order[0]
+		Engine.time_scale = 4.0
+		while Time.get_ticks_msec() - t0 < 900000 and seen.size() < 4:
+			await get_tree().process_frame
+			if not is_instance_valid(g):
+				print("TURNS: game node gone at ", (Time.get_ticks_msec() - t0) / 1000.0)
+				break
+			if int(g._round) != int(seen.get("_r", -1)):
+				seen["_r"] = int(g._round)
+				print("TURNS: round ", g._round, " attacks=", g._attacks, " cd=", g._attack_cd, " t=", (Time.get_ticks_msec() - t0) / 1000.0, " hint=", g.shot_hint)
+			var k: int = int(g._attacks)
+			if k < order.size():
+				g.rig_kraken = order[k]
+			# 장면이 아니라 상태로 판단 (느린 화면에서는 잠깐 지나가는 장면을 놓침)
+			var h := ""
+			if w.danger_tiles().size() >= 5:
+				h = "barrage"
+			elif not g._spines.is_empty():
+				h = "spines"
+			elif int(g.shop_price_mult) > 1:
+				h = "surge"
+			var key := "%s_r%d" % [h, int(g._round)]
+			if h != "" and not seen.has(h):
+				seen[h] = true
+				await get_tree().create_timer(1.0).timeout
+				await _shot("t_" + key)
+				print("TURN SHOT ", key, " label=", g._round_label.text.replace("\n", " | "), " mult=", g.shop_price_mult)
+		print("TURNS: done t=", (Time.get_ticks_msec() - t0) / 1000.0)
+		get_tree().quit(0)
+		return
 	var sc: float = w.KRAKEN_SCALE
 	var eye: Vector3 = w.kraken_eye_pos()
 	# all: 볼거리마다 한 장씩 + 다리 · 계단
@@ -160,6 +195,11 @@ func _run() -> void:
 			"eye":
 				var e2 := eye + Vector3(1.37 * sc, 0, 0)
 				g._cinematic(e2 + Vector3(10.0, -4.0, 16.0), e2, 1.0, 0.01)
+			"danger":
+				var ts: Array = w.spaces_of_kind("minigame")
+				for k in mini(8, ts.size()):
+					w.mark_danger(int(ts[k]))
+				g._cinematic(Vector3(0, 0.95 * w.half_d + 40.0, w.half_d + 52.0), Vector3(0, 2.0, -w.half_d * 0.22), 1.0, 0.01)
 			"tile":
 				var sp: Dictionary = w.spaces[int(w.spaces[w.start_index]["links"][0])]
 				var tp: Vector3 = sp["pos"]

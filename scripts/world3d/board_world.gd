@@ -1611,20 +1611,32 @@ func mark_danger(i: int) -> void:
 	q.orientation = PlaneMesh.FACE_Y
 	var m := ShaderMaterial.new()
 	m.shader = DangerShader
-	var mark := _mi(q, m, top + Vector3(0, 0.06, 0))
+	var mark := _mi(q, m, top + Vector3(0, 0.3, 0))
 	mark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# 칸 윗면에도 붉은 빛 (받침이 높아 바닥 빛만으로는 멀리서 안 보임)
+	var q2 := QuadMesh.new()
+	q2.size = Vector2(TILE * 1.08, TILE * 1.08)
+	q2.orientation = PlaneMesh.FACE_Y
+	var m2 := ShaderMaterial.new()
+	m2.shader = DangerShader
+	m2.set_shader_parameter("fill_k", 0.75)
+	var on_top := _mi(q2, m2, Vector3(0, TILE_H - 0.3 + 0.02, 0), Basis(Vector3.UP, float(spaces[i]["yaw"])), mark)
+	on_top.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var lt := OmniLight3D.new()
 	lt.light_color = Color(1.0, 0.18, 0.1)
 	lt.light_energy = 0.0
 	lt.omni_range = 3.4
 	lt.position = Vector3(0, 0.9, 0)
+	lt.omni_range = 4.0
 	mark.add_child(lt)
 	var lp := create_tween().set_loops()
 	lp.tween_property(lt, "light_energy", 2.6, 0.45).set_trans(Tween.TRANS_SINE)
 	lp.tween_property(lt, "light_energy", 1.0, 0.45).set_trans(Tween.TRANS_SINE)
 	mark.tree_exiting.connect(lp.kill)
 	m.set_shader_parameter("strength", 0.0)
-	create_tween().tween_method(func(v: float) -> void: m.set_shader_parameter("strength", v), 0.0, 1.0, 0.5)
+	create_tween().tween_method(func(v: float) -> void:
+		m.set_shader_parameter("strength", v)
+		m2.set_shader_parameter("strength", v), 0.0, 1.0, 0.5)
 	# 칸 옆 땅 (길 바깥쪽)에서 촉수 끝이 삐죽
 	var side := Basis(Vector3.UP, float(spaces[i]["yaw"])).x
 	var best := top + side * 3.0

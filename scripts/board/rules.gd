@@ -38,10 +38,22 @@ const STEAL_COINS := 5
 ## 마지막까지 살아남은 사람(팀)이 승리. ROUND_LIMIT 까지 가면 하트 → 동전 순.
 const HEARTS_START := 3
 const HEARTS_MAX := 3
-const KRAKEN_TARGETS_BASE := 2      ## 첫 라운드에 노리는 칸 수
-const KRAKEN_TARGETS_GROW := 0.5    ## 라운드마다 늘어나는 수
-const KRAKEN_TARGETS_MAX := 9
+## 크라켄 차례: KRAKEN_ATTACK_EVERY 라운드마다 라운드 끝에 아래 행동 중 하나를 무작위로
+##   barrage: 많은 칸을 붉게 표시 → 다음 라운드 끝에 내려침
+##   spines : 적은 칸을 2 라운드 동안 독가시 칸으로 (멈추면 하트 -1, 상점 · 포털 등도 바뀔 수 있음)
+##   surge  : 2 라운드 동안 상점 가격 2 배
+##   (belly : 모두를 '크라켄의 배' 맵으로 2 라운드 — 맵 추가 후 KRAKEN_ACTIONS 에 넣을 것.
+##            배에서 나온 뒤부터 다음 차례까지 다시 셈)
+const KRAKEN_ATTACK_EVERY := 2
+const KRAKEN_ACTIONS := ["barrage", "spines", "surge"]
+const KRAKEN_TARGETS_BASE := 6      ## barrage: 첫 공격에 노리는 칸 수
+const KRAKEN_TARGETS_GROW := 1.0    ## 공격할 때마다 늘어나는 수
+const KRAKEN_TARGETS_MAX := 14
 const KRAKEN_AIM_AT_PAWN := 0.6     ## 이 확률로 누군가 서 있는 칸 근처를 노림
+const KRAKEN_SPINES_BASE := 3       ## spines: 독가시 칸 수
+const KRAKEN_SPINES_MAX := 5
+const KRAKEN_EFFECT_ROUNDS := 2     ## spines · surge 가 이어지는 라운드 수
+const KRAKEN_SURGE_MULT := 2        ## surge: 상점 가격 배수
 const POTION_PRICE := 12            ## 상점: 하트 +1
 const SHIELD_PRICE := 8             ## 상점: 다음 피해 한 번 막기
 const MINIGAME_WIN_HEAL := 1        ## 미니게임 1등은 하트 +1

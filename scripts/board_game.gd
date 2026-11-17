@@ -1,11 +1,20 @@
 extends "res://scripts/board/board_session.gd"
 ## 진짜 보드 게임 한 판: 크라켄 생존전 (개인전 · 2대2). 로비 → 보드 고르기 → PLAY 로 시작.
-## 각자 하트 3개. 라운드마다 모두 한 번씩 주사위 → 칸 효과, 라운드가 끝나면 크라켄 차례:
-##   노려 둔 칸(붉게 빛나고 옆에서 촉수가 꿈틀)을 내려침 → 거기 서 있으면 하트 -1, 그 칸은 성게 함정이 됨
-##   탈락한 사람은 크라켄의 부하가 되어 노릴 칸을 하나씩 고름 → 크라켄이 다음에 내려칠 칸을 새로 노림
+## 각자 하트 3개. 라운드마다 모두 한 번씩 주사위 → 칸 효과. 라운드가 끝날 때마다:
+##   내려칠 때가 된 칸(붉게 빛나고 옆에서 촉수가 꿈틀)을 내려침 → 거기 서 있으면 하트 -1
+##   기한이 끝난 독가시 칸 · 상점 가격 폭등이 풀림
+##   탈락한 사람은 크라켄의 부하가 되어 다음 라운드에 내려칠 칸을 하나씩 고름
+##   2 라운드마다 크라켄 차례: 행동 하나를 무작위로 (Rules.KRAKEN_ACTIONS 참고)
 ## 마지막까지 살아남은 사람(2대2는 팀)이 승리. 맵은 board_maps.gd 의 SUNKEN ISLAND.
 
 const BOARD_TITLES := {"sunken_island": "SUNKEN ISLAND"}
+
+var rig_kraken := ""          ## 다음 크라켄 행동 ("" = 무작위)
+var _attack_cd := Rules.KRAKEN_ATTACK_EVERY   ## 크라켄 차례까지 남은 라운드 (이번 라운드 포함)
+var _attacks := 0             ## 지금까지 크라켄 차례 수 (공격이 점점 거세짐)
+var _strike_due := {}         ## 칸 → 이 라운드가 끝날 때 내려침
+var _spines := {}             ## 독가시 칸 → {"until": 이 라운드 끝에 풀림, "prev": 원래 칸 변화}
+var _surge_until := -1        ## 이 라운드 끝에 상점 가격이 돌아옴
 
 
 func survival() -> bool:
@@ -42,7 +51,7 @@ func _game_loop() -> void:
 		if _over():
 			break
 		_round = r
-		_round_label.text = tr("ROUND %d / %d") % [r, limit]
+		_update_round_label()
 		shot_hint = "39_round_%d" % r
 		await _banner(tr("FINAL ROUND!") if r == limit else tr("ROUND %d") % r, "", 0.8)
 		for p in _pawns:
@@ -60,6 +69,17 @@ func _game_loop() -> void:
 	_over()
 	_highlight_chip({})
 	await _show_results()
+
+
+## 왼쪽 위: 라운드 + 크라켄 차례까지 남은 라운드 + 걸려 있는 효과
+func _update_round_label() -> void:
+	var t := tr("ROUND %d / %d") % [_round, _round_limit()]
+	t += "\n" + (tr("Kraken's turn: end of this round") if _attack_cd <= 1 else tr("Kraken's turn: in %d rounds") % _attack_cd)
+	if _surge_until >= _round:
+		t += "\n" + tr("Shop prices x2")
+	if not _spines.is_empty():
+		t += "\n" + tr("Poison spines: %d spaces") % _spines.size()
+	_round_label.text = t
 
 
 ## 살아남은 쪽(개인 또는 팀)이 하나 이하면 끝
@@ -109,28 +129,42 @@ func _kraken_wakes() -> void:
 	shot_hint = "34_kraken_awakens"
 	await _banner(tr("THE KRAKEN AWAKENS!"), tr("Dodge its tentacles. Last one standing wins!"), 1.8)
 	_cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 1.4)
-	await _kraken_aim(1)
+	await _banner(tr("EVERY 2 ROUNDS..."), tr("...the kraken takes its turn. Stay alert!"), 1.4)
 
 
-## 라운드 끝: 노린 칸 내려치기 → 부하들이 칸 고르기 → 새로 노리기
+## 라운드 끝: 때가 된 칸 내려치기 → 효과 풀기 → 부하들이 칸 고르기 → (2 라운드마다) 크라켄 차례
 func _kraken_phase(r: int) -> void:
 	_highlight_chip({})
-	await _kraken_strikes()
+	await _kraken_strikes(r)
 	if _over():
 		return
+	await _expire_effects(r)
 	for q in _pawns:
 		if not bool(q["alive"]):
 			await _minion_mark(q)
-	await _kraken_aim(r + 1)
+	_attack_cd -= 1
+	if _attack_cd <= 0:
+		_attack_cd = Rules.KRAKEN_ATTACK_EVERY
+		await _kraken_turn(r)
 
 
-func _kraken_strikes() -> void:
-	var targets: Array = world.danger_tiles()
+## 칸을 붉게 표시하고, due 라운드가 끝날 때 내려치게 예약
+func _mark(t: int, due: int) -> void:
+	world.mark_danger(t)
+	_strike_due[t] = mini(int(_strike_due.get(t, due)), due)
+
+
+func _kraken_strikes(r: int) -> void:
+	var targets: Array = []
+	for t in world.danger_tiles():
+		if int(_strike_due.get(t, r)) <= r:
+			targets.append(t)
 	if targets.is_empty():
 		return
 	_follow = null
 	await _banner(tr("THE KRAKEN STRIKES!"), "", 0.7)
 	for t in targets:
+		_strike_due.erase(t)
 		if _over():
 			return
 		var pos: Vector3 = world.spaces[t]["pos"]
@@ -142,20 +176,119 @@ func _kraken_strikes() -> void:
 		shot_hint = "49b_kraken_strike"
 		Audio.play("box_burst")
 		_shake_camera(0.55, 0.4)
-		# 일반 칸은 성게 가시가 박힌 함정 칸이 됨
-		if String(world.spaces[t]["kind"]) in ["plain", "minigame", "chance"] and t != world.start_index:
-			_tile_mods[t] = "urchin"
-			world.set_tile_look(t, "urchin")
-			_legend_add("urchin")
 		for q in _alive_pawns():
 			if int(q["tile"]) == t:
 				await _damage(q, 1)
 		await get_tree().create_timer(0.7, false).timeout
 
 
+## 기한이 끝난 독가시 칸 · 상점 폭등 되돌리기
+func _expire_effects(r: int) -> void:
+	var done := []
+	for t in _spines:
+		if int(_spines[t]["until"]) <= r:
+			done.append(t)
+	if done.size() > 0:
+		_follow = null
+		_move_camera(world.overview, world.overview_zoom * 0.7, 0.8)
+		await get_tree().create_timer(0.8, false).timeout
+		for t in done:
+			var prev: String = _spines[t]["prev"]
+			_spines.erase(t)
+			if prev == "":
+				_tile_mods.erase(t)
+				world.set_tile_look(t, String(world.spaces[t]["kind"]))
+			else:
+				_tile_mods[t] = prev
+				world.set_tile_look(t, prev)
+			Audio.play("toast")
+			await get_tree().create_timer(0.15, false).timeout
+		await _banner(tr("THE SPINES WITHER"), tr("The poison spaces are back to normal."), 0.9)
+	if _surge_until >= 0 and _surge_until <= r:
+		_surge_until = -1
+		shop_price_mult = 1
+		await _banner(tr("THE MERCHANT CALMS DOWN"), tr("Shop prices are back to normal."), 0.9)
+
+
+## 크라켄 차례: 행동 하나를 무작위로
+func _kraken_turn(r: int) -> void:
+	_attacks += 1
+	var acts: Array = Rules.KRAKEN_ACTIONS
+	var a: String = rig_kraken if rig_kraken != "" else String(acts[_rng.randi() % acts.size()])
+	rig_kraken = ""
+	_follow = null
+	# 크라켄이 몸을 일으키며 으르렁
+	_move_camera(world.overview, world.overview_zoom * 0.85, 0.9)
+	Audio.play("box_rumble")
+	_shake_camera(0.4, 1.0)
+	await get_tree().create_timer(0.9, false).timeout
+	await _banner(tr("THE KRAKEN'S TURN!"), "", 0.9)
+	match a:
+		"barrage":
+			await _kraken_barrage(r)
+		"spines":
+			await _kraken_spines(r)
+		"surge":
+			await _kraken_surge(r)
+
+
+## 1) 많은 칸을 붉게 표시 → 다음 라운드 끝에 내려침
+func _kraken_barrage(r: int) -> void:
+	var n := mini(Rules.KRAKEN_TARGETS_MAX, int(Rules.KRAKEN_TARGETS_BASE + Rules.KRAKEN_TARGETS_GROW * (_attacks - 1)))
+	await _kraken_aim(n, r + 1)
+	shot_hint = "60_kraken_barrage"
+	await _banner(tr("TENTACLE STORM!"), tr("It will smash every red space at the end of next round!"), 1.4)
+
+
+## 2) 적은 칸을 2 라운드 동안 독가시 칸으로 (상점 · 포털 · 미니게임 칸도 바뀔 수 있음)
+func _kraken_spines(r: int) -> void:
+	var n := mini(Rules.KRAKEN_SPINES_MAX, Rules.KRAKEN_SPINES_BASE + int((_attacks - 1) / 2.0))
+	var picks := []
+	var alive := _alive_pawns()
+	for k in n:
+		var pool := []
+		if alive.size() > 0 and _rng.randf() < Rules.KRAKEN_AIM_AT_PAWN:
+			var q: Dictionary = alive[_rng.randi() % alive.size()]
+			pool = _reachable(int(q["tile"]), 1, 6)
+		pool = pool.filter(func(i: int) -> bool: return not picks.has(i) and not _spines.has(i))
+		if pool.is_empty():
+			pool = _aimable().filter(func(i: int) -> bool: return not picks.has(i) and not _spines.has(i))
+		if pool.size() > 0:
+			picks.append(pool[_rng.randi() % pool.size()])
+	if picks.is_empty():
+		return
+	_move_camera(world.overview, world.overview_zoom * 0.7, 0.8)
+	await get_tree().create_timer(0.8, false).timeout
+	_legend_add("urchin")
+	for t in picks:
+		_spines[t] = {"until": r + Rules.KRAKEN_EFFECT_ROUNDS, "prev": String(_tile_mods.get(t, ""))}
+		_tile_mods[t] = "urchin"
+		world.set_tile_look(t, "urchin")
+		Audio.play("remove")
+		await get_tree().create_timer(0.3, false).timeout
+	shot_hint = "60_kraken_spines"
+	await _banner(tr("POISON SPINES!"), tr("Stopping on a purple space costs a heart — for %d rounds!") % Rules.KRAKEN_EFFECT_ROUNDS, 1.4)
+
+
+## 4) 2 라운드 동안 상점 가격 2 배
+func _kraken_surge(r: int) -> void:
+	var shops: Array = world.spaces_of_kind("shop")
+	if shops.size() > 0:
+		var sp: Vector3 = world.spaces[int(shops[0])]["pos"]
+		_move_camera(sp + Vector3(0, 0.5, 0), 1.8, 0.8)
+		await get_tree().create_timer(0.8, false).timeout
+		for t in shops:
+			world.bubbles_at(world.spaces[int(t)]["pos"], 18, 0.8, true)
+		Audio.play("box_burst")
+		_shake_camera(0.4, 0.5)
+	shop_price_mult = Rules.KRAKEN_SURGE_MULT
+	_surge_until = r + Rules.KRAKEN_EFFECT_ROUNDS
+	shot_hint = "60_kraken_surge"
+	await _banner(tr("SHOP PANIC!"), tr("The kraken scared the merchant. Prices x%d for %d rounds!") % [Rules.KRAKEN_SURGE_MULT, Rules.KRAKEN_EFFECT_ROUNDS], 1.4)
+
+
 ## 크라켄이 다음에 내려칠 칸들 (대개 누군가 다음 차례에 멈출 만한 곳)
-func _kraken_aim(r: int) -> void:
-	var n := mini(Rules.KRAKEN_TARGETS_MAX, int(Rules.KRAKEN_TARGETS_BASE + Rules.KRAKEN_TARGETS_GROW * (r - 1)))
+func _kraken_aim(n: int, due: int) -> void:
 	var picks := []
 	var alive := _alive_pawns()
 	for k in n:
@@ -178,11 +311,10 @@ func _kraken_aim(r: int) -> void:
 	_move_camera(world.overview, world.overview_zoom * 0.7, 1.0)
 	await get_tree().create_timer(1.0, false).timeout
 	for t in picks:
-		world.mark_danger(t)
+		_mark(t, due)
 		Audio.play("tick")
-		await get_tree().create_timer(0.22, false).timeout
+		await get_tree().create_timer(0.18, false).timeout
 	shot_hint = "49_kraken_aim"
-	await _banner(tr("THE KRAKEN IS WATCHING..."), tr("Don't stop on the glowing red spaces!"), 1.1)
 
 
 ## 탈락한 사람: 크라켄의 부하가 되어 칸 하나를 노림
@@ -196,7 +328,7 @@ func _minion_mark(q: Dictionary) -> void:
 	await _banner(tr("KRAKEN'S MINION"), tr("%s picks a space to strike!") % q["name"], 0.6)
 	var t: int = await _pick_tile(q, tr("Pick a space for the kraken to strike!"), auto_t, "51_minion_pick")
 	if t >= 0 and t != world.start_index:
-		world.mark_danger(t)
+		_mark(t, _round + 1)
 		Audio.play("tick")
 		await get_tree().create_timer(0.5, false).timeout
 
@@ -209,7 +341,7 @@ func _bait(target: Dictionary) -> void:
 	_move_camera((target["node"] as Node3D).position, 2.2, 0.8)
 	await get_tree().create_timer(0.8, false).timeout
 	for k in mini(2, near.size()):
-		world.mark_danger(near[k])
+		_mark(near[k], _round)
 		Audio.play("tick")
 		await get_tree().create_timer(0.3, false).timeout
 	await get_tree().create_timer(0.8, false).timeout
@@ -291,13 +423,18 @@ func _debug_showcase() -> void:
 		if q != me and bool(q["alive"]):
 			q["hearts"] = 1
 			_refresh_chip(q)
-			world.mark_danger(int(q["tile"]))
+			_mark(int(q["tile"]), 0)
 			break
-	await _kraken_strikes()
+	await _kraken_strikes(0)
 	for q in _pawns:
 		if not bool(q["alive"]):
 			await _minion_mark(q)
 			break
+	# 크라켄 차례 행동 하나씩 (+ 가격이 오른 상점)
+	for a in Rules.KRAKEN_ACTIONS:
+		rig_kraken = String(a)
+		await _kraken_turn(0)
+	await _open_shop(me)
 	for id in Minigames.ids():
 		rig_minigame = String(id)
 		await _run_minigame(me, false)

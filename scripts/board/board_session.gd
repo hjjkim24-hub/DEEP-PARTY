@@ -119,6 +119,7 @@ var _tile_catcher: Control
 # 튜토리얼·점검용으로 결과를 미리 정해 둘 수 있음
 var rig_ranking: Array = []   ## 다음 미니게임 순위 (pawn 목록)
 var rig_card := ""            ## 다음 찬스 카드 id
+var shop_price_mult := 1      ## 상점 가격 배수 (크라켄이 상점을 습격하면 2)
 var rig_minigame := ""        ## 다음 미니게임 id ("" = 랜덤)
 var force_shop_trophy := -1   ## 1 = 다음 상점에 트로피 꼭 진열, 0 = 꼭 안 함, -1 = 확률대로
 var force_trophy_buy := false ## 튜토리얼: 트로피 살지 물을 때 BUY 만 누를 수 있게
@@ -1544,8 +1545,8 @@ func _open_shop(p: Dictionary) -> void:
 	# 생존전: 물약(하트 +1) · 따개비 방패 / 그 외: 가끔 트로피
 	var goods := []
 	if survival():
-		goods = [{"id": "potion", "tex": POTION_TEX, "price": Rules.POTION_PRICE},
-			{"id": "shield", "tex": SHIELD_TEX, "price": Rules.SHIELD_PRICE}]
+		goods = [{"id": "potion", "tex": POTION_TEX, "price": Rules.POTION_PRICE * shop_price_mult},
+			{"id": "shield", "tex": SHIELD_TEX, "price": Rules.SHIELD_PRICE * shop_price_mult}]
 	elif has_trophy:
 		goods = [{"id": "trophy", "tex": TROPHY_TEX, "price": Rules.SHOP_TROPHY_PRICE}]
 	_shop_buys = []
@@ -1580,10 +1581,13 @@ func _open_shop(p: Dictionary) -> void:
 		if not g.is_empty():
 			price.add_child(_icon(COIN_TEX, 28))
 			pl.text = str(g["price"])
+			if shop_price_mult > 1:
+				pl.add_theme_color_override("font_color", Color(0.75, 0.08, 0.06))
 		else:
 			pl.text = "SOON"
 		pl.add_theme_font_size_override("font_size", 24 if not g.is_empty() else 18)
-		pl.add_theme_color_override("font_color", Color(0.28, 0.16, 0.08))
+		if not pl.has_theme_color_override("font_color"):
+			pl.add_theme_color_override("font_color", Color(0.28, 0.16, 0.08))
 		price.add_child(pl)
 		if not g.is_empty():
 			var buy := _wood_button("BUY", Vector2(180, 60))
@@ -1592,7 +1596,7 @@ func _open_shop(p: Dictionary) -> void:
 			var gid: String = g["id"]
 			buy.disabled = int(p["coins"]) < cost or (gid == "potion" and int(p["hearts"]) >= Rules.HEARTS_MAX)
 			wall_box.add_child(buy)
-			_shop_buys.append([buy, gid])
+			_shop_buys.append([buy, gid, cost])
 			if _shop_buy == null:
 				_shop_buy = buy
 			buy.pressed.connect(func() -> void:
@@ -1612,8 +1616,7 @@ func _open_shop(p: Dictionary) -> void:
 				for bb in _shop_buys:
 					var other: Button = bb[0]
 					if not other.disabled and other.text != "SOLD":
-						var oc := Rules.POTION_PRICE if bb[1] == "potion" else Rules.SHIELD_PRICE
-						other.disabled = int(p["coins"]) < oc)
+						other.disabled = int(p["coins"]) < int(bb[2]))
 	# 덧문 두 짝
 	var left := _tex_rect(SHOP_TEX["shutter"], Vector2.ZERO, Vector2(550, 690))
 	var right := _tex_rect(SHOP_TEX["shutter"], Vector2(550, 0), Vector2(550, 690))
@@ -1627,7 +1630,10 @@ func _open_shop(p: Dictionary) -> void:
 
 	# 계산대 + 안내 + 닫기
 	stall.add_child(_tex_rect(SHOP_TEX["counter"], Vector2(30, 780), Vector2(1180, 180)))
-	var msg := _outlined_label("Potions heal a heart · Shields block one hit" if survival() else "More items are coming soon!", 26)
+	var msg_text := "Potions heal a heart · Shields block one hit" if survival() else "More items are coming soon!"
+	if shop_price_mult > 1:
+		msg_text = "The kraken scared the merchant — prices are doubled!"
+	var msg := _outlined_label(msg_text, 26)
 	msg.add_theme_color_override("font_color", Color(1.0, 0.95, 0.85))
 	msg.add_theme_color_override("font_outline_color", Color(0.25, 0.12, 0.05))
 	msg.position = Vector2(30, 818)
