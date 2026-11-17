@@ -1,12 +1,12 @@
 extends Node3D
-## 크라켄의 배: 밤하늘 구름 바다 위를 떠가는 거대한 해적선 (칸 49 개, 갑판이 넉넉하게 아주 큰 배).
+## 크라켄의 배: 밤하늘 구름 바다 위를 떠가는 거대한 해적선 (칸 35 개, 칸은 갑판 안쪽에 모여 있고 둘레가 넉넉함).
 ## board_world.gd 가 섬을 다 만든 뒤 build() 로 만들고, 크라켄이 '크라켄의 배' 카드를 뽑으면
 ## board_world.enter_ship() 로 섬 대신 이 배와 밤하늘을 보여 줌.
 ##   배 길이는 x 축 (뱃머리 +x, 고물 -x), 폭은 z 축 (우현 +z 가 카메라 쪽). 좌표는 이 노드 기준 (AT 가 원점).
 ##   갑판 4 층: 큰 갑판(0) · 앞갑판(FC_Y) · 뒷갑판(QD_Y) · 맨 뒤 선장실 지붕(PP_Y). 층 사이는 가파른 배 계단.
 ##   칸은 지금은 전부 일반 칸 (배 전용 칸은 나중에). 칸은 모두 갑판 위, 길은 반듯하게:
 ##     - 양쪽 뱃전을 따라 한 바퀴 (4 층 갑판을 계단으로 오르내림) + 뱃머리 끝 망보는 자리 (막다른 칸)
-##     - 뚫린 짐칸을 가로지르는 널다리 (보물 더미가 내려다보임) · 큰 돛대 뒤 가로지름길
+##     - 뚫린 짐칸을 가로지르는 널다리 (보물 더미가 내려다보임)
 
 const SailShader := preload("res://shaders/sail.gdshader")
 const CloudSeaShader := preload("res://shaders/cloud_sea.gdshader")
@@ -19,13 +19,13 @@ const AT := Vector3(0, 40, 320)      ## 배가 놓인 곳 (섬과 멀리 떨어�
 const BOW := 66.0
 const STERN := -63.0
 const MID := 14.5                    ## 갑판 반폭 (가운데)
-const FC_X := 40.5                   ## 앞갑판이 시작되는 곳
+const FC_X := 36.0                   ## 앞갑판이 시작되는 곳
 const FC_Y := 4.0
-const QD_X := -33.0                  ## 뒷갑판
+const QD_X := -29.0                  ## 뒷갑판
 const QD_Y := 4.5
 const PP_X := -49.5                  ## 맨 뒤 선장실 지붕
 const PP_Y := 8.5
-const HOLD := Rect2(11.0, -6.0, 11.0, 12.0)   ## 뚫린 짐칸 (x, z, 길이, 폭)
+const HOLD := Rect2(11.5, -4.5, 11.5, 9.0)   ## 뚫린 짐칸 (x, z, 길이, 폭)
 const HOLD_DEPTH := 8.0
 ## 돛대: [x, 갑판 높이, 갑판 위 높이, 밑동 굵기]
 const MASTS := [[29.0, 0.0, 50.0, 0.8], [-3.0, 0.0, 60.0, 0.9], [-42.0, QD_Y, 40.0, 0.65]]
@@ -34,29 +34,27 @@ const CLOUD_Y := -62.0
 const BRACE := 0.38                  ## 활대를 비스듬히 돌린 각도
 
 ## 칸 자리 (종류는 지금 전부 일반 칸). 뱃전 길은 z = ±LANE 의 곧은 줄
-const LANE := 10.5
+const LANE := 7.5
 const TILES := {
-	"P1": Vector3(-53.5, PP_Y, 6.5), "P2": Vector3(-58.5, PP_Y, 0.0), "P3": Vector3(-53.5, PP_Y, -6.5),
-	"Q1": Vector3(-44.4, QD_Y, LANE), "Q2": Vector3(-36.9, QD_Y, LANE), "Q4": Vector3(-44.4, QD_Y, -LANE), "Q5": Vector3(-36.9, QD_Y, -LANE),
-	"S1": Vector3(-27.5, 0, LANE), "S2": Vector3(-23.18, 0, LANE), "S3": Vector3(-18.86, 0, LANE), "S4": Vector3(-14.54, 0, LANE),
-	"S5": Vector3(-10.21, 0, LANE), "S6": Vector3(-5.89, 0, LANE), "S7": Vector3(-1.57, 0, LANE), "S8": Vector3(2.75, 0, LANE),
-	"S9": Vector3(7.07, 0, LANE), "S10": Vector3(11.39, 0, LANE), "S11": Vector3(15.71, 0, LANE), "S12": Vector3(20.04, 0, LANE),
-	"S13": Vector3(24.36, 0, LANE), "S14": Vector3(28.68, 0, LANE), "S15": Vector3(33.0, 0, LANE),
-	"F1": Vector3(44.0, FC_Y, LANE), "F2": Vector3(48.6, FC_Y, 8.4), "F3": Vector3(52.2, FC_Y, 4.6), "F4": Vector3(53.8, FC_Y, 0.0),
-	"F5": Vector3(52.2, FC_Y, -4.6), "F6": Vector3(48.6, FC_Y, -8.4), "F7": Vector3(44.0, FC_Y, -LANE), "BK": Vector3(60.5, FC_Y, 0.0),
-	"M1": Vector3(33.0, 0, -LANE), "M2": Vector3(28.68, 0, -LANE), "M3": Vector3(24.36, 0, -LANE), "M4": Vector3(20.04, 0, -LANE),
-	"M5": Vector3(15.71, 0, -LANE), "M6": Vector3(11.39, 0, -LANE), "M7": Vector3(7.07, 0, -LANE), "M8": Vector3(2.75, 0, -LANE),
-	"M9": Vector3(-1.57, 0, -LANE), "M10": Vector3(-5.89, 0, -LANE), "M11": Vector3(-10.21, 0, -LANE),
-	"M12": Vector3(-14.54, 0, -LANE), "M13": Vector3(-18.86, 0, -LANE), "M14": Vector3(-23.18, 0, -LANE),
-	"M15": Vector3(-27.5, 0, -LANE),
-	"H1": Vector3(15.71, 0.4, 3.6), "H2": Vector3(15.71, 0.4, -3.6), "X1": Vector3(-14.54, 0, 3.6), "X2": Vector3(-14.54, 0, -3.6),
+	"P1": Vector3(-53.0, PP_Y, 5.0), "P2": Vector3(-58.0, PP_Y, 0.0), "P3": Vector3(-53.0, PP_Y, -5.0),
+	"Q1": Vector3(-44.5, QD_Y, LANE), "Q2": Vector3(-38.0, QD_Y, LANE), "Q3": Vector3(-31.5, QD_Y, LANE),
+	"Q4": Vector3(-44.5, QD_Y, -LANE), "Q5": Vector3(-38.0, QD_Y, -LANE), "Q6": Vector3(-31.5, QD_Y, -LANE),
+	"S1": Vector3(-23.5, 0, LANE), "S2": Vector3(-16.69, 0, LANE), "S3": Vector3(-9.88, 0, LANE), "S4": Vector3(-3.06, 0, LANE),
+	"S5": Vector3(3.75, 0, LANE), "S6": Vector3(10.56, 0, LANE), "S7": Vector3(17.38, 0, LANE), "S8": Vector3(24.19, 0, LANE),
+	"S9": Vector3(31.0, 0, LANE),
+	"F1": Vector3(39.5, FC_Y, LANE), "F2": Vector3(45.0, FC_Y, 5.4), "F3": Vector3(48.5, FC_Y, 0.0), "F4": Vector3(45.0, FC_Y, -5.4),
+	"F5": Vector3(39.5, FC_Y, -LANE), "BK": Vector3(55.0, FC_Y, 0.0),
+	"M1": Vector3(31.0, 0, -LANE), "M2": Vector3(24.19, 0, -LANE), "M3": Vector3(17.38, 0, -LANE), "M4": Vector3(10.56, 0, -LANE),
+	"M5": Vector3(3.75, 0, -LANE), "M6": Vector3(-3.06, 0, -LANE), "M7": Vector3(-9.88, 0, -LANE), "M8": Vector3(-16.69, 0, -LANE),
+	"M9": Vector3(-23.5, 0, -LANE),
+	"H1": Vector3(17.38, 0.4, 2.4), "H2": Vector3(17.38, 0.4, -2.4),
 }
 ## 한 바퀴 길 (앞으로 가는 순서) + 갈래길들 (모두 갑판 위)
-const LOOP := ["P2", "P1", "Q1", "Q2", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12", "S13", "S14", "S15",
-	"F1", "F2", "F3", "F4", "F5", "F6", "F7", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12", "M13", "M14", "M15", "Q5", "Q4", "P3"]
-const BRANCHES := [["S11", "H1", "H2", "M5"], ["S4", "X1", "X2", "M12"], ["F4", "BK"]]
-const STAIRS := [["Q2", "S1"], ["S15", "F1"], ["F7", "M1"], ["M15", "Q5"], ["Q4", "P3"], ["P1", "Q1"]]
-const DROPS := ["S9", "M7", "F3", "P2"]
+const LOOP := ["P2", "P1", "Q1", "Q2", "Q3", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9",
+	"F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "Q6", "Q5", "Q4", "P3"]
+const BRANCHES := [["S7", "H1", "H2", "M3"], ["F3", "BK"]]
+const STAIRS := [["Q3", "S1"], ["S9", "F1"], ["F5", "M1"], ["M9", "Q6"], ["Q4", "P3"], ["P1", "Q1"]]
+const DROPS := ["S3", "M6", "F2", "P2"]
 
 var w                                ## board_world
 var env: Environment
@@ -456,7 +454,7 @@ func _hold() -> void:
 	var coin := _glow(Color(1.0, 0.76, 0.3), 0.6)
 	coin.metallic = 0.9
 	coin.roughness = 0.3
-	for c in [[Vector3(-3.6, 0, -2.8), 0.4], [Vector3(2.8, 0, 3.0), -0.3], [Vector3(3.8, 0, -3.2), 0.9], [Vector3(-3.2, 0, 3.4), 1.6]]:
+	for c in [[Vector3(-3.6, 0, -2.4), 0.4], [Vector3(2.8, 0, 2.6), -0.3], [Vector3(3.8, 0, -2.6), 0.9], [Vector3(-3.4, 0, 2.6), 1.6]]:
 		var p: Vector3 = Vector3(cx, y0 + 0.1, 0) + c[0]
 		var b := Basis(Vector3.UP, c[1])
 		_mi(w._box(Vector3(1.3, 0.7, 0.85)), chest_w, p + Vector3(0, 0.35, 0), b)
@@ -477,7 +475,7 @@ func _hold() -> void:
 	cm.radial_segments = 10
 	var xs := []
 	for k in 70:
-		xs.append(Transform3D(Basis(Vector3(1, 0, 0), rng.randf_range(-0.3, 0.3)), Vector3(cx + rng.randf_range(-5.0, 5.0), y0 + 0.13, rng.randf_range(-5.5, 5.5))))
+		xs.append(Transform3D(Basis(Vector3(1, 0, 0), rng.randf_range(-0.3, 0.3)), Vector3(cx + rng.randf_range(-5.0, 5.0), y0 + 0.13, rng.randf_range(-4.0, 4.0))))
 	_multi(cm, coin, xs)
 	var l := OmniLight3D.new()
 	l.light_color = Color(1.0, 0.7, 0.35)
@@ -486,9 +484,9 @@ func _hold() -> void:
 	l.position = Vector3(cx, y0 + 3.0, 0)
 	add_child(l)
 	_lamps.append([l, 2.4, 0.3])
-	# 널다리 (우현 S11 → H1 → H2 → 좌현 M5, 짐칸을 곧게 가로지름)
+	# 널다리 (우현 S7 → H1 → H2 → 좌현 M3, 짐칸을 곧게 가로지름)
 	var plank := smat(Color(0.46, 0.32, 0.2), "wood", 0.0, Vector3(1, 0, 0))
-	var pts := [tile_pos("S11"), tile_pos("H1"), tile_pos("H2"), tile_pos("M5")]
+	var pts := [tile_pos("S7"), tile_pos("H1"), tile_pos("H2"), tile_pos("M3")]
 	for k in 3:
 		var a: Vector3 = pts[k]
 		var b: Vector3 = pts[k + 1]
@@ -526,7 +524,7 @@ func _spaces() -> void:
 		var d := b - a
 		var yaw := atan2(d.x, d.z)
 		var snap := roundf(yaw / (PI * 0.5)) * PI * 0.5
-		sp["yaw"] = yaw if String(sp["ship_name"]) in ["F2", "F3", "F5", "F6"] else snap
+		sp["yaw"] = yaw if String(sp["ship_name"]) in ["F2", "F4"] else snap
 	for n in DROPS:
 		drop_tiles.append(ids[n])
 
@@ -963,7 +961,7 @@ func _stern() -> void:
 	for s: float in [-1.0, 1.0]:
 		_lantern(Vector3(STERN + 0.8, gy + 0.85, s * (hw(STERN + 0.8) - 0.3)), 1.5)
 	# 조타륜 (선장실 지붕 가운데)
-	var wheel_x := -55.2
+	var wheel_x := -53.8
 	var wood := smat(Color(0.4, 0.26, 0.15), "wood", 0.0, Vector3(0, 1, 0))
 	_box(Vector3(0.6, 1.2, 0.6), wood, Vector3(wheel_x - 0.5, PP_Y + 0.6, 0))
 	var wheel := Node3D.new()
@@ -1058,6 +1056,8 @@ func _deck_props() -> void:
 	coil.rings = 20
 	coil.ring_segments = 8
 	for p in [Vector3(-6.0, 0.06, 3.0), Vector3(29.0, 0.06, -2.8), Vector3(-42.0, QD_Y + 0.06, 2.6), Vector3(46.0, FC_Y + 0.06, 3.0), Vector3(-6.0, 0.06, -4.6), Vector3(-58.0, PP_Y + 0.06, 4.0)]:
+		if near_tile(p, 2.0):
+			continue
 		for k in 3:
 			_mi(coil, mat(Color(0.55, 0.45, 0.3), 0.95), p + Vector3(0, k * 0.09, 0), Basis().scaled(Vector3(1.0 - k * 0.12, 1.0, 1.0 - k * 0.12)))
 	# 종 (앞갑판 앞 난간 가운데)
