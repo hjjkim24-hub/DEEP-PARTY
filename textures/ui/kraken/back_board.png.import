@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://qcgvtkh2jaxo"
-path="res://.godot/imported/back_eye.png-d76c072ecf962820a726a8f441865446.ctex"
+uid="uid://cpk78483665wi"
+path="res://.godot/imported/back_board.png-a24d089b942f134de8acd3bdfc738156.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://textures/ui/kraken/back_eye.png"
-dest_files=["res://.godot/imported/back_eye.png-d76c072ecf962820a726a8f441865446.ctex"]
+source_file="res://textures/ui/kraken/back_board.png"
+dest_files=["res://.godot/imported/back_board.png-a24d089b942f134de8acd3bdfc738156.ctex"]
 
 [params]
 

@@ -180,6 +180,34 @@ func _run() -> void:
 		print("STORM struck t=", (Time.get_ticks_msec() - t1) / 1000.0, " fps=", Engine.get_frames_per_second())
 		get_tree().quit(0)
 		return
+	# backmap: 카드 뒷면용 SUNKEN ISLAND 판 전체 (글씨 · 말 없이, 거의 위에서)
+	if "backmap" in _want:
+		var gb: Node = null
+		while gb == null or not ("hold_loop" in gb):
+			await get_tree().process_frame
+			gb = get_tree().current_scene
+		gb.hold_loop = true
+		while String(gb.shot_hint) != "34_kraken_awakens":
+			await get_tree().process_frame
+		await get_tree().create_timer(4.0).timeout
+		for cl in get_tree().root.find_children("*", "CanvasLayer", true, false):
+			(cl as CanvasLayer).visible = false
+		var wb: Node = gb.world
+		for q in gb._pawns:
+			(q["node"] as Node3D).visible = false
+		for mi0 in wb.find_children("*", "MeshInstance3D", true, false):
+			var mo := (mi0 as MeshInstance3D).material_override
+			if mo is ShaderMaterial and (mo as ShaderMaterial).shader == wb.RayShader:
+				(mi0 as MeshInstance3D).visible = false
+		get_viewport().msaa_3d = Viewport.MSAA_8X
+		get_viewport().scaling_3d_scale = 2.0
+		gb._camera.fov = 40.0
+		# 세로 카드에 맞게: 판을 거의 위에서, 크라켄이 위쪽에 오도록
+		gb._cinematic(Vector3(0, w_h(wb), wb.half_d * 0.95), Vector3(0, 0, -wb.half_d * 0.12), 1.0, 0.01)
+		await get_tree().create_timer(1.5).timeout
+		await _shot("back_map")
+		get_tree().quit(0)
+		return
 	# illust: 크라켄 행동 카드 일러스트용 연출 장면 (게임 화면이 아닌, 실제 3D 모델로 꾸민 클로즈업)
 	if "illust" in _want:
 		await _illust()
@@ -198,6 +226,9 @@ func _run() -> void:
 		for a in ["barrage", "spines", "surge"]:
 			Engine.time_scale = 0.25
 			gk._kraken_card(a)
+			if a == "barrage":
+				await get_tree().create_timer(0.3).timeout
+				await _shot("kc_back")
 			while String(gk.shot_hint) != "60_kraken_card_" + a:
 				await get_tree().process_frame
 			await _shot("kc_" + a)
@@ -712,3 +743,7 @@ func _illust() -> void:
 	g._cinematic(spos - to_k * 5.0 + Vector3(0, 2.8, 0) + side * 2.5, spos + Vector3(0, 1.4, 0), 1.0, 0.01)
 	await get_tree().create_timer(0.6).timeout
 	await _shot("il_surge_b")
+
+
+func w_h(wb: Node) -> float:
+	return float(wb.half_d) * 2.6 + 30.0

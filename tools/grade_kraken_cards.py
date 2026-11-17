@@ -15,7 +15,6 @@ JOBS = {
     "art_barrage": ("il_storm_b.png", (400, 0, 1440), (0.92, 1.0, 0.95)),
     "art_spines": ("il_spines_a.png", (150, 0, 1440), (0.95, 0.92, 1.0)),
     "art_surge": ("il_surge_a.png", (420, 40, 1380), (1.0, 0.98, 0.9)),
-    "back_eye": ("art_eye.png", (240, 0, 1440), (0.92, 1.0, 0.92)),
 }
 
 

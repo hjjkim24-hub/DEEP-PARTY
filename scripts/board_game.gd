@@ -284,7 +284,7 @@ const KRAKEN_CARDS := {
 	"surge": {"title": "SHOP PANIC", "art": preload("res://textures/ui/kraken/art_surge.png"),
 		"text": "The frightened merchant doubles shop prices for 2 rounds."},
 }
-const KRAKEN_CARD_BACK := preload("res://textures/ui/kraken/back_eye.png")
+const KRAKEN_CARD_BACK := preload("res://textures/ui/kraken/back_board.png")   ## tools/make_card_back.py
 const KCARD_NEON := Color(0.45, 1.0, 0.32)
 const KCARD_DARK := Color(0.02, 0.08, 0.06)
 
