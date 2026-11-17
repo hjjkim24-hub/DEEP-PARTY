@@ -215,7 +215,8 @@ func _run() -> void:
 		await _shot("ship_overview")
 		var views := {"ship_side": [Vector3(9, 15, 165), Vector3(4, 15, 0)], "ship_bow": [Vector3(138, 39, 87), Vector3(6, 12, 0)],
 			"ship_stern": [Vector3(-126, 36, 72), Vector3(-33, 12, 0)], "ship_top": [Vector3(-15, 51, 39), Vector3(-21, 23, 0)],
-			"ship_deck": [Vector3(3, 18, 45), Vector3(6, 0, 3)]}
+			"ship_deck": [Vector3(3, 18, 45), Vector3(6, 0, 3)], "ship_idol": [Vector3(-24, 11, 14), Vector3(-34, 5, 0)],
+			"ship_arm": [Vector3(-2, 6, 40), Vector3(-12, -3, 12)], "ship_mast": [Vector3(38, 12, 22), Vector3(26, 8, 0)]}
 		for k in views:
 			gp._cinematic(at + views[k][0], at + views[k][1], 1.0, 0.01)
 			await get_tree().create_timer(1.2).timeout

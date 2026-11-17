@@ -6,6 +6,9 @@ shader_type spatial;
 render_mode blend_mix, depth_draw_always, cull_back, specular_schlick_ggx;
 #include "res://shaders/kraken_common.gdshaderinc"
 uniform float arm_len = 8.0;
+// 곡선 모드: 메쉬가 이미 원하는 곡선 모양 (크라켄의 배에 걸친 촉수). 관 정점은 UV = (둘레 0..1, 길이 u),
+// 빨판은 MultiMesh 인스턴스 변환으로 자리 잡고 INSTANCE_CUSTOM = (u, 둘레 각도, 크기)
+uniform bool spline_mode = false;
 uniform float radius = 1.0;
 uniform float tip = 0.12;          // 끝 굵기 비율
 uniform float pitch = 0.0;
@@ -36,6 +39,16 @@ float rad_at(float u) {
 void vertex() {
 	vsuck = step(0.5, UV2.x);
 	vcup = UV.x;
+	if (spline_mode) {
+		float su = vsuck > 0.5 ? INSTANCE_CUSTOM.x : UV.y;
+		float sa = vsuck > 0.5 ? INSTANCE_CUSTOM.y : UV.x * 6.2831853;
+		vec2 srr = vec2(sin(sa), cos(sa));
+		float sr = rad_at(su);
+		vs = su * arm_len;
+		vring = srr;
+		vrad = sr;
+		lp = vec3(srr.x * sr, vs, srr.y * sr);
+	} else {
 	float u = vsuck > 0.5 ? INSTANCE_CUSTOM.x : clamp(VERTEX.y, 0.0, 1.0);    // 관 메쉬는 길이 1
 	// 중심선: (z, y) 평면 위 곡선을 적분
 	vec2 c = vec2(0.0);
@@ -71,6 +84,7 @@ void vertex() {
 	vring = rr;
 	vrad = r;
 	lp = vec3(rr.x * r, vs, rr.y * r);
+	}
 }
 
 void fragment() {

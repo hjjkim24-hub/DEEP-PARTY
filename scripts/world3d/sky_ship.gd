@@ -1,11 +1,11 @@
 extends Node3D
-## 크라켄의 배: 밤하늘 구름 바다 위를 떠가는 거대한 해적선 (칸 35 개, 칸은 갑판 안쪽에 모여 있고 둘레가 넉넉함).
+## 크라켄의 배: 밤하늘 구름 바다 위를 떠가는 거대한 해적선 (칸 34 개, 칸은 갑판 안쪽에 모여 있고 둘레가 넉넉함).
 ## board_world.gd 가 섬을 다 만든 뒤 build() 로 만들고, 크라켄이 '크라켄의 배' 카드를 뽑으면
 ## board_world.enter_ship() 로 섬 대신 이 배와 밤하늘을 보여 줌.
 ##   배 길이는 x 축 (뱃머리 +x, 고물 -x), 폭은 z 축 (우현 +z 가 카메라 쪽). 좌표는 이 노드 기준 (AT 가 원점).
 ##   갑판 4 층: 큰 갑판(0) · 앞갑판(FC_Y) · 뒷갑판(QD_Y) · 맨 뒤 선장실 지붕(PP_Y). 층 사이는 가파른 배 계단.
 ##   칸은 지금은 전부 일반 칸 (배 전용 칸은 나중에). 칸은 모두 갑판 위, 길은 반듯하게:
-##     - 양쪽 뱃전을 따라 한 바퀴 (4 층 갑판을 계단으로 오르내림) + 뱃머리 끝 망보는 자리 (막다른 칸)
+##     - 양쪽 뱃전을 따라 한 바퀴 (4 층 갑판을 계단으로 오르내림)
 ##     - 뚫린 짐칸을 가로지르는 널다리 (보물 더미가 내려다보임)
 
 const SailShader := preload("res://shaders/sail.gdshader")
@@ -43,7 +43,7 @@ const TILES := {
 	"S5": Vector3(3.75, 0, LANE), "S6": Vector3(10.56, 0, LANE), "S7": Vector3(17.38, 0, LANE), "S8": Vector3(24.19, 0, LANE),
 	"S9": Vector3(31.0, 0, LANE),
 	"F1": Vector3(39.5, FC_Y, LANE), "F2": Vector3(45.0, FC_Y, 5.4), "F3": Vector3(48.5, FC_Y, 0.0), "F4": Vector3(45.0, FC_Y, -5.4),
-	"F5": Vector3(39.5, FC_Y, -LANE), "BK": Vector3(55.0, FC_Y, 0.0),
+	"F5": Vector3(39.5, FC_Y, -LANE),
 	"M1": Vector3(31.0, 0, -LANE), "M2": Vector3(24.19, 0, -LANE), "M3": Vector3(17.38, 0, -LANE), "M4": Vector3(10.56, 0, -LANE),
 	"M5": Vector3(3.75, 0, -LANE), "M6": Vector3(-3.06, 0, -LANE), "M7": Vector3(-9.88, 0, -LANE), "M8": Vector3(-16.69, 0, -LANE),
 	"M9": Vector3(-23.5, 0, -LANE),
@@ -52,7 +52,7 @@ const TILES := {
 ## 한 바퀴 길 (앞으로 가는 순서) + 갈래길들 (모두 갑판 위)
 const LOOP := ["P2", "P1", "Q1", "Q2", "Q3", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9",
 	"F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "Q6", "Q5", "Q4", "P3"]
-const BRANCHES := [["S7", "H1", "H2", "M3"], ["F3", "BK"]]
+const BRANCHES := [["S7", "H1", "H2", "M3"]]
 const STAIRS := [["Q3", "S1"], ["S9", "F1"], ["F5", "M1"], ["M9", "Q6"], ["Q4", "P3"], ["P1", "Q1"]]
 const DROPS := ["S3", "M6", "F2", "P2"]
 
@@ -239,6 +239,9 @@ func build() -> void:
 	_bow()
 	_stern()
 	_deck_props()
+	_kraken_arms()
+	_kraken_things()
+	_lights_decor()
 	_flush_ropes()
 	_sky_clouds()
 	visible = false
@@ -873,17 +876,6 @@ func _bow() -> void:
 	rope(b1, Vector3(BOW - 0.5, -4.0, 0))
 	for s: float in [-1.0, 1.0]:
 		rope(b0.lerp(b1, 0.7), Vector3(BOW - 6.5, gunwale(BOW - 6.5), s * hw(BOW - 6.5)), true)
-	# 뱃머리 끝 망보는 자리: 막다른 칸 둘레 반달 난간 + 등불
-	var bk: Vector3 = TILES["BK"]
-	var prev_p := Vector3.ZERO
-	for q in 9:
-		var ang := lerpf(-1.3, 1.3, q / 8.0)
-		var pp := bk + Vector3(cos(ang) * 2.4, 0, sin(ang) * 2.4)
-		_rod(pp, pp + Vector3(0, 1.0, 0), 0.06, spar, -1.0, 6)
-		if q > 0:
-			rope(prev_p + Vector3(0, 1.0, 0), pp + Vector3(0, 1.0, 0))
-		prev_p = pp
-	_lantern(bk + Vector3(2.5, 1.5, 0), 0.9, true, true)
 	# 뱃머리 장식: 금박 크라켄 조각 (눈은 검붉게 빛남)
 	var fig := Node3D.new()
 	fig.position = Vector3(BOW + 0.6, -1.4, 0)
@@ -1101,14 +1093,14 @@ func _deck_props() -> void:
 
 
 ## 등불: 쇠 틀 + 따뜻한 불빛
-func _lantern(p: Vector3, s: float, light := true, hang := false) -> void:
+func _lantern(p: Vector3, s: float, light := true, hang := false, col := Color(1.0, 0.66, 0.3)) -> void:
 	var root := Node3D.new()
 	root.position = p
 	add_child(root)
 	_mi(w._cyl(0.17 * s, 0.22 * s, 0.1 * s, 8), iron(), Vector3(0, 0.28 * s, 0), Basis(), root)
 	_mi(w._cyl(0.02 * s, 0.17 * s, 0.22 * s, 8), iron(), Vector3(0, 0.42 * s, 0), Basis(), root)
 	_mi(w._cyl(0.2 * s, 0.2 * s, 0.06 * s, 8), iron(), Vector3(0, -0.28 * s, 0), Basis(), root)
-	_mi(w._cyl(0.16 * s, 0.16 * s, 0.48 * s, 8), _glow(Color(1.0, 0.66, 0.3), 3.2), Vector3.ZERO, Basis(), root)
+	_mi(w._cyl(0.16 * s, 0.16 * s, 0.48 * s, 8), _glow(col, 3.2), Vector3.ZERO, Basis(), root)
 	for k in 4:
 		var a := TAU * k / 4.0 + PI / 4.0
 		_mi(w._box(Vector3(0.03, 0.56, 0.03) * s), iron(), Vector3(cos(a), 0, sin(a)) * 0.18 * s, Basis(), root)
@@ -1116,7 +1108,7 @@ func _lantern(p: Vector3, s: float, light := true, hang := false) -> void:
 		_swing.append([root, 0.08, randf() * TAU])
 	if light:
 		var l := OmniLight3D.new()
-		l.light_color = Color(1.0, 0.64, 0.32)
+		l.light_color = col
 		l.light_energy = 1.5
 		l.omni_range = 7.0 * s
 		l.omni_attenuation = 1.2
@@ -1206,3 +1198,378 @@ func _process(delta: float) -> void:
 		(l[0] as OmniLight3D).light_energy = float(l[1]) * (0.85 + 0.1 * sin(_t * 9.0 + float(l[2])) + 0.05 * sin(_t * 23.0 + float(l[2]) * 2.0))
 	for s in _swing:
 		(s[0] as Node3D).rotation.x = sin(_t * 1.1 + float(s[2])) * float(s[1])
+
+
+
+# ── 크라켄 꾸미기 ────────────────────────────────────────────
+## 곡선을 따라 휘어진 크라켄 촉수 (pts: 뿌리 → 끝). belly(p) = 그 자리에서 빨판이 향할 쪽
+func _spline_tentacle(pts: Array, r0: float, belly: Callable, tip := 0.08) -> void:
+	var dense: Array = w._catmull(pts, 14)
+	var cum := [0.0]
+	for i in range(1, dense.size()):
+		cum.append(float(cum[i - 1]) + ((dense[i] as Vector3) - (dense[i - 1] as Vector3)).length())
+	var total: float = cum[cum.size() - 1]
+	var at := func(d: float) -> Vector3:
+		var j := 0
+		while j < dense.size() - 2 and float(cum[j + 1]) < d:
+			j += 1
+		var f := (d - float(cum[j])) / maxf(float(cum[j + 1]) - float(cum[j]), 0.0001)
+		return (dense[j] as Vector3).lerp(dense[j + 1], clampf(f, 0.0, 1.0))
+	var n := 140
+	var rad := 18
+	var P := []
+	var T := []
+	for i in n + 1:
+		P.append(at.call(total * i / n))
+	for i in n + 1:
+		var a: Vector3 = P[maxi(i - 1, 0)]
+		var b: Vector3 = P[mini(i + 1, n)]
+		T.append((b - a).normalized())
+	var N := []
+	var prev_n := Vector3.ZERO
+	for i in n + 1:
+		var t: Vector3 = T[i]
+		var h: Vector3 = belly.call(P[i])
+		var nn := h - t * h.dot(t)
+		if nn.length() < 0.05:
+			nn = prev_n
+		nn = nn.normalized()
+		if prev_n != Vector3.ZERO:
+			nn = prev_n.lerp(nn, 0.35).normalized()
+			nn = (nn - t * nn.dot(t)).normalized()
+		N.append(nn)
+		prev_n = nn
+	var r_at := func(u: float) -> float: return r0 * lerpf(1.0, tip, pow(u, 0.85))
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in n + 1:
+		var u := float(i) / n
+		var t: Vector3 = T[i]
+		var nn: Vector3 = N[i]
+		var bb := t.cross(nn)
+		var r: float = r_at.call(u)
+		for k in rad + 1:
+			var a := float(k) / rad * TAU
+			var d := bb * sin(a) + nn * cos(a)
+			st.set_normal(d)
+			st.set_uv(Vector2(float(k) / rad, u))
+			st.set_uv2(Vector2(0, 0))
+			st.add_vertex((P[i] as Vector3) + d * r)
+	var wv := rad + 1
+	for i in n:
+		for k in rad:
+			var i0 := i * wv + k
+			st.add_index(i0); st.add_index(i0 + wv + 1); st.add_index(i0 + 1)
+			st.add_index(i0); st.add_index(i0 + wv); st.add_index(i0 + wv + 1)
+	var m := ShaderMaterial.new()
+	m.shader = w.KrakenArmShader
+	m.set_shader_parameter("spline_mode", true)
+	m.set_shader_parameter("arm_len", total)
+	m.set_shader_parameter("radius", r0)
+	m.set_shader_parameter("tip", tip)
+	m.set_shader_parameter("pattern_scale", 1.6 / maxf(r0, 0.3))
+	var mi := _mi(st.commit(), m, Vector3.ZERO)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	# 빨판 두 줄 (배 쪽, 엇갈려서)
+	var xs := []
+	var cs := []
+	var u := 0.04
+	var row := 0
+	while u < 0.97:
+		var ang := (0.42 if row % 2 == 0 else -0.42) + randf_range(-0.03, 0.03)
+		var fi := u * n
+		var i := int(fi)
+		var t: Vector3 = T[i]
+		var nn: Vector3 = N[i]
+		var bb := t.cross(nn)
+		var r: float = r_at.call(u)
+		var nd := (bb * sin(ang) + nn * cos(ang)).normalized()
+		var side := t.cross(nd).normalized()
+		var sz := r * 0.3 * randf_range(0.92, 1.06)
+		var c: Vector3 = (P[i] as Vector3).lerp(P[mini(i + 1, n)], fi - i) + nd * r
+		xs.append(Transform3D(Basis(side * sz, nd * sz, t * sz), c))
+		cs.append(Color(u, ang, 0.3, 0.0))
+		u += r * 0.46 / total
+		row += 1
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.mesh = w._sucker_mesh()
+	mm.instance_count = xs.size()
+	for k in xs.size():
+		mm.set_instance_transform(k, xs[k])
+		mm.set_instance_custom_data(k, cs[k])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = m
+	add_child(mmi)
+
+
+## 구름 아래에서 솟아 뱃전을 넘어와 갑판 가장자리에 축 늘어진 촉수. s = +1 우현 / -1 좌현, along = 끝이 뻗는 쪽 (x)
+func _drape(x: float, s: float, along: float, r0: float) -> void:
+	var dy := deck_y(x + along * 3.0)
+	var hz := func(xx: float, yy: float) -> float: return absf(hull_pt(xx, t_at(xx, yy), 1.0).z)
+	var pts := [
+		Vector3(x - along * 18.0, CLOUD_Y - 8.0, s * (hw(x) + 22.0)),
+		Vector3(x - along * 4.0, CLOUD_Y + 12.0, s * (hw(x) + 15.0)),
+		Vector3(x - along * 12.0, -30.0, s * (hw(x) + 9.0)),
+		Vector3(x - along * 8.0, -20.0, s * (hz.call(x - along * 8.0, -20.0) + 3.5)),
+		Vector3(x - along * 2.5, -10.0, s * (hz.call(x - along * 2.5, -10.0) + 1.8)),
+		Vector3(x - along * 0.4, -1.5, s * (hz.call(x, -1.5) + 1.0)),
+		Vector3(x, gunwale(x) + 0.8, s * (hw(x) + 0.2)),
+		Vector3(x + along * 1.2, dy + 0.9, s * (hb(x) - 1.3)),
+		Vector3(x + along * 3.6, dy + 0.55, s * (hb(x) - 2.7)),
+		Vector3(x + along * 6.0, dy + 0.45, s * (hb(x) - 2.4)),
+		Vector3(x + along * 7.2, dy + 0.55, s * (hb(x) - 1.3)),
+		Vector3(x + along * 6.4, dy + 0.75, s * (hb(x) - 0.6)),
+		Vector3(x + along * 5.6, dy + 0.9, s * (hb(x) - 1.1)),
+	]
+	_spline_tentacle(pts, r0, func(p: Vector3) -> Vector3:
+		# 선체 옆에선 선체 쪽, 갑판 위에선 아래(갑판) 쪽으로 빨판이 붙음
+		var k := smoothstep(gunwale(x) - 1.0, gunwale(x) + 0.5, p.y)
+		var on_deck := absf(p.z) < hb(p.x) + 0.2
+		return Vector3(0, -1, 0) if on_deck else Vector3(0, -0.4 * k, -s).normalized())
+
+
+func _kraken_arms() -> void:
+	_drape(-15.0, 1.0, 1.0, 2.6)
+	_drape(25.0, 1.0, -1.0, 2.2)
+	_drape(-2.0, -1.0, -1.0, 2.6)
+	_drape(-40.0, -1.0, 1.0, 2.0)
+	_drape(48.0, -1.0, -1.0, 1.8)
+	# 짐칸에서 솟아 앞돛대를 칭칭 감아 오른 촉수
+	var mx: float = MASTS[0][0]
+	var pts := [Vector3(19.0, -HOLD_DEPTH + 0.5, 2.2), Vector3(20.5, -3.0, 2.8), Vector3(21.6, 0.8, 3.3), Vector3(23.6, 3.6, 3.0),
+		Vector3(26.2, 5.0, 2.0)]
+	var y := 5.6
+	var a := PI * 0.7
+	var rr := 1.9
+	for k in 12:
+		pts.append(Vector3(mx + cos(a) * rr, y, sin(a) * rr))
+		a -= 1.25
+		y += 0.85
+		rr = maxf(rr - 0.06, 1.15)
+	_spline_tentacle(pts, 1.25, func(p: Vector3) -> Vector3:
+		var d := Vector3(mx - p.x, 0, -p.z)
+		return d.normalized() if d.length() > 0.5 and p.y > 4.0 else Vector3(0, 0, -1))
+
+
+## 크라켄 숭배 물건들: 금빛 크라켄 상 · 알 둥지 · 표본 병 · 먹물 통 · 뱃전 밖 깃발
+func _kraken_things() -> void:
+	var stone := smat(Color(0.26, 0.25, 0.28), "masonry", -1.0, Vector3(1, 0, 0), 0.0)
+	var green := Color(0.45, 1.0, 0.4)
+	# 1) 뒷갑판 가운데 크라켄 상 + 촛불
+	var ip := Vector3(-35.5, QD_Y, 0)
+	_mi(w._cyl(1.3, 1.6, 0.6, 8), stone, ip + Vector3(0, 0.3, 0))
+	_mi(w._cyl(0.9, 1.1, 1.2, 8), stone, ip + Vector3(0, 1.2, 0))
+	var idol := Node3D.new()
+	idol.position = ip + Vector3(0, 2.15, 0)
+	idol.basis = Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.RIGHT, -0.15)
+	idol.scale = Vector3.ONE * 0.62
+	add_child(idol)
+	var body := MeshInstance3D.new()
+	body.mesh = w.KRAKEN_BODY
+	body.material_override = mat(Color(0.85, 0.62, 0.26), 0.35, 0.9)
+	idol.add_child(body)
+	for sd: float in [-1.0, 1.0]:
+		var eye := SphereMesh.new()
+		eye.radius = 0.3
+		eye.height = 0.6
+		_mi(eye, _glow(Color(0.5, 1.0, 0.35), 4.0), Vector3(sd * 1.57, 0.74, 1.3), Basis(), idol)
+	for k in 8:
+		var a := TAU * k / 8.0
+		var cp := ip + Vector3(cos(a) * 1.9, 0, sin(a) * 1.9)
+		var h := 0.3 + 0.25 * float(k % 3)
+		_mi(w._cyl(0.07, 0.08, h, 8), mat(Color(0.92, 0.88, 0.76), 0.6), cp + Vector3(0, h * 0.5, 0))
+		_mi(SphereMesh.new(), _glow(Color(1.0, 0.7, 0.3), 5.0), cp + Vector3(0, h + 0.07, 0), Basis().scaled(Vector3(0.09, 0.16, 0.09)))
+	var il := OmniLight3D.new()
+	il.light_color = Color(0.6, 1.0, 0.45)
+	il.light_energy = 1.6
+	il.omni_range = 8.0
+	il.position = ip + Vector3(0, 3.0, 0)
+	add_child(il)
+	_lamps.append([il, 1.6, 0.7])
+	# 2) 크라켄 알 둥지 (밧줄 둥지 위 반투명 초록 알)
+	var egg_m := StandardMaterial3D.new()
+	egg_m.albedo_color = Color(0.35, 0.75, 0.35, 0.75)
+	egg_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	egg_m.emission_enabled = true
+	egg_m.emission = Color(0.3, 0.9, 0.3)
+	egg_m.emission_energy_multiplier = 1.4
+	egg_m.roughness = 0.15
+	egg_m.rim_enabled = true
+	egg_m.rim = 0.6
+	var nest := TorusMesh.new()
+	nest.inner_radius = 0.6
+	nest.outer_radius = 1.5
+	nest.rings = 24
+	nest.ring_segments = 10
+	for np: Vector3 in [Vector3(6.0, 0, -11.2), Vector3(-24.0, 0, 11.4), Vector3(44.0, FC_Y, 0.0)]:
+		_mi(nest, mat(Color(0.5, 0.4, 0.26), 0.95), np + Vector3(0, 0.2, 0), Basis().scaled(Vector3(1.0, 0.7, 1.0)))
+		var rng := RandomNumberGenerator.new()
+		rng.seed = int(np.x * 10)
+		for k in 7:
+			var a := TAU * k / 7.0 + rng.randf() * 0.4
+			var rr := 0.0 if k == 0 else 0.62
+			var e := SphereMesh.new()
+			e.radius = 0.36
+			e.height = 0.9
+			_mi(e, egg_m, np + Vector3(cos(a) * rr, 0.55 + (0.12 if k == 0 else 0.0), sin(a) * rr), Basis(Vector3(1, 0, 0), rng.randf_range(-0.3, 0.3)))
+		var el := OmniLight3D.new()
+		el.light_color = green
+		el.light_energy = 1.2
+		el.omni_range = 5.0
+		el.position = np + Vector3(0, 1.2, 0)
+		add_child(el)
+		_lamps.append([el, 1.2, np.x])
+	# 3) 표본 병 선반 (초록 물 속 작은 촉수)
+	var shelf_p := Vector3(-30.0, QD_Y, -11.6)
+	var wood := smat(Color(0.36, 0.23, 0.14), "wood", 0.0, Vector3(1, 0, 0))
+	_box(Vector3(3.6, 0.12, 1.0), wood, shelf_p + Vector3(0, 1.0, 0))
+	_box(Vector3(3.6, 0.12, 1.0), wood, shelf_p + Vector3(0, 0.1, 0))
+	for e: float in [-1.7, 1.7]:
+		_box(Vector3(0.12, 1.1, 1.0), wood, shelf_p + Vector3(e, 0.55, 0))
+	var glass := StandardMaterial3D.new()
+	glass.albedo_color = Color(0.7, 1.0, 0.75, 0.3)
+	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.roughness = 0.05
+	glass.metallic_specular = 1.0
+	glass.rim_enabled = true
+	var liquid := _glow(Color(0.3, 0.85, 0.35), 1.0)
+	var curl := TorusMesh.new()
+	curl.inner_radius = 0.06
+	curl.outer_radius = 0.14
+	for row: float in [0.16, 1.06]:
+		for k in 4:
+			var jp := shelf_p + Vector3(-1.2 + k * 0.8, row, 0)
+			var hh := 0.55 + 0.15 * float((k + int(row)) % 2)
+			_mi(w._cyl(0.2, 0.2, hh * 0.8, 12), liquid, jp + Vector3(0, hh * 0.4, 0))
+			_mi(curl, mat(Color(0.75, 0.4, 0.45), 0.4), jp + Vector3(0, hh * 0.45, 0), Basis(Vector3(1, 0, 0), 1.2))
+			_mi(w._cyl(0.24, 0.24, hh, 12), glass, jp + Vector3(0, hh * 0.5, 0))
+			_mi(w._cyl(0.18, 0.2, 0.1, 12), smat(Color(0.4, 0.28, 0.16), "wood", 0.0), jp + Vector3(0, hh + 0.05, 0))
+	# 4) 먹물 통 (번들번들한 검은 통 + 바닥에 번진 먹물)
+	var ink := mat(Color(0.02, 0.02, 0.04), 0.08, 0.2)
+	var barrel := CylinderMesh.new()
+	barrel.top_radius = 0.42
+	barrel.bottom_radius = 0.46
+	barrel.height = 1.15
+	barrel.radial_segments = 16
+	for bp: Vector3 in [Vector3(-8.0, 0, 11.6), Vector3(14.0, 0, -11.8), Vector3(34.0, 0, 11.4)]:
+		if near_tile(bp, 2.0):
+			continue
+		_mi(barrel, smat(Color(0.12, 0.1, 0.1), "wood", 0.12, Vector3(0, 1, 0)), bp + Vector3(0, 0.58, 0))
+		for yy: float in [-0.36, 0.36]:
+			_mi(w._cyl(0.47, 0.47, 0.07, 16), iron(), bp + Vector3(0, 0.58 + yy, 0))
+		_mi(w._cyl(0.38, 0.38, 0.04, 16), ink, bp + Vector3(0, 1.17, 0))
+		_mi(w._cyl(1.3, 1.3, 0.02, 20), ink, bp + Vector3(0.6, 0.02, 0.3), Basis().scaled(Vector3(1.0, 1.0, 0.7)))
+	# 5) 뱃전 밖에 늘어뜨린 크라켄 깃발 (선체를 따라 비스듬히)
+	for b in [[-44.0, 1.0], [-27.0, 1.0], [3.0, 1.0], [14.0, 1.0], [-20.0, -1.0], [10.0, -1.0], [34.0, -1.0]]:
+		var bx: float = b[0]
+		var sd: float = b[1]
+		var g := gunwale(bx)
+		var top := hull_pt(bx, t_at(bx, g - 0.35), sd) + Vector3(0, 0, sd * 0.25)
+		var bot := hull_pt(bx, t_at(bx, g - 6.8), sd) + Vector3(0, 0, sd * 0.25)
+		var up := (top - bot).normalized()
+		var outw := Vector3(0, 0, sd)
+		outw = (outw - up * outw.dot(up)).normalized()
+		var along := up.cross(outw)
+		var bas := Basis(along, up, outw)
+		_banner(top, bas, Vector2(3.4, (top - bot).length()), bx)
+
+
+func _banner(top: Vector3, bas: Basis, size: Vector2, seed: float) -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var nu := 8
+	var nv := 12
+	for i in nu:
+		for j in nv:
+			var quad := []
+			for c in [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]]:
+				var u := float(c[0]) / nu
+				var v := float(c[1]) / nv
+				# 아랫단은 제비꼬리 (가운데가 파임)
+				var y := -v * size.y
+				if v > 0.85:
+					y += (1.0 - absf(u - 0.5) * 2.0) * (v - 0.85) / 0.15 * size.y * 0.1
+				quad.append([Vector3((u - 0.5) * size.x, y, 0), Vector2(u, v)])
+			for tri in [[0, 1, 2], [0, 2, 3]]:
+				for q in tri:
+					st.set_uv(quad[q][1])
+					st.set_normal(Vector3(0, 0, 1))
+					st.add_vertex(quad[q][0])
+	var m := _sail_mat(size, 0.12, seed, 0.25)
+	m.set_shader_parameter("cloth", Color(0.5, 0.08, 0.08))
+	m.set_shader_parameter("flutter", 0.04)
+	m.set_shader_parameter("emblem", EMBLEM)
+	m.set_shader_parameter("emblem_on", 1.0)
+	m.set_shader_parameter("emblem_rect", Vector4(0.08, 0.16, 0.84, 0.48))
+	_mi(st.commit(), m, top, bas)
+	_rod(top + bas * Vector3(-size.x * 0.55, 0.05, 0.05), top + bas * Vector3(size.x * 0.55, 0.05, 0.05), 0.06, gold(), -1.0, 8)
+
+
+## 등불 꾸미기: 돛대에서 뱃전으로 늘어진 전구 줄 · 갑판 가장자리 등불 기둥 · 층 앞벽 벽등
+func _lights_decor() -> void:
+	var bulbs := []
+	var bulbs_g := []
+	var garland := func(a: Vector3, b: Vector3, sag: float, green_every: int) -> void:
+		var n := int((b - a).length() / 1.1)
+		var prev := a
+		for k in range(1, n + 1):
+			var f := float(k) / n
+			var p := a.lerp(b, f) - Vector3(0, sin(f * PI) * sag, 0)
+			rope(prev, p, true)
+			if k < n:
+				((bulbs_g if green_every > 0 and k % green_every == 0 else bulbs) as Array).append(Transform3D(Basis().scaled(Vector3.ONE * 0.13), p - Vector3(0, 0.12, 0)))
+			prev = p
+	for mi in [0, 1]:
+		var mx: float = MASTS[mi][0]
+		var ty: float = float(MASTS[mi][2]) * TOP_K
+		for sd: float in [-1.0, 1.0]:
+			for dx: float in [-9.0, 9.0]:
+				var x2 := mx + dx
+				garland.call(Vector3(mx, ty - 0.2, sd * 1.8), Vector3(x2, gunwale(x2) + 0.5, sd * (hw(x2) - 0.1)), 1.6, 4)
+	# 돛대 사이 · 앞뒤 갑판으로
+	garland.call(Vector3(MASTS[1][0], 14.0, 0), Vector3(MASTS[0][0], 13.0, 0), 2.4, 3)
+	garland.call(Vector3(MASTS[1][0], 13.0, 0), Vector3(QD_X, QD_Y + 6.5, 0), 1.8, 3)
+	garland.call(Vector3(MASTS[0][0], 12.0, 0), Vector3(FC_X + 9.0, FC_Y + 5.5, 0), 1.6, 3)
+	garland.call(Vector3(MASTS[2][0], QD_Y + 13.0, 0), Vector3(PP_X - 4.0, PP_Y + 4.0, 0), 1.2, 3)
+	var bm := SphereMesh.new()
+	bm.radius = 1.0
+	bm.height = 2.0
+	bm.radial_segments = 8
+	bm.rings = 4
+	_multi(bm, _glow(Color(1.0, 0.72, 0.36), 4.5), bulbs)
+	_multi(bm, _glow(Color(0.5, 1.0, 0.45), 4.0), bulbs_g)
+	# 갑판 가장자리 등불 기둥 (뱃전 길 칸 사이, 바깥쪽)
+	var post_m := smat(Color(0.25, 0.16, 0.1), "wood", 0.0, Vector3(0, 1, 0))
+	var arms := [-15.0, 25.0, -2.0, -40.0, 48.0]
+	for sd: float in [-1.0, 1.0]:
+		for k in LANE_XS().size() - 1:
+			var x: float = (LANE_XS()[k] + LANE_XS()[k + 1]) * 0.5
+			var skip := false
+			for ax: float in arms:
+				if absf(ax - x) < 4.5:
+					skip = true
+			if skip:
+				continue
+			var p := Vector3(x, 0, sd * (LANE + 2.6))
+			if near_tile(p, 1.6):
+				continue
+			_rod(p, p + Vector3(0, 2.6, 0), 0.08, post_m, 0.1, 8)
+			_rod(p + Vector3(0, 2.5, 0), p + Vector3(0, 2.5, -sd * 0.7), 0.05, iron(), -1.0, 6)
+			_lantern(p + Vector3(0, 2.0, -sd * 0.7), 0.9, k % 3 == 1, true, Color(1.0, 0.66, 0.3) if k % 2 == 0 else Color(0.55, 1.0, 0.45))
+	# 층 앞벽 문 양옆 벽등
+	for e in [[FC_X, 0.0, -1.0], [QD_X, 0.0, 1.0], [PP_X, QD_Y, 1.0]]:
+		for sz: float in [-1.0, 1.0]:
+			var p := Vector3(float(e[0]) + float(e[2]) * 0.45, float(e[1]) + 2.4, sz * 1.15)
+			_lantern(p, 0.7, false, false, Color(0.55, 1.0, 0.45) if e[0] == PP_X else Color(1.0, 0.66, 0.3))
+
+
+func LANE_XS() -> Array:
+	var out := []
+	for n in TILES:
+		if String(n).begins_with("S") and String(n).substr(1).is_valid_int():
+			out.append((TILES[n] as Vector3).x)
+	out.sort()
+	return out
