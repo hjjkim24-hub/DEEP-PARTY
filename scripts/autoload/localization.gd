@@ -289,6 +289,8 @@ const KO := {
 	"Shop prices x2": "상점 가격 2배",
 	"Poison spines: %d spaces": "독가시 칸: %d개",
 	"TENTACLE STORM!": "촉수 폭풍!",
+	"NOBODY WAS HIT!": "아무도 안 맞았다!",
+	"Everyone dodged the storm.": "모두 촉수 폭풍을 피했어요.",
 	"It will smash every red space at the end of next round!": "다음 라운드가 끝나면 붉은 칸을 전부 내려쳐요!",
 	"POISON SPINES!": "독가시!",
 	"Stopping on a purple space costs a heart — for %d rounds!": "보라색 칸에 멈추면 하트 -1 — %d 라운드 동안!",

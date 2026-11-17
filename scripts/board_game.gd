@@ -10,6 +10,7 @@ extends "res://scripts/board/board_session.gd"
 const BOARD_TITLES := {"sunken_island": "SUNKEN ISLAND"}
 
 var rig_kraken := ""          ## 다음 크라켄 행동 ("" = 무작위)
+var hold_loop := false        ## 개발용: 크라켄 등장 뒤 게임을 진행하지 않음 (장면 촬영용)
 var _attack_cd := Rules.KRAKEN_ATTACK_EVERY   ## 크라켄 차례까지 남은 라운드 (이번 라운드 포함)
 var _attacks := 0             ## 지금까지 크라켄 차례 수 (공격이 점점 거세짐)
 var _strike_due := {}         ## 칸 → 이 라운드가 끝날 때 내려침
@@ -36,6 +37,8 @@ func board_title() -> String:
 func _after_intro() -> void:
 	_round_label.visible = true
 	await _kraken_wakes()
+	if hold_loop:
+		return
 	if GameState.debug_showcase:
 		await _debug_showcase()
 	await _game_loop()
@@ -151,8 +154,8 @@ func _kraken_phase(r: int) -> void:
 
 
 ## 칸을 붉게 표시하고, due 라운드가 끝날 때 내려치게 예약
-func _mark(t: int, due: int) -> void:
-	world.mark_danger(t)
+func _mark(t: int, due: int, light: bool = true) -> void:
+	world.mark_danger(t, light)
 	_strike_due[t] = mini(int(_strike_due.get(t, due)), due)
 
 
@@ -164,6 +167,9 @@ func _kraken_strikes(r: int) -> void:
 	if targets.is_empty():
 		return
 	_follow = null
+	if targets.size() > Rules.KRAKEN_MASS_STRIKE:
+		await _mass_strike(targets)
+		return
 	await _banner(tr("THE KRAKEN STRIKES!"), "", 0.7)
 	for t in targets:
 		_strike_due.erase(t)
@@ -182,6 +188,41 @@ func _kraken_strikes(r: int) -> void:
 			if int(q["tile"]) == t:
 				await _damage(q, 1)
 		await get_tree().create_timer(0.7, false).timeout
+
+
+## 촉수 폭풍: 판 전체를 보여 주며 모든 붉은 칸을 거의 한꺼번에 내려침 → 맞은 사람을 한 명씩 보여 줌
+func _mass_strike(targets: Array) -> void:
+	for t in targets:
+		_strike_due.erase(t)
+	_move_camera(world.overview, world.overview_zoom * 0.85, 0.9)
+	await get_tree().create_timer(0.9, false).timeout
+	Audio.play("box_rumble")
+	_shake_camera(0.3, 1.2)
+	await _banner(tr("TENTACLE STORM!"), "", 0.6)
+	for t in targets:
+		world.tentacle_strike(t, _rng.randf_range(0.0, 0.9))
+	# 솟구침(0.55) + 버팀(0.32) + 내려침(0.2) 뒤 쾅쾅쾅
+	await get_tree().create_timer(1.1, false).timeout
+	Audio.play("box_burst")
+	_shake_camera(1.0, 1.1)
+	await get_tree().create_timer(0.5, false).timeout
+	Audio.play("box_burst")
+	shot_hint = "49b_kraken_strike"
+	await get_tree().create_timer(0.8, false).timeout
+	var hit := []
+	for q in _alive_pawns():
+		if targets.has(int(q["tile"])):
+			hit.append(q)
+	if hit.is_empty():
+		await _banner(tr("NOBODY WAS HIT!"), tr("Everyone dodged the storm."), 0.9)
+		return
+	for q in hit:
+		if _over():
+			return
+		focus_on(q, 0.6)
+		await get_tree().create_timer(0.6, false).timeout
+		await _damage(q, 1)
+	_follow = null
 
 
 ## 기한이 끝난 독가시 칸 · 상점 폭등 되돌리기
@@ -312,10 +353,13 @@ func _kraken_aim(n: int, due: int) -> void:
 	_follow = null
 	_move_camera(world.overview, world.overview_zoom * 0.7, 1.0)
 	await get_tree().create_timer(1.0, false).timeout
-	for t in picks:
-		_mark(t, due)
-		Audio.play("tick")
-		await get_tree().create_timer(0.18, false).timeout
+	# 수십 칸이면 빠르게 촤르륵 (전부 합쳐 2.5초 안쪽)
+	var gap := clampf(2.5 / picks.size(), 0.04, 0.18)
+	for k in picks.size():
+		_mark(picks[k], due, picks.size() <= 8 or k % 6 == 0)
+		if k % 3 == 0 or picks.size() <= 8:
+			Audio.play("tick")
+		await get_tree().create_timer(gap, false).timeout
 	shot_hint = "49_kraken_aim"
 
 

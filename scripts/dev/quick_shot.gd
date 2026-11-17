@@ -112,6 +112,42 @@ func _run() -> void:
 			await get_tree().create_timer(0.95).timeout
 		get_tree().quit(0)
 		return
+	# storm: 촉수 폭풍을 바로 일으켜 표시 장면 · 내려치는 장면 촬영 (게임 흐름과 별개로)
+	if "storm" in _want:
+		var gs: Node = null
+		while gs == null or not ("hold_loop" in gs):
+			await get_tree().process_frame
+			gs = get_tree().current_scene
+		gs.hold_loop = true
+		while String(gs.shot_hint) != "34_kraken_awakens":
+			await get_tree().process_frame
+		await get_tree().create_timer(5.0).timeout
+		var t1 := Time.get_ticks_msec()
+		gs._attacks = 1
+		await gs._kraken_barrage(0)
+		await get_tree().create_timer(1.0).timeout
+		print("STORM marked=", gs.world.danger_tiles().size(), " t=", (Time.get_ticks_msec() - t1) / 1000.0)
+		await _shot("s_marked")
+		var tg: Array = gs.world.danger_tiles()
+		gs.call("_mass_strike", tg)
+		while String(gs.shot_hint) != "49b_kraken_strike" and Time.get_ticks_msec() - t1 < 120000:
+			await get_tree().process_frame
+		await _shot("s_strike")
+		print("STORM struck t=", (Time.get_ticks_msec() - t1) / 1000.0, " fps=", Engine.get_frames_per_second())
+		get_tree().quit(0)
+		return
+	# count: 맵의 칸 수 (종류별)
+	if "count" in _want:
+		var gc: Node = null
+		while gc == null or not ("world" in gc) or gc.world == null or gc.world.spaces.is_empty():
+			await get_tree().process_frame
+			gc = get_tree().current_scene
+		var kinds := {}
+		for sp in gc.world.spaces:
+			kinds[String(sp["kind"])] = int(kinds.get(String(sp["kind"]), 0)) + 1
+		print("SPACES total=", gc.world.spaces.size(), " ", kinds)
+		get_tree().quit(0)
+		return
 	# 크라켄이 다 솟아오를 때까지
 	var g: Node = null
 	while true:

@@ -1619,8 +1619,10 @@ func make_tentacle(n: int, r0: float, seg_len: float, dir: Vector3 = Vector3(0, 
 	if d.length() < 0.01:
 		d = Vector3(0, 0, 1)
 	mi.basis = Basis.looking_at(-d.normalized(), Vector3.UP)
-	# 빨판 두 줄 (배 쪽, 엇갈려서). 끝으로 갈수록 작고 촘촘
+	# 빨판 두 줄 (배 쪽, 엇갈려서). 끝으로 갈수록 작고 촘촘. 칸 옆에서 삐죽 나온 작은 촉수는 빨판 없이 (수십 개가 한꺼번에 나와서)
 	var cups := []
+	if r0 < 0.6:
+		return {"root": mi, "mat": mat}
 	var u := 0.05
 	var row := 0
 	while u < 0.96:
@@ -1660,7 +1662,7 @@ func _pose_tentacle(tn: Dictionary, _axis: Vector3, pitch: float, curl: float, w
 var _dangers := {}      ## 칸 → {"mark": MeshInstance3D, "tn": 촉수, "dir": 칸 쪽 방향, "root": 뿌리 위치, "t0": 시작 시간}
 
 
-func mark_danger(i: int) -> void:
+func mark_danger(i: int, light: bool = true) -> void:
 	if _dangers.has(i):
 		return
 	var top: Vector3 = spaces[i]["pos"]
@@ -1686,6 +1688,7 @@ func mark_danger(i: int) -> void:
 	lt.omni_range = 3.4
 	lt.position = Vector3(0, 0.9, 0)
 	lt.omni_range = 4.0
+	lt.visible = light      # 수십 칸을 한꺼번에 노릴 때는 몇 칸만 실제 불빛 (나머지는 붉은 빛 무늬만)
 	mark.add_child(lt)
 	var lp := create_tween().set_loops()
 	lp.tween_property(lt, "light_energy", 2.6, 0.45).set_trans(Tween.TRANS_SINE)
@@ -1734,7 +1737,9 @@ func _clear_danger(i: int) -> void:
 
 
 ## 노린 칸을 내려침: 촉수가 땅에서 솟구쳐 뒤로 젖혔다가 칸 위로 쾅. await 가능, 끝나면 들어감
-func tentacle_strike(i: int) -> void:
+func tentacle_strike(i: int, delay: float = 0.0) -> void:
+	if delay > 0.0:
+		await get_tree().create_timer(delay, false).timeout
 	var top: Vector3 = spaces[i]["pos"]
 	var d: Dictionary
 	if _dangers.has(i):

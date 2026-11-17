@@ -46,9 +46,10 @@ const HEARTS_MAX := 3
 ##            배에서 나온 뒤부터 다음 차례까지 다시 셈)
 const KRAKEN_ATTACK_EVERY := 2
 const KRAKEN_ACTIONS := ["barrage", "spines", "surge"]
-const KRAKEN_TARGETS_BASE := 6      ## barrage: 첫 공격에 노리는 칸 수
-const KRAKEN_TARGETS_GROW := 1.0    ## 공격할 때마다 늘어나는 수
-const KRAKEN_TARGETS_MAX := 14
+const KRAKEN_TARGETS_BASE := 40     ## barrage: 첫 공격에 노리는 칸 수 (판은 약 180칸)
+const KRAKEN_TARGETS_GROW := 5.0    ## 크라켄 차례마다 늘어나는 수
+const KRAKEN_TARGETS_MAX := 60
+const KRAKEN_MASS_STRIKE := 5       ## 이보다 많이 내려칠 때는 한꺼번에 쾅 (하나씩 보여 주면 너무 길어서)
 const KRAKEN_AIM_AT_PAWN := 0.6     ## 이 확률로 누군가 서 있는 칸 근처를 노림
 const KRAKEN_SPINES_BASE := 3       ## spines: 독가시 칸 수
 const KRAKEN_SPINES_MAX := 5
