@@ -621,6 +621,7 @@ func _environment() -> void:
 	env.adjustment_contrast = 1.12
 	we.environment = env
 	add_child(we)
+	world_env = env
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-58, -32, 0)
 	sun.light_energy = 1.0
@@ -1478,6 +1479,7 @@ const KRAKEN_SLEEP_Y := -75.0      ## 잠들어 있을 때 (깊이 잠김)
 const KRAKEN_AWAKE_Y := 15.0        ## 깨어나면: 판 북쪽 끝 위로 몸을 숙여 판을 내려다봄
 var kraken_coils: Array = []      ## {tn, ph, y(뿌리 깊이), g(움켜쥔 정도), dir}
 var kraken_body_mat: ShaderMaterial
+var world_env: Environment
 var last_strike: Node3D        ## 개발용: 마지막으로 내려친 촉수
 var strike_slow := 1.0         ## 개발용: 내려치기 동작을 느리게 (장면 확인용)
 var kraken_eyes: Array = []       ## 깨어날 때 연출용 (MeshInstance3D)

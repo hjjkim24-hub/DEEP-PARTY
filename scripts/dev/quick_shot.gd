@@ -180,6 +180,11 @@ func _run() -> void:
 		print("STORM struck t=", (Time.get_ticks_msec() - t1) / 1000.0, " fps=", Engine.get_frames_per_second())
 		get_tree().quit(0)
 		return
+	# illust: 크라켄 행동 카드 일러스트용 연출 장면 (게임 화면이 아닌, 실제 3D 모델로 꾸민 클로즈업)
+	if "illust" in _want:
+		await _illust()
+		get_tree().quit(0)
+		return
 	# kcards: 크라켄 행동 카드 (뒷면 · 앞면 3 장)
 	if "kcards" in _want:
 		var gk: Node = null
@@ -428,3 +433,229 @@ func _run() -> void:
 		await get_tree().create_timer(2.0).timeout
 		await _shot("q_" + s)
 	get_tree().quit(0)
+
+
+func _neon_cone(parent: Node, pos: Vector3, basis_: Basis, r: float, h: float, mat: Material) -> void:
+	var c := CylinderMesh.new()
+	c.top_radius = 0.0
+	c.bottom_radius = r
+	c.height = h
+	c.radial_segments = 10
+	var mi := MeshInstance3D.new()
+	mi.mesh = c
+	mi.material_override = mat
+	parent.add_child(mi)
+	mi.global_transform = Transform3D(basis_, pos) * Transform3D(Basis(), Vector3(0, h * 0.5, 0))
+
+
+func _illust() -> void:
+	var g: Node = null
+	while g == null or not ("hold_loop" in g):
+		await get_tree().process_frame
+		g = get_tree().current_scene
+	g.hold_loop = true
+	while String(g.shot_hint) != "34_kraken_awakens":
+		await get_tree().process_frame
+	await get_tree().create_timer(4.0).timeout
+	for cl in get_tree().root.find_children("*", "CanvasLayer", true, false):
+		(cl as CanvasLayer).visible = false
+	var w: Node = g.world
+	for q in g._pawns:
+		(q["node"] as Node3D).visible = false
+	var env: Environment = w.world_env
+	env.fog_density = 0.03
+	env.fog_light_color = Color(0.02, 0.13, 0.15)
+	env.glow_intensity = 0.9
+	env.glow_bloom = 0.12
+	env.tonemap_exposure = 0.75
+	env.ambient_light_energy = 0.3
+	var cam: Camera3D = g._camera
+	var kpos: Vector3 = w.kraken_root.position
+	# 탁 트인 일반 칸들
+	var open_tiles := []
+	for i in w.spaces.size():
+		var pp: Vector3 = w.spaces[i]["pos"]
+		if i != w.start_index and String(w.spaces[i]["kind"]) in ["plain", "minigame", "chance"] and absf(pp.y) < 0.6 and pp.z > -w.half_d * 0.2:
+			open_tiles.append(i)
+	var anchor: int = open_tiles[open_tiles.size() / 2]
+	var ap: Vector3 = w.spaces[anchor]["pos"]
+	var near_sorted := open_tiles.duplicate()
+	near_sorted.sort_custom(func(a: int, b: int) -> bool: return (w.spaces[a]["pos"] as Vector3).distance_to(ap) < (w.spaces[b]["pos"] as Vector3).distance_to(ap))
+	var picks := []
+	for i in near_sorted:
+		var ok := true
+		for j in picks:
+			if (w.spaces[i]["pos"] as Vector3).distance_to(w.spaces[j]["pos"]) < 4.0:
+				ok = false
+		if ok:
+			picks.append(i)
+		if picks.size() >= 4:
+			break
+	var c := Vector3.ZERO
+	for i in picks:
+		c += w.spaces[i]["pos"]
+	c /= picks.size()
+	var to_k := (Vector3(kpos.x, 0, kpos.z) - Vector3(c.x, 0, c.z)).normalized()
+	var side := Vector3(-to_k.z, 0, to_k.x)
+	# ── 1) 촉수 폭풍: 붉게 빛나는 칸들 위로 거대한 촉수들이 몸을 젖히고, 하나는 막 내려꽂힘 ──
+	for i in picks:
+		w.mark_danger(i)
+	var poses := [[-0.55, 1.4, 0.0, -0.8], [-0.35, 1.1, 0.0, -0.5], [0.5, 0.0, 1.2, 1.0], [-0.7, 1.6, 0.0, -1.0]]
+	var stage := []
+	for k in picks.size():
+		var tp: Vector3 = w.spaces[picks[k]]["pos"]
+		var dirv := (tp - c).normalized() if k != 2 else -side
+		if dirv.length() < 0.1:
+			dirv = side
+		var tn: Dictionary = w.make_tentacle(1, 1.25 if k != 2 else 1.1, 10.0 if k != 2 else 7.5, -dirv)
+		var m: ShaderMaterial = tn["mat"]
+		var pz: Array = poses[k]
+		m.set_shader_parameter("tip", 0.2)
+		m.set_shader_parameter("hook_at", 0.2)
+		m.set_shader_parameter("pitch", pz[0])
+		m.set_shader_parameter("curl", pz[1])
+		m.set_shader_parameter("hook", pz[2])
+		m.set_shader_parameter("tipback", pz[3])
+		m.set_shader_parameter("glow", 0.35)
+		var root: Node3D = tn["root"]
+		w.add_child(root)
+		root.position = tp + dirv * 3.0 + Vector3(0, -0.9, 0)
+		stage.append(root)
+	# 내려꽂힌 칸에 흙먼지 · 충격
+	w.bubbles_at(w.spaces[picks[2]]["pos"], 30, 1.4, true)
+	cam.fov = 52.0
+	g._cinematic(c - to_k * 10.5 + Vector3(0, 1.6, 0) + side * 1.5, c + to_k * 6.0 + Vector3(0, 4.2, 0), 1.0, 0.01)
+	await get_tree().create_timer(0.9).timeout
+	await _shot("il_storm_a")
+	g._cinematic(c - to_k * 7.0 + Vector3(0, 0.8, 0) - side * 3.0, c + to_k * 4.0 + Vector3(0, 3.0, 0), 1.0, 0.01)
+	await get_tree().create_timer(0.6).timeout
+	await _shot("il_storm_b")
+	for r in stage:
+		(r as Node3D).queue_free()
+	for i in picks:
+		w._clear_danger(i)
+	# ── 2) 독 가시: 칸이 보라색 독 가시 덩어리로 터져 오름 ──
+	var st_i: int = picks[0]
+	var sp: Vector3 = w.spaces[st_i]["pos"]
+	w.set_tile_look(st_i, "urchin")
+	var spm := StandardMaterial3D.new()
+	spm.albedo_color = Color(0.32, 0.1, 0.45)
+	spm.roughness = 0.22
+	spm.metallic = 0.3
+	spm.emission_enabled = true
+	spm.emission = Color(0.55, 0.15, 0.8)
+	spm.emission_energy_multiplier = 0.35
+	spm.rim_enabled = true
+	spm.rim = 0.6
+	var spike_root := Node3D.new()
+	w.add_child(spike_root)
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 11
+	for k in 70:
+		var a := rr.randf() * TAU
+		var d := sqrt(rr.randf()) * 1.05
+		var base := sp + Vector3(cos(a) * d, 0.42, sin(a) * d)
+		var outw := Vector3(cos(a), 0, sin(a)) * d * 0.7
+		var up := (Vector3.UP * 1.0 + outw + Vector3(rr.randf_range(-0.2, 0.2), 0, rr.randf_range(-0.2, 0.2))).normalized()
+		var x := up.cross(Vector3(0, 0, 1)).normalized()
+		var bz := x.cross(up)
+		_neon_cone(spike_root, base, Basis(x, up, bz), rr.randf_range(0.05, 0.11), rr.randf_range(0.6, 2.0) * (1.2 - d * 0.5), spm)
+	var dm := StandardMaterial3D.new()
+	dm.albedo_color = Color(0.4, 1.0, 0.3)
+	dm.emission_enabled = true
+	dm.emission = Color(0.4, 1.0, 0.25)
+	dm.emission_energy_multiplier = 0.8
+	for k in 26:
+		var s3 := SphereMesh.new()
+		s3.radius = rr.randf_range(0.02, 0.05)
+		s3.height = s3.radius * 2.6
+		var mi := MeshInstance3D.new()
+		mi.mesh = s3
+		mi.material_override = dm
+		spike_root.add_child(mi)
+		mi.global_position = sp + Vector3(rr.randf_range(-1.4, 1.4), rr.randf_range(0.6, 2.6), rr.randf_range(-1.4, 1.4))
+	var pl := OmniLight3D.new()
+	pl.light_color = Color(0.7, 0.25, 1.0)
+	pl.light_energy = 3.0
+	pl.omni_range = 6.0
+	spike_root.add_child(pl)
+	pl.global_position = sp + Vector3(0, 1.2, 0)
+	var gl := OmniLight3D.new()
+	gl.light_color = Color(0.4, 1.0, 0.3)
+	gl.light_energy = 1.5
+	gl.omni_range = 5.0
+	spike_root.add_child(gl)
+	gl.global_position = sp + Vector3(0, 2.2, 0) - to_k * 1.0
+	w._poison_mist(spike_root, sp + Vector3(0, 0.6, 0), 1.6, 30)
+	cam.fov = 45.0
+	g._cinematic(sp - to_k * 5.2 + Vector3(0, 1.3, 0) + side * 1.2, sp + Vector3(0, 1.0, 0), 1.0, 0.01)
+	await get_tree().create_timer(1.6).timeout
+	await _shot("il_spines_a")
+	g._cinematic(sp - to_k * 4.0 + Vector3(0, 0.55, 0) - side * 1.8, sp + Vector3(0, 1.2, 0), 1.0, 0.01)
+	await get_tree().create_timer(0.6).timeout
+	await _shot("il_spines_b")
+	spike_root.queue_free()
+	# ── 3) 상점 대혼란: 촉수가 노점을 휘감고 동전이 쏟아짐 ──
+	var shops: Array = w.spaces_of_kind("shop")
+	var sb: int = 135 if shops.has(135) else int(shops[shops.size() - 1])
+	var spos: Vector3 = w.spaces[sb]["pos"]
+	var stall := spos
+	var best_d := INF
+	for n in w.get_children():
+		if n is Node3D and (n as Node3D).global_position.distance_to(spos) < 6.0 and (n as Node3D).global_position.distance_to(spos) > 1.0:
+			pass
+	var tn2: Dictionary = w.make_tentacle(1, 1.1, 9.0, to_k)
+	var m2: ShaderMaterial = tn2["mat"]
+	m2.set_shader_parameter("tip", 0.2)
+	m2.set_shader_parameter("hook_at", 0.25)
+	m2.set_shader_parameter("pitch", -0.2)
+	m2.set_shader_parameter("curl", 1.2)
+	m2.set_shader_parameter("hook", 1.0)
+	m2.set_shader_parameter("tipback", -0.3)
+	m2.set_shader_parameter("glow", 0.3)
+	var r2: Node3D = tn2["root"]
+	w.add_child(r2)
+	r2.position = spos + to_k * 3.2 + side * 1.5 + Vector3(0, -0.8, 0)
+	var gm := StandardMaterial3D.new()
+	gm.albedo_color = Color(1.0, 0.76, 0.25)
+	gm.metallic = 0.4
+	gm.roughness = 0.3
+	gm.emission_enabled = true
+	gm.emission = Color(0.9, 0.62, 0.15)
+	gm.emission_energy_multiplier = 0.55
+	var coin_root := Node3D.new()
+	w.add_child(coin_root)
+	for k in 30:
+		var cy := CylinderMesh.new()
+		cy.top_radius = 0.16
+		cy.bottom_radius = 0.16
+		cy.height = 0.04
+		var mi2 := MeshInstance3D.new()
+		mi2.mesh = cy
+		mi2.material_override = gm
+		coin_root.add_child(mi2)
+		mi2.global_position = spos + Vector3(rr.randf_range(-2.4, 2.4), rr.randf_range(0.4, 3.2), rr.randf_range(-2.0, 2.0))
+		mi2.rotation = Vector3(rr.randf() * TAU, rr.randf() * TAU, rr.randf() * TAU)
+	var tag := Label3D.new()
+	tag.text = "×2"
+	tag.font_size = 220
+	tag.outline_size = 40
+	tag.modulate = Color(0.95, 0.12, 0.08)
+	tag.outline_modulate = Color(1.0, 0.92, 0.75)
+	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	tag.pixel_size = 0.004
+	coin_root.add_child(tag)
+	tag.global_position = spos + Vector3(0, 2.6, 0) - to_k * 0.5
+	var cl2 := OmniLight3D.new()
+	cl2.light_color = Color(1.0, 0.85, 0.5)
+	cl2.light_energy = 2.0
+	cl2.omni_range = 6.0
+	coin_root.add_child(cl2)
+	cl2.global_position = spos + Vector3(0, 2.0, 0) - to_k * 2.0
+	cam.fov = 48.0
+	g._cinematic(spos - to_k * 6.5 + Vector3(0, 1.8, 0) - side * 1.0, spos + Vector3(0, 1.6, 0) + to_k * 0.8, 1.0, 0.01)
+	await get_tree().create_timer(0.8).timeout
+	await _shot("il_surge_a")
+	g._cinematic(spos - to_k * 5.0 + Vector3(0, 2.8, 0) + side * 2.5, spos + Vector3(0, 1.4, 0), 1.0, 0.01)
+	await get_tree().create_timer(0.6).timeout
+	await _shot("il_surge_b")
