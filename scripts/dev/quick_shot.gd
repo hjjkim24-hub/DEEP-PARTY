@@ -127,6 +127,25 @@ func _run() -> void:
 		await gs._kraken_barrage(0)
 		await get_tree().create_timer(1.0).timeout
 		print("STORM marked=", gs.world.danger_tiles().size(), " t=", (Time.get_ticks_msec() - t1) / 1000.0)
+		var ds: Array = gs.world.danger_tiles()
+		var mins := []
+		var adj := 0
+		for a0 in ds:
+			var pa: Vector3 = gs.world.spaces[a0]["pos"]
+			var md := INF
+			for b0 in ds:
+				if a0 != b0:
+					var pb: Vector3 = gs.world.spaces[b0]["pos"]
+					md = minf(md, Vector2(pa.x - pb.x, pa.z - pb.z).length())
+			mins.append(md)
+			for l in gs.world.spaces[a0]["links"]:
+				if ds.has(int(l)):
+					adj += 1
+		mins.sort()
+		print("STORM spacing min=", mins[0], " median=", mins[mins.size() / 2], " adjacent_pairs=", adj / 2)
+		for q in gs._alive_pawns():
+			var near: Array = gs._reachable(int(q["tile"]), 1, 6)
+			print("STORM pawn ", q["name"], " reach=", near.size(), " marked_in_reach=", near.filter(func(i: int) -> bool: return ds.has(i)).size())
 		await _shot("s_marked")
 		var tg: Array = gs.world.danger_tiles()
 		if "close" in _want:
@@ -140,11 +159,17 @@ func _run() -> void:
 			var sideways := Vector3(-dv.z, 0, dv.x)
 			gs._cinematic(tp + sideways * 11.0 - dv * 1.0 + Vector3(0, 4.0, 0), tp - dv * 1.2 + Vector3(0, 1.6, 0), 1.0, 0.01)
 			await get_tree().create_timer(0.5).timeout
-			Engine.time_scale = 0.1
+			# 한 번 먼저 내려쳐서 셰이더를 준비 (첫 프레임이 느려 동작이 건너뛰지 않게)
+			gs.world.tentacle_strike(int(tg[tg.size() - 1]))
+			await get_tree().create_timer(4.0).timeout
+			gs.world.strike_slow = 12.0
 			gs.world.tentacle_strike(t0i)
-			for k in 16:
+			var t3 := Time.get_ticks_msec()
+			for k in 12:
+				if is_instance_valid(gs.world.last_strike):
+					print("RISE k=", k, " real=", (Time.get_ticks_msec() - t3) / 1000.0, " y=", gs.world.last_strike.position.y, " fps=", Engine.get_frames_per_second())
 				await _shot("c_%02d" % k)
-				await get_tree().create_timer(1.6, true, false, true).timeout
+				await get_tree().create_timer(1.5).timeout
 			Engine.time_scale = 1.0
 			get_tree().quit(0)
 			return

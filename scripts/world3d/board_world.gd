@@ -1478,6 +1478,8 @@ const KRAKEN_SLEEP_Y := -75.0      ## 잠들어 있을 때 (깊이 잠김)
 const KRAKEN_AWAKE_Y := 15.0        ## 깨어나면: 판 북쪽 끝 위로 몸을 숙여 판을 내려다봄
 var kraken_coils: Array = []      ## {tn, ph, y(뿌리 깊이), g(움켜쥔 정도), dir}
 var kraken_body_mat: ShaderMaterial
+var last_strike: Node3D        ## 개발용: 마지막으로 내려친 촉수
+var strike_slow := 1.0         ## 개발용: 내려치기 동작을 느리게 (장면 확인용)
 var kraken_eyes: Array = []       ## 깨어날 때 연출용 (MeshInstance3D)
 var kraken_arms: Array = []       ## [Node3D 뿌리, 기본 회전]
 var kraken_root: Node3D
@@ -1679,7 +1681,7 @@ func mark_danger(i: int, light: bool = true) -> void:
 	q2.orientation = PlaneMesh.FACE_Y
 	var m2 := ShaderMaterial.new()
 	m2.shader = DangerShader
-	m2.set_shader_parameter("fill_k", 0.75)
+	m2.set_shader_parameter("fill_k", 1.25)   # 불빛 없이도 칸이 붉게 보이게
 	var on_top := _mi(q2, m2, Vector3(0, TILE_H - 0.3 + 0.02, 0), Basis(Vector3.UP, float(spaces[i]["yaw"])), mark)
 	on_top.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var lt := OmniLight3D.new()
@@ -1763,7 +1765,9 @@ func tentacle_strike(i: int, delay: float = 0.0) -> void:
 	mat.set_shader_parameter("hook_at", 0.2)
 	root.position = base + Vector3(0, -9.0, 0)
 	add_child(root)
+	last_strike = root
 	# 자세: [pitch, curl(=굽힘 총량), hook, tipback, wave]
+	var straight := [0.0, 0.0, 0.0, 0.0, 0.15]      # 땅을 뚫고 나올 때는 곧게 (한 구멍에서 나오게)
 	var raised := [-0.25, 0.9, 0.0, -0.5, 0.25]
 	var wound := [-0.6, 1.5, 0.0, -0.9, 0.1]
 	var slammed := [0.5, 0.0, 1.2, 1.0, 0.0]
@@ -1774,23 +1778,23 @@ func tentacle_strike(i: int, delay: float = 0.0) -> void:
 		mat.set_shader_parameter("tipback", lerpf(a[3], b[3], f))
 		mat.set_shader_parameter("wave", lerpf(a[4], b[4], f) + extra_wave)
 		mat.set_shader_parameter("wtime", _time)
-	pose.call(raised, raised, 0.0)
-	# 1) 땅이 터지며 솟구침
+	pose.call(straight, straight, 0.0)
+	# 1) 땅이 터지며 곧게 솟구치고, 다 나올 즈음 끝이 갈고리처럼 말림
 	_dust(base, 1.2)
 	bubbles_at(base, 30, 0.8, true)
 	var rise := create_tween().set_parallel(true)
-	rise.tween_property(root, "position:y", base.y, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	rise.tween_property(root, "position:y", base.y, 0.5 * strike_slow).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
 	rise.tween_method(func(f: float) -> void:
-		pose.call(raised, raised, 0.0)
-		mat.set_shader_parameter("glow", f * 0.6), 0.0, 1.0, 0.5)
+		pose.call(straight, raised, smoothstep(0.35, 1.0, f))
+		mat.set_shader_parameter("glow", f * 0.6), 0.0, 1.0, 0.55)
 	await rise.finished
 	# 2) 뒤로 크게 젖히며 힘을 모음
 	var wind := create_tween()
-	wind.tween_method(func(f: float) -> void: pose.call(raised, wound, f), 0.0, 1.0, 0.35).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	wind.tween_method(func(f: float) -> void: pose.call(raised, wound, f), 0.0, 1.0, 0.35 * strike_slow).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	await wind.finished
 	# 3) 채찍처럼 휘어지며 칸 위로 쾅
 	var slam := create_tween()
-	slam.tween_method(func(f: float) -> void: pose.call(wound, slammed, f * f), 0.0, 1.0, 0.22)
+	slam.tween_method(func(f: float) -> void: pose.call(wound, slammed, f * f), 0.0, 1.0, 0.22 * strike_slow)
 	await slam.finished
 	_dust(top, 1.6)
 	bubbles_at(top, 40, 1.0, true)
@@ -1806,8 +1810,12 @@ func tentacle_strike(i: int, delay: float = 0.0) -> void:
 	await squirm.finished
 	# 5) 들어 올리며 땅속으로 스르륵
 	var back := create_tween().set_parallel(true)
-	back.tween_method(func(f: float) -> void: pose.call(slammed, raised, f), 0.0, 1.0, 0.5).set_trans(Tween.TRANS_SINE)
-	back.tween_property(root, "position:y", base.y - 9.0, 0.8).set_delay(0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	back.tween_method(func(f: float) -> void:
+		if f < 0.5:
+			pose.call(slammed, raised, f * 2.0)
+		else:
+			pose.call(raised, straight, (f - 0.5) * 2.0), 0.0, 1.0, 0.8).set_trans(Tween.TRANS_SINE)
+	back.tween_property(root, "position:y", base.y - 9.0, 0.8 * strike_slow).set_delay(0.25 * strike_slow).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	back.finished.connect(root.queue_free)
 	_dust(base, 0.7)
 

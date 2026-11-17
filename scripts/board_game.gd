@@ -332,22 +332,7 @@ func _kraken_surge(r: int) -> void:
 
 ## 크라켄이 다음에 내려칠 칸들 (대개 누군가 다음 차례에 멈출 만한 곳)
 func _kraken_aim(n: int, due: int) -> void:
-	var picks := []
-	var alive := _alive_pawns()
-	for k in n:
-		var t := -1
-		if alive.size() > 0 and _rng.randf() < Rules.KRAKEN_AIM_AT_PAWN:
-			var q: Dictionary = alive[_rng.randi() % alive.size()]
-			var near := _reachable(int(q["tile"]), 1, 6)
-			near = near.filter(func(i: int) -> bool: return not picks.has(i) and not world.danger_tiles().has(i))
-			if near.size() > 0:
-				t = near[_rng.randi() % near.size()]
-		if t < 0:
-			var pool := _aimable().filter(func(i: int) -> bool: return not picks.has(i) and not world.danger_tiles().has(i))
-			if pool.size() > 0:
-				t = pool[_rng.randi() % pool.size()]
-		if t >= 0:
-			picks.append(t)
+	var picks := _spread_picks(n)
 	if picks.is_empty():
 		return
 	_follow = null
@@ -361,6 +346,66 @@ func _kraken_aim(n: int, due: int) -> void:
 			Audio.play("tick")
 		await get_tree().create_timer(gap, false).timeout
 	shot_hint = "49_kraken_aim"
+
+
+## 촉수 폭풍이 노릴 칸 n 개를 판 전체에 고르게 (붙어 있는 칸끼리 몰리지 않게)
+##   1) 살아 있는 사람마다 주사위로 갈 수 있는 앞 1~6 칸 중 Rules.KRAKEN_AIM_PER_PAWN 칸 (누구도 안전하지 않게)
+##   2) 나머지는 '가장 먼 후보 고르기': 후보 몇 개를 뽑아, 이미 고른 칸들과 가장 멀리 떨어진 칸을 고름
+##   어느 칸이든 이미 노린 칸과 Rules.KRAKEN_SPREAD_GAP m 안쪽이면 피함 (자리가 모자라면 간격을 조금씩 줄임)
+func _spread_picks(n: int) -> Array:
+	var picks := []
+	var used := []          # 간격을 잴 위치 (이미 노린 칸 포함)
+	for t in world.danger_tiles():
+		used.append(world.spaces[t]["pos"])
+	var taken := func(i: int) -> bool: return picks.has(i) or world.danger_tiles().has(i) or i == world.start_index
+	var gap_to := func(i: int) -> float:
+		var p: Vector3 = world.spaces[i]["pos"]
+		var best := INF
+		for u: Vector3 in used:
+			best = minf(best, Vector2(p.x - u.x, p.z - u.z).length())
+		return best
+	# 후보들 중 기존 칸과 가장 먼 칸 (최소 간격 gap 이상만)
+	var choose := func(cands: Array, gap: float, tries: int) -> int:
+		var best_i := -1
+		var best_d := -1.0
+		var pool := cands.duplicate()
+		pool.shuffle()
+		for k in mini(tries, pool.size()):
+			var c: int = pool[k]
+			if taken.call(c):
+				continue
+			var d: float = gap_to.call(c)
+			if d >= gap and d > best_d:
+				best_d = d
+				best_i = c
+		return best_i
+	var add := func(i: int) -> void:
+		picks.append(i)
+		used.append(world.spaces[i]["pos"])
+	# 1) 사람마다 앞길에 몇 칸
+	var alive := _alive_pawns()
+	alive.shuffle()
+	for q in alive:
+		var near := _reachable(int(q["tile"]), 1, 6)
+		for k in Rules.KRAKEN_AIM_PER_PAWN:
+			if picks.size() >= n:
+				break
+			var t: int = choose.call(near, Rules.KRAKEN_SPREAD_GAP, near.size())
+			if t >= 0:
+				add.call(t)
+	# 2) 나머지는 판 전체에 고르게
+	var all := _aimable()
+	var gap := Rules.KRAKEN_SPREAD_GAP
+	while picks.size() < n and gap > 0.5:
+		var t: int = choose.call(all, gap, 14)
+		if t < 0:
+			# 14 개를 뽑아 봤는데 자리가 없으면 전부 훑어 보고, 그래도 없으면 간격을 줄임
+			t = choose.call(all, gap, all.size())
+			if t < 0:
+				gap *= 0.8
+				continue
+		add.call(t)
+	return picks
 
 
 ## 탈락한 사람: 크라켄의 부하가 되어 칸 하나를 노림
