@@ -2511,7 +2511,6 @@ func _intro() -> void:
 	await get_tree().create_timer(1.0, false).timeout
 	_intro_done = true
 	_my_pawn_btn.visible = true
-	_legend.visible = true
 	_after_intro()
 
 

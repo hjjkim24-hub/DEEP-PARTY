@@ -293,7 +293,7 @@ const KO := {
 	"A giant kraken lurks around this board! Everyone starts with 3 hearts. Lose them all and you're out. The last one standing wins!": "이 보드에는 거대한 크라켄이 숨어 있어요! 모두 하트 3개로 시작하고, 하트를 다 잃으면 탈락이에요. 끝까지 살아남으면 우승!",
 	"Every 2 rounds the kraken takes its turn. Red spaces get smashed by its tentacles at the end of the next round. Don't stop on them!": "2 라운드마다 크라켄 차례가 와요. 붉게 빛나는 칸은 다음 라운드가 끝날 때 촉수가 내려쳐요. 거기에 멈추지 마세요!",
 	"Ouch! Standing there costs you a heart. The kraken has other tricks too, like poison spines or dropping everyone onto its flying ship.": "쾅! 거기 서 있으면 하트를 하나 잃어요. 크라켄은 독가시를 박거나 모두를 하늘을 나는 배로 떨어뜨리기도 해요.",
-	"Minigames pay coins, the shop sells potions and shields, and chance cards can help or hurt. Forgot a space? Check the guide in the bottom left.": "미니게임은 동전을 주고, 상점은 물약과 방패를 팔고, 찬스 카드는 좋을 수도 나쁠 수도 있어요. 칸이 헷갈리면 왼쪽 아래 안내를 보세요.",
+	"Minigames pay coins, the shop sells potions and shields, and chance cards can help or hurt.": "미니게임은 동전을 주고, 상점은 물약과 방패를 팔고, 찬스 카드는 좋을 수도 나쁠 수도 있어요.",
 	"That's all! Dodge the kraken and be the last one standing. Have fun!": "끝! 크라켄을 피해 끝까지 살아남으세요. 재밌게 즐겨요!",
 	"Cannon": "대포",
 	"CANNON": "대포",

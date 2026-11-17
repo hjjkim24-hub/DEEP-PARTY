@@ -77,8 +77,8 @@ func _run_tutorial() -> void:
 		"dim": false, "shot": "26_kraken_strike"})
 
 	# 3) 칸 안내 → 끝
-	await _say({"text": "Minigames pay coins, the shop sells potions and shields, and chance cards can help or hurt. Forgot a space? Check the guide in the bottom left.",
-		"target": func() -> Control: return _legend, "shot": "31_legend"})
+	await _say({"text": "Minigames pay coins, the shop sells potions and shields, and chance cards can help or hurt.",
+		"shot": "31_spaces"})
 	_highlight_chip({})
 	await _say({"text": "That's all! Dodge the kraken and be the last one standing. Have fun!"})
 	_overlay.finish()
