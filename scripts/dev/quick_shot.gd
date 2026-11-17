@@ -463,12 +463,28 @@ func _illust() -> void:
 	for q in g._pawns:
 		(q["node"] as Node3D).visible = false
 	var env: Environment = w.world_env
-	env.fog_density = 0.03
-	env.fog_light_color = Color(0.02, 0.13, 0.15)
-	env.glow_intensity = 0.9
-	env.glow_bloom = 0.12
-	env.tonemap_exposure = 0.75
-	env.ambient_light_energy = 0.3
+	# 영화 같은 심해 분위기: 어둡고 깊은 안개, 약한 해, 대상에만 강한 빛
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.0, 0.05, 0.06)
+	env.fog_enabled = true
+	env.fog_density = 0.045
+	env.fog_light_color = Color(0.01, 0.09, 0.1)
+	env.fog_sky_affect = 1.0
+	env.glow_enabled = true
+	env.glow_intensity = 1.1
+	env.glow_bloom = 0.08
+	env.glow_hdr_threshold = 0.8
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.tonemap_exposure = 0.9
+	env.ambient_light_energy = 0.16
+	env.adjustment_contrast = 1.18
+	env.adjustment_saturation = 1.05
+	for dl in w.find_children("*", "DirectionalLight3D", true, false):
+		(dl as DirectionalLight3D).light_energy *= 0.45
+	# 화질: 2 배로 그려서 줄이기 + 계단 현상 없애기
+	get_viewport().msaa_3d = Viewport.MSAA_8X
+	get_viewport().scaling_3d_scale = 2.0
+	get_viewport().screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 	var cam: Camera3D = g._camera
 	var kpos: Vector3 = w.kraken_root.position
 	# 탁 트인 일반 칸들
@@ -497,41 +513,77 @@ func _illust() -> void:
 	c /= picks.size()
 	var to_k := (Vector3(kpos.x, 0, kpos.z) - Vector3(c.x, 0, c.z)).normalized()
 	var side := Vector3(-to_k.z, 0, to_k.x)
-	# ── 1) 촉수 폭풍: 붉게 빛나는 칸들 위로 거대한 촉수들이 몸을 젖히고, 하나는 막 내려꽂힘 ──
+	# 물속 빛기둥 판 · 떠 있는 찬스 카드 숨기기 (가까이서 보면 납작한 판으로 보임)
+	for mi0 in w.find_children("*", "MeshInstance3D", true, false):
+		var mo := (mi0 as MeshInstance3D).material_override
+		if mo is ShaderMaterial and (mo as ShaderMaterial).shader == w.RayShader:
+			(mi0 as MeshInstance3D).visible = false
+	# ── 1) 촉수 폭풍: 바닥에서 올려다본 붉은 칸, 그 위로 막 내려꽂히는 촉수, 뒤로 몸을 젖힌 촉수들, 안개 속 크라켄 눈 ──
+	var T: int = picks[0]
+	var tp0: Vector3 = w.spaces[T]["pos"]
 	for i in picks:
-		w.mark_danger(i)
-	var poses := [[-0.55, 1.4, 0.0, -0.8], [-0.35, 1.1, 0.0, -0.5], [0.5, 0.0, 1.2, 1.0], [-0.7, 1.6, 0.0, -1.0]]
+		w.mark_danger(i, true)
+	await get_tree().create_timer(0.6).timeout
+	for i in picks:
+		var mk: MeshInstance3D = w._dangers[i]["mark"]
+		(mk.material_override as ShaderMaterial).set_shader_parameter("strength", 0.55)
 	var stage := []
-	for k in picks.size():
-		var tp: Vector3 = w.spaces[picks[k]]["pos"]
-		var dirv := (tp - c).normalized() if k != 2 else -side
-		if dirv.length() < 0.1:
-			dirv = side
-		var tn: Dictionary = w.make_tentacle(1, 1.25 if k != 2 else 1.1, 10.0 if k != 2 else 7.5, -dirv)
+	var mk_t := func(at: Vector3, dirv: Vector3, r0: float, ln: float, pz: Array, glow_v: float) -> void:
+		var tn: Dictionary = w.make_tentacle(1, r0, ln, dirv)
 		var m: ShaderMaterial = tn["mat"]
-		var pz: Array = poses[k]
-		m.set_shader_parameter("tip", 0.2)
+		m.set_shader_parameter("tip", 0.18)
 		m.set_shader_parameter("hook_at", 0.2)
 		m.set_shader_parameter("pitch", pz[0])
 		m.set_shader_parameter("curl", pz[1])
 		m.set_shader_parameter("hook", pz[2])
 		m.set_shader_parameter("tipback", pz[3])
-		m.set_shader_parameter("glow", 0.35)
+		m.set_shader_parameter("glow", glow_v)
 		var root: Node3D = tn["root"]
 		w.add_child(root)
-		root.position = tp + dirv * 3.0 + Vector3(0, -0.9, 0)
+		root.position = at
 		stage.append(root)
-	# 내려꽂힌 칸에 흙먼지 · 충격
-	w.bubbles_at(w.spaces[picks[2]]["pos"], 30, 1.4, true)
-	cam.fov = 52.0
-	g._cinematic(c - to_k * 10.5 + Vector3(0, 1.6, 0) + side * 1.5, c + to_k * 6.0 + Vector3(0, 4.2, 0), 1.0, 0.01)
-	await get_tree().create_timer(0.9).timeout
+		var rim := OmniLight3D.new()
+		rim.light_color = Color(0.45, 1.0, 0.3)
+		rim.light_energy = 3.0
+		rim.omni_range = 7.0
+		w.add_child(rim)
+		rim.position = at + Vector3(0, ln * 0.45, 0) + to_k * 2.5
+		stage.append(rim)
+	# 앞: 붉은 칸을 향해 휘어 내려오는 촉수 (내려치기 직전)
+	mk_t.call(tp0 + side * 3.2 + Vector3(0, -0.9, 0), -side, 1.15, 7.5, [0.15, 0.7, 0.75, 0.3], 0.5)
+	# 뒤: 몸을 크게 젖힌 촉수 둘
+	for k in range(1, mini(3, picks.size())):
+		var tpk: Vector3 = w.spaces[picks[k]]["pos"]
+		var dk := (tpk - tp0)
+		dk.y = 0
+		mk_t.call(tpk + dk.normalized() * 2.5 + to_k * 1.5 + Vector3(0, -1.0, 0), -dk.normalized(), 1.5, 11.0, [-0.55, 1.5, 0.0, -0.9], 0.35)
+	# 안개 속 크라켄의 두 눈
+	var eye_m := StandardMaterial3D.new()
+	eye_m.albedo_color = Color(1.0, 0.85, 0.25)
+	eye_m.emission_enabled = true
+	eye_m.emission = Color(1.0, 0.8, 0.2)
+	eye_m.emission_energy_multiplier = 6.0
+	eye_m.disable_fog = true
+	for sd: float in [-1.0, 1.0]:
+		var es := SphereMesh.new()
+		es.radius = 0.5
+		es.height = 0.6
+		var emi := MeshInstance3D.new()
+		emi.mesh = es
+		emi.material_override = eye_m
+		w.add_child(emi)
+		emi.position = tp0 + to_k * 26.0 + side * sd * 2.6 + Vector3(0, 9.0, 0)
+		stage.append(emi)
+	w.bubbles_at(tp0 + Vector3(0, 0.5, 0), 40, 1.2, true)
+	cam.fov = 58.0
+	g._cinematic(tp0 - to_k * 6.0 - side * 1.2 + Vector3(0, 0.75, 0), tp0 + to_k * 4.0 + Vector3(0, 3.4, 0), 1.0, 0.01)
+	await get_tree().create_timer(1.0).timeout
 	await _shot("il_storm_a")
-	g._cinematic(c - to_k * 7.0 + Vector3(0, 0.8, 0) - side * 3.0, c + to_k * 4.0 + Vector3(0, 3.0, 0), 1.0, 0.01)
+	g._cinematic(tp0 - to_k * 7.5 + side * 2.5 + Vector3(0, 1.4, 0), tp0 + to_k * 3.0 + Vector3(0, 2.8, 0), 1.0, 0.01)
 	await get_tree().create_timer(0.6).timeout
 	await _shot("il_storm_b")
 	for r in stage:
-		(r as Node3D).queue_free()
+		(r as Node).queue_free()
 	for i in picks:
 		w._clear_danger(i)
 	# ── 2) 독 가시: 칸이 보라색 독 가시 덩어리로 터져 오름 ──
@@ -544,7 +596,7 @@ func _illust() -> void:
 	spm.metallic = 0.3
 	spm.emission_enabled = true
 	spm.emission = Color(0.55, 0.15, 0.8)
-	spm.emission_energy_multiplier = 0.35
+	spm.emission_energy_multiplier = 0.25
 	spm.rim_enabled = true
 	spm.rim = 0.6
 	var spike_root := Node3D.new()
@@ -576,8 +628,8 @@ func _illust() -> void:
 		mi.global_position = sp + Vector3(rr.randf_range(-1.4, 1.4), rr.randf_range(0.6, 2.6), rr.randf_range(-1.4, 1.4))
 	var pl := OmniLight3D.new()
 	pl.light_color = Color(0.7, 0.25, 1.0)
-	pl.light_energy = 3.0
-	pl.omni_range = 6.0
+	pl.light_energy = 4.0
+	pl.omni_range = 7.0
 	spike_root.add_child(pl)
 	pl.global_position = sp + Vector3(0, 1.2, 0)
 	var gl := OmniLight3D.new()
@@ -588,7 +640,7 @@ func _illust() -> void:
 	gl.global_position = sp + Vector3(0, 2.2, 0) - to_k * 1.0
 	w._poison_mist(spike_root, sp + Vector3(0, 0.6, 0), 1.6, 30)
 	cam.fov = 45.0
-	g._cinematic(sp - to_k * 5.2 + Vector3(0, 1.3, 0) + side * 1.2, sp + Vector3(0, 1.0, 0), 1.0, 0.01)
+	g._cinematic(sp - to_k * 4.6 + Vector3(0, 0.7, 0) + side * 1.0, sp + Vector3(0, 1.3, 0), 1.0, 0.01)
 	await get_tree().create_timer(1.6).timeout
 	await _shot("il_spines_a")
 	g._cinematic(sp - to_k * 4.0 + Vector3(0, 0.55, 0) - side * 1.8, sp + Vector3(0, 1.2, 0), 1.0, 0.01)
@@ -604,18 +656,26 @@ func _illust() -> void:
 	for n in w.get_children():
 		if n is Node3D and (n as Node3D).global_position.distance_to(spos) < 6.0 and (n as Node3D).global_position.distance_to(spos) > 1.0:
 			pass
-	var tn2: Dictionary = w.make_tentacle(1, 1.1, 9.0, to_k)
+	var tn2: Dictionary = w.make_tentacle(1, 1.25, 10.0, -to_k)
 	var m2: ShaderMaterial = tn2["mat"]
 	m2.set_shader_parameter("tip", 0.2)
-	m2.set_shader_parameter("hook_at", 0.25)
-	m2.set_shader_parameter("pitch", -0.2)
-	m2.set_shader_parameter("curl", 1.2)
-	m2.set_shader_parameter("hook", 1.0)
-	m2.set_shader_parameter("tipback", -0.3)
+	m2.set_shader_parameter("hook_at", 0.4)
+	m2.set_shader_parameter("pitch", -0.15)
+	m2.set_shader_parameter("curl", 0.5)
+	m2.set_shader_parameter("hook", 1.5)
+	m2.set_shader_parameter("tipback", -0.6)
 	m2.set_shader_parameter("glow", 0.3)
 	var r2: Node3D = tn2["root"]
+	var coin_root_pre := Node3D.new()
+	w.add_child(coin_root_pre)
 	w.add_child(r2)
-	r2.position = spos + to_k * 3.2 + side * 1.5 + Vector3(0, -0.8, 0)
+	r2.position = spos + to_k * 3.6 + side * 1.8 + Vector3(0, -0.9, 0)
+	var rim2 := OmniLight3D.new()
+	rim2.light_color = Color(0.45, 1.0, 0.3)
+	rim2.light_energy = 3.0
+	rim2.omni_range = 8.0
+	coin_root_pre.add_child(rim2)
+	rim2.global_position = spos + to_k * 5.0 + Vector3(0, 4.0, 0)
 	var gm := StandardMaterial3D.new()
 	gm.albedo_color = Color(1.0, 0.76, 0.25)
 	gm.metallic = 0.4
@@ -636,16 +696,6 @@ func _illust() -> void:
 		coin_root.add_child(mi2)
 		mi2.global_position = spos + Vector3(rr.randf_range(-2.4, 2.4), rr.randf_range(0.4, 3.2), rr.randf_range(-2.0, 2.0))
 		mi2.rotation = Vector3(rr.randf() * TAU, rr.randf() * TAU, rr.randf() * TAU)
-	var tag := Label3D.new()
-	tag.text = "×2"
-	tag.font_size = 220
-	tag.outline_size = 40
-	tag.modulate = Color(0.95, 0.12, 0.08)
-	tag.outline_modulate = Color(1.0, 0.92, 0.75)
-	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	tag.pixel_size = 0.004
-	coin_root.add_child(tag)
-	tag.global_position = spos + Vector3(0, 2.6, 0) - to_k * 0.5
 	var cl2 := OmniLight3D.new()
 	cl2.light_color = Color(1.0, 0.85, 0.5)
 	cl2.light_energy = 2.0
