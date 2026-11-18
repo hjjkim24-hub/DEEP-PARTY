@@ -22,6 +22,29 @@ func _ready() -> void:
 	_run()
 
 
+## 미니게임 무대 가운데(0,0,0)를 여러 방향에서 가까이 (모형 확인용)
+func _mg_close(id: String) -> void:
+	var Reg := load("res://scripts/minigames/registry.gd")
+	var ps: Array = []
+	for i in 4:
+		ps.append({"slot": i, "name": "P%d" % i, "cpu": true, "color": Color.from_hsv(i * 0.25, 0.6, 0.9), "look": {}})
+	var layer := CanvasLayer.new()
+	get_tree().root.add_child(layer)
+	var mg: Control = Reg.create(id, RandomNumberGenerator.new())
+	mg.setup(ps, true, Callable())
+	layer.add_child(mg)
+	await get_tree().create_timer(1.5).timeout
+	if OS.get_environment("AMB") != "":
+		mg.env.ambient_light_energy = float(OS.get_environment("AMB"))
+	if OS.get_environment("NOSUN") != "":
+		mg.sun.visible = false
+	var views := [Vector3(-3.2, 2.4, 3.4), Vector3(3.4, 2.0, -2.8), Vector3(0.0, 4.6, 0.8), Vector3(3.8, 1.2, 1.0)]
+	for k in views.size():
+		mg.cam_base = Transform3D(Basis.looking_at(Vector3(0, 0.5, 0) - views[k], Vector3.UP), views[k])
+		await get_tree().create_timer(0.8).timeout
+		await _shot("mgc_%s_%d" % [id, k])
+
+
 func _mg_shot(id: String, intro_only: bool) -> void:
 	var Reg := load("res://scripts/minigames/registry.gd")
 	var cols := [Color("ff7a6b"), Color("6bd4ff"), Color("ffd36b"), Color("9dff6b")]
@@ -140,6 +163,10 @@ func _run() -> void:
 		return
 	# mg:<id> — 미니게임 하나만 바로 (모두 자동), 일정 간격으로 촬영. mgintro:<id> 는 소개 화면
 	for wv in _want:
+		if wv.begins_with("mgclose:"):
+			await _mg_close(wv.split(":")[1])
+			get_tree().quit(0)
+			return
 		if wv.begins_with("mg:") or wv.begins_with("mgintro:"):
 			await _mg_shot(wv.split(":")[1], wv.begins_with("mgintro:"))
 			get_tree().quit(0)
@@ -446,7 +473,7 @@ func _run() -> void:
 		get_tree().quit(0)
 		return
 	# chest: 크라켄의 배 뱃머리 '크라켄의 보물상자' 칸 · 상자 · 베팅 창 · 룰렛 · 결과
-	if "chest" in _want:
+	if "chest" in _want or "chestlook" in _want:
 		var gc: Node = null
 		while gc == null or not ("hold_loop" in gc):
 			await get_tree().process_frame
@@ -468,6 +495,16 @@ func _run() -> void:
 		await get_tree().create_timer(1.5).timeout
 		await _shot("ch_tile")
 		var cpos: Vector3 = wc.ship.global_transform.origin + wc.ship.CHEST_AT
+		if "chestlook" in _want:
+			# 상자를 여러 방향에서 (촉수가 감은 모양 확인용)
+			(me["node"] as Node3D).visible = false
+			var views := [Vector3(-6.0, 3.2, 3.4), Vector3(-5.0, 2.4, -4.5), Vector3(-1.5, 6.5, 0.5), Vector3(5.5, 2.6, 3.0)]
+			for k in views.size():
+				gc._cinematic(cpos + views[k], cpos + Vector3(0.0, 1.2, 0.0), 1.0, 0.01)
+				await get_tree().create_timer(1.0).timeout
+				await _shot("chl_%d" % k)
+			get_tree().quit(0)
+			return
 		gc._cinematic(cpos + Vector3(-6.0, 3.2, 3.4), cpos + Vector3(0.0, 1.2, 0.0), 1.0, 0.01)
 		await get_tree().create_timer(1.2).timeout
 		await _shot("ch_close")

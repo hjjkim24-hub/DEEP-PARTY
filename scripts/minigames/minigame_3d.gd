@@ -168,8 +168,8 @@ func env_underwater() -> void:
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color(0.03, 0.22, 0.27)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.36, 0.55, 0.6)
-	env.ambient_light_energy = 0.6
+	env.ambient_light_color = Color(0.4, 0.6, 0.64)
+	env.ambient_light_energy = 0.85
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.04, 0.26, 0.3)
 	env.fog_density = 0.035
@@ -388,6 +388,39 @@ func danger_ring(pos: Vector3, r: float, full: Vector3 = Vector3.ONE, yaw: float
 	return mi
 
 
+## 바닥의 직사각형 경고 (a → b 쪽으로 폭 width). 촉수가 눕는 자리 그대로
+func rect_mark(a: Vector3, b: Vector3, width: float, parent: Node3D = null, y: float = 0.05) -> MeshInstance3D:
+	var len := maxf(a.distance_to(b), 0.1)
+	var q := QuadMesh.new()
+	q.size = Vector2(width, len)
+	q.orientation = PlaneMesh.FACE_Y
+	var m := ShaderMaterial.new()
+	m.shader = DangerShader
+	m.set_shader_parameter("rect", true)
+	m.set_shader_parameter("size", Vector2(width, len))
+	var dir := (b - a).normalized()
+	var mid := (a + b) * 0.5
+	# 쿼드의 UV.y 가 a(0) → b(1) 쪽이 되게: 로컬 -z 가 b 쪽
+	var mi := add_mesh(q, m, Vector3(mid.x, y, mid.z), Basis(Vector3.UP, atan2(-dir.x, -dir.z)), parent)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.scale = Vector3(1.0, 1.0, 0.05)
+	create_tween().tween_property(mi, "scale", Vector3.ONE, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	return mi
+
+
+## 점 p 가 a→b 직사각형(폭 width) 안인지 (높이 무시)
+static func in_rect(p: Vector3, a: Vector3, b: Vector3, width: float, margin: float = 0.0) -> bool:
+	var d := Vector2(b.x - a.x, b.z - a.z)
+	var len := d.length()
+	if len < 0.001:
+		return false
+	var u := d / len
+	var q := Vector2(p.x - a.x, p.z - a.z)
+	var along := q.dot(u)
+	var side := absf(q.x * u.y - q.y * u.x)
+	return along >= -margin and along <= len + margin and side <= width * 0.5 + margin
+
+
 ## 물보라 (흰 물방울이 튀었다 떨어짐)
 func splash(pos: Vector3, amount: int = 40, power: float = 1.0) -> void:
 	var p := CPUParticles3D.new()
@@ -542,8 +575,8 @@ func jelly(p: Vector3, c: Color) -> void:
 func treasure_chest(w: float, h: float, d: float, parent: Node3D = null) -> Dictionary:
 	var root := Node3D.new()
 	(parent if parent else world3).add_child(root)
-	var cols := [Color(0.34, 0.2, 0.11), Color(0.38, 0.23, 0.13), Color(0.31, 0.18, 0.1)]
-	var iron := std_mat(Color(0.16, 0.15, 0.14), 0.5, 0.85)
+	var cols := [Color(0.55, 0.34, 0.19), Color(0.6, 0.38, 0.21), Color(0.5, 0.31, 0.17)]
+	var iron := std_mat(Color(0.32, 0.3, 0.28), 0.45, 0.55)
 	var gold := std_mat(Color(0.92, 0.7, 0.3), 0.28, 0.95)
 	# 몸통: 가로 널 여러 장
 	var rows := 4
@@ -582,15 +615,181 @@ func treasure_chest(w: float, h: float, d: float, parent: Node3D = null) -> Dict
 		var m := wood_mat(cols[(k + 1) % 3], Vector3(1, 0, 0), 0.25)
 		var nrm := Vector2(-cos(am), sin(am) * 0.62).normalized()   # (z, y) 바깥쪽
 		box(Vector3(w, 0.05, rr * (a1 - a0) * 1.04), m, pos, Basis(Vector3(1, 0, 0), atan2(nrm.x, nrm.y)), lid)
-	for x: float in [-w * 0.32, w * 0.32, -w * 0.48, w * 0.48]:
+	# 뚜껑 양끝 마구리 (나무) + 쇠띠 둘
+	var cap_m := wood_mat(cols[2], Vector3(0, 1, 0), 0.25)
+	for x: float in [-w * 0.5 + 0.03, w * 0.5 - 0.03]:
+		var cap := CylinderMesh.new()
+		cap.top_radius = rr * 0.98
+		cap.bottom_radius = rr * 0.98
+		cap.height = 0.06
+		cap.radial_segments = 24
+		add_mesh(cap, cap_m, Vector3(x, 0, d * 0.5), Basis(Vector3(0, 0, 1), PI / 2), lid).scale = Vector3(0.62, 1.0, 1.0)
+	for x: float in [-w * 0.32, w * 0.32]:
 		var band := CylinderMesh.new()
 		band.top_radius = rr * 1.03
 		band.bottom_radius = rr * 1.03
 		band.height = w * 0.06
-		band.radial_segments = 20
+		band.radial_segments = 24
 		var bm := add_mesh(band, iron, Vector3(x, 0, d * 0.5), Basis(Vector3(0, 0, 1), PI / 2), lid)
 		bm.scale = Vector3(0.64, 1.0, 1.0)
 	return {"root": root, "lid": lid, "gold": gold}
+
+
+## 굵기가 변하는 촉수를 점들(pts)을 지나는 곡선으로 (보드 · 배와 같은 셰이더, 빨판은 belly 쪽). parent 기준 좌표
+func spline_tentacle(pts: Array, r0: float, belly: Callable, tip := 0.1, parent: Node3D = null) -> MeshInstance3D:
+	var dense: Array = kit._catmull(pts, 14)
+	var cum := [0.0]
+	for i in range(1, dense.size()):
+		cum.append(float(cum[i - 1]) + ((dense[i] as Vector3) - (dense[i - 1] as Vector3)).length())
+	var total: float = cum[cum.size() - 1]
+	var at := func(d: float) -> Vector3:
+		var j := 0
+		while j < dense.size() - 2 and float(cum[j + 1]) < d:
+			j += 1
+		var f := (d - float(cum[j])) / maxf(float(cum[j + 1]) - float(cum[j]), 0.0001)
+		return (dense[j] as Vector3).lerp(dense[j + 1], clampf(f, 0.0, 1.0))
+	var n := 160
+	var rad := 18
+	var P := []
+	var T := []
+	for i in n + 1:
+		P.append(at.call(total * i / n))
+	for i in n + 1:
+		T.append(((P[mini(i + 1, n)] as Vector3) - (P[maxi(i - 1, 0)] as Vector3)).normalized())
+	var N := []
+	var prev_n := Vector3.ZERO
+	for i in n + 1:
+		var t: Vector3 = T[i]
+		var h: Vector3 = belly.call(P[i])
+		var nn := h - t * h.dot(t)
+		if nn.length() < 0.05:
+			nn = prev_n
+		nn = nn.normalized()
+		if prev_n != Vector3.ZERO:
+			nn = prev_n.lerp(nn, 0.35).normalized()
+			nn = (nn - t * nn.dot(t)).normalized()
+		N.append(nn)
+		prev_n = nn
+	var r_at := func(u: float) -> float: return r0 * lerpf(1.0, tip, pow(u, 0.85))
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in n + 1:
+		var u := float(i) / n
+		var t: Vector3 = T[i]
+		var nn: Vector3 = N[i]
+		var bb := t.cross(nn)
+		var r: float = r_at.call(u)
+		for k in rad + 1:
+			var a := float(k) / rad * TAU
+			var d := bb * sin(a) + nn * cos(a)
+			st.set_normal(d)
+			st.set_uv(Vector2(float(k) / rad, u))
+			st.set_uv2(Vector2(0, 0))
+			st.add_vertex((P[i] as Vector3) + d * r)
+	var wv := rad + 1
+	for i in n:
+		for k in rad:
+			var i0 := i * wv + k
+			st.add_index(i0); st.add_index(i0 + wv + 1); st.add_index(i0 + 1)
+			st.add_index(i0); st.add_index(i0 + wv); st.add_index(i0 + wv + 1)
+	var m := ShaderMaterial.new()
+	m.shader = BoardWorld.KrakenArmShader
+	m.set_shader_parameter("spline_mode", true)
+	m.set_shader_parameter("arm_len", total)
+	m.set_shader_parameter("radius", r0)
+	m.set_shader_parameter("tip", tip)
+	m.set_shader_parameter("opacity", 0.97)
+	m.set_shader_parameter("pattern_scale", 1.6 / maxf(r0, 0.3))
+	var mi := add_mesh(st.commit(), m, Vector3.ZERO, Basis(), parent)
+	# 빨판 두 줄 (배 쪽, 엇갈려서)
+	var xs := []
+	var cs := []
+	var u := 0.04
+	var row := 0
+	while u < 0.97:
+		var ang := (0.42 if row % 2 == 0 else -0.42) + randf_range(-0.03, 0.03)
+		var fi := u * n
+		var i := int(fi)
+		var t: Vector3 = T[i]
+		var nn: Vector3 = N[i]
+		var bb := t.cross(nn)
+		var r: float = r_at.call(u)
+		var nd := (bb * sin(ang) + nn * cos(ang)).normalized()
+		var side := t.cross(nd).normalized()
+		var sz := r * 0.3 * randf_range(0.92, 1.06)
+		var c: Vector3 = (P[i] as Vector3).lerp(P[mini(i + 1, n)], fi - i) + nd * r
+		xs.append(Transform3D(Basis(side * sz, nd * sz, t * sz), c))
+		cs.append(Color(u, ang, 0.3, 0.0))
+		u += r * 0.46 / total
+		row += 1
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.mesh = kit._sucker_mesh()
+	mm.instance_count = xs.size()
+	for k in xs.size():
+		mm.set_instance_transform(k, xs[k])
+		mm.set_instance_custom_data(k, cs[k])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = m
+	mi.add_child(mmi)
+	return mi
+
+
+## 상자(가로 hw*2 × 세로 hd*2) 둘레를 m 만큼 띄워 감는 길 (모서리는 둥글게). 오른쪽 면 가운데에서 s=0, 위에서 볼 때 반시계.
+## s0 에서 시작해 length 만큼, 높이는 y0 → y1. 돌려줌: 점 목록
+static func wrap_path(hw: float, hd: float, m: float, s0: float, length: float, y0: float, y1: float, step: float = 0.22) -> Array:
+	var seg := [hd * 2.0, PI * 0.5 * m, hw * 2.0, PI * 0.5 * m, hd * 2.0, PI * 0.5 * m, hw * 2.0, PI * 0.5 * m]
+	var per := 0.0
+	for v in seg:
+		per += v
+	var at := func(s: float) -> Vector2:
+		s = fposmod(s + hd, per)      # 오른쪽 면 맨 뒤(-z)에서부터 재기
+		var x := 0.0
+		var z := 0.0
+		for k in 8:
+			var L: float = seg[k]
+			if s <= L or k == 7:
+				var f := s / maxf(L, 0.0001)
+				match k:
+					0: return Vector2(hw + m, -hd + s)
+					1: return Vector2(hw + cos(f * PI * 0.5) * m, hd + sin(f * PI * 0.5) * m)
+					2: return Vector2(hw - s, hd + m)
+					3: return Vector2(-hw + cos(PI * 0.5 + f * PI * 0.5) * m, hd + sin(PI * 0.5 + f * PI * 0.5) * m)
+					4: return Vector2(-hw - m, hd - s)
+					5: return Vector2(-hw + cos(PI + f * PI * 0.5) * m, -hd + sin(PI + f * PI * 0.5) * m)
+					6: return Vector2(-hw + s, -hd - m)
+					7: return Vector2(hw + cos(PI * 1.5 + f * PI * 0.5) * m, -hd + sin(PI * 1.5 + f * PI * 0.5) * m)
+			s -= L
+		return Vector2(x, z)
+	var out := []
+	var cnt := maxi(2, int(absf(length) / step))
+	for i in cnt + 1:
+		var f := float(i) / cnt
+		var q: Vector2 = at.call(s0 + length * f)
+		out.append(Vector3(q.x, lerpf(y0, y1, f), q.y))
+	return out
+
+
+## 상자 표면을 따라 스멀스멀 감기는 길: 정규화 좌표 (x: -1..1 = 왼쪽..오른쪽 면, y: 0..1 = 바닥..뚜껑 이음새, z: -1..1 = 뒤..앞 면)
+## 로 찍은 점들을 실제 표면 위 m 만큼 띄운 점으로 바꾸고, 모서리를 넘을 땐 둥글게 부풀려 넘어감. 살짝씩 울퉁불퉁 · 높낮이 흔들림
+static func chest_path(hw: float, hd: float, h: float, y_base: float, m: float, way: Array, seed_: int = 1) -> Array:
+	var rr := RandomNumberGenerator.new()
+	rr.seed = seed_
+	var out := []
+	for w: Vector3 in way:
+		var onx := absf(w.x) >= 0.999
+		var onz := absf(w.z) >= 0.999
+		var n := Vector3(signf(w.x) if onx else 0.0, 0.0, signf(w.z) if onz else 0.0)
+		if n.length() < 0.5:
+			n = Vector3(0, 1, 0)
+		n = n.normalized()
+		# 모서리에서는 조금 더 부풀어 둥글게 넘어감
+		var mm := m * (1.25 if onx and onz else 1.0) + rr.randf_range(-0.03, 0.05) * m * 4.0
+		var p := Vector3(clampf(w.x, -1, 1) * hw, y_base + w.y * h + rr.randf_range(-0.03, 0.03), clampf(w.z, -1, 1) * hd) + n * mm
+		out.append(p)
+	return out
 
 
 ## 보드의 크라켄 머리 (외투막 + 눈). 바다 멀리서 지켜보게

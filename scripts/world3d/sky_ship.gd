@@ -1606,6 +1606,26 @@ var chest_lid: Node3D
 var chest_light: OmniLight3D
 var chest_glow: StandardMaterial3D
 
+## 상자 표면을 따라 스멀스멀 감기는 길 (minigame_3d.gd 의 chest_path 와 같음: 서로 불러오면 순환 참조라 따로 둠)
+static func _chest_path(hw: float, hd: float, h: float, y_base: float, m: float, way: Array, seed_: int = 1) -> Array:
+	var rr := RandomNumberGenerator.new()
+	rr.seed = seed_
+	var out := []
+	for w: Vector3 in way:
+		var onx := absf(w.x) >= 0.999
+		var onz := absf(w.z) >= 0.999
+		var n := Vector3(signf(w.x) if onx else 0.0, 0.0, signf(w.z) if onz else 0.0)
+		if n.length() < 0.5:
+			n = Vector3(0, 1, 0)
+		n = n.normalized()
+		# 모서리에서는 조금 더 부풀어 둥글게 넘어감
+		var mm := m * (1.25 if onx and onz else 1.0) + rr.randf_range(-0.03, 0.05) * m * 4.0
+		var p := Vector3(clampf(w.x, -1, 1) * hw, y_base + w.y * h + rr.randf_range(-0.03, 0.03), clampf(w.z, -1, 1) * hd) + n * mm
+		out.append(p)
+	return out
+
+
+
 func _kraken_chest() -> void:
 	var root := Node3D.new()
 	root.position = CHEST_AT
@@ -1756,12 +1776,30 @@ func _kraken_chest() -> void:
 	# 상자를 휘감은 크라켄 촉수 (뒤쪽 갑판에서 기어 올라 옆을 감고 뚜껑 위를 꽉 누름)
 	var g := root.global_transform
 	var to_ship := func(lp: Vector3) -> Vector3: return (g * lp) - global_transform.origin
-	var pts := []
-	for lp in [Vector3(-3.4, 0.25, -3.2), Vector3(-2.3, 0.35, -2.0), Vector3(-1.75, 0.8, -1.05), Vector3(-1.62, 1.35, -0.1),
-			Vector3(-1.58, 1.65, 0.75), Vector3(-1.1, 2.15, 0.95), Vector3(-0.3, 2.32, 0.6), Vector3(0.45, 2.3, 0.0),
-			Vector3(0.95, 2.1, -0.55), Vector3(1.25, 1.85, -0.2), Vector3(1.05, 1.95, 0.2)]:
-		pts.append(to_ship.call(lp))
-	_spline_tentacle(pts, 0.42, func(p: Vector3) -> Vector3: return ((CHEST_AT + Vector3(0, 1.1, 0)) - p).normalized(), 0.12)
+	# 촉수 둘이 갑판에서 스멀스멀 기어 올라 상자 몸통을 비스듬히 휘감음 (뚜껑이 열릴 수 있게 이음새 아래로만)
+	var hw := cw * 0.5
+	var hd := cd * 0.5
+	var top := y0 + ch
+	var wa: Array = _chest_path(hw, hd, ch, y0, 0.37, [
+		Vector3(-1, 0.12, -1), Vector3(-1, 0.42, -0.35), Vector3(-1, 0.7, 0.45), Vector3(-1, 0.82, 1),
+		Vector3(-0.45, 0.66, 1), Vector3(0.15, 0.4, 1), Vector3(0.7, 0.22, 1), Vector3(1, 0.24, 1),
+		Vector3(1, 0.46, 0.3), Vector3(1, 0.74, -0.45), Vector3(1, 0.84, -1), Vector3(0.45, 0.82, -1)], 3)
+	# 뿌리는 갑판 널 틈 아래에서 솟아오름 (잘린 끝이 안 보이게)
+	var pa := [Vector3(-3.6, -1.6, -2.9), Vector3(-3.3, 0.15, -2.6), Vector3(-2.6, 0.6, -2.0), Vector3(-1.9, 0.72, -1.35)]
+	pa.append_array(wa)
+	pa.append(Vector3(0.05, top + 0.18, -1.3))
+	pa.append(Vector3(-0.4, top + 0.55, -1.45))
+	pa.append(Vector3(-0.58, top + 0.62, -1.15))
+	var wb: Array = _chest_path(hw, hd, ch, y0, 0.28, [
+		Vector3(1, 0.1, -0.2), Vector3(1, 0.13, -1), Vector3(0.35, 0.16, -1), Vector3(-0.3, 0.27, -1)], 7)
+	var pb := [Vector3(3.3, -1.5, 1.1), Vector3(3.0, 0.12, 0.95), Vector3(2.5, 0.55, 0.55), Vector3(1.85, 0.66, 0.1)]
+	pb.append_array(wb)
+	pb.append(Vector3(-0.95, y0 + 0.62, -1.2))
+	pb.append(Vector3(-1.1, y0 + 0.9, -1.25))
+	pb.append(Vector3(-1.0, y0 + 1.02, -1.5))
+	var belly := func(p: Vector3) -> Vector3: return ((CHEST_AT + Vector3(0, y0 + ch * 0.45, 0)) - p).normalized()
+	_spline_tentacle(pa.map(func(lp: Vector3) -> Vector3: return to_ship.call(lp)), 0.42, belly, 0.1)
+	_spline_tentacle(pb.map(func(lp: Vector3) -> Vector3: return to_ship.call(lp)), 0.3, belly, 0.12)
 	# 흩어진 금화 · 쌓인 금화 · 보석
 	var spill := []
 	for k in 60:

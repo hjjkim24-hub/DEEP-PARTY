@@ -5,7 +5,7 @@ extends "res://scripts/minigames/minigame_3d.gd"
 
 const RAFT_R := 7.0
 const HIT_R := 1.45
-const STRIPE_W := 1.5    ## 촉수가 눕는 띠의 폭
+const STRIPE_W := 1.6    ## 촉수가 눕는 직사각형의 폭
 const HEARTS := 3
 
 var _hearts := {}       ## slot → 하트
@@ -233,25 +233,27 @@ func _add_stripe(target: Vector3, out: Vector3, warn: float) -> void:
 	var length := clampf(to_edge / 0.42, 8.0, 19.0)
 	var root := target + out * (length * 0.42)
 	var dir := -out
-	var a0 := root + dir * length * 0.2
-	var a1 := root + dir * length * 0.7
-	# 붉은 띠는 뗏목 위에만 (물 위로 삐져나온 부분은 잘라냄)
+	# 촉수가 실제로 갑판에 닿는 길이 전체: 뿌리에서 0.12L(갑판 높이로 내려온 곳) ~ 0.74L(끝이 말려 오르기 전)
+	var a0 := root + dir * length * 0.12
+	var a1 := root + dir * length * 0.74
 	a0 = _clip_to_raft(a0, a1)
 	a1 = _clip_to_raft(a1, a0)
+	a0.y = 0.0
+	a1.y = 0.0
+	# 뗏목 위에 제대로 걸치지 않는 촉수는 버림 (물 위에만 표시되는 일 없게)
 	var mid := (a0 + a1) * 0.5
-	# 뗏목에 닿지 않는 띠는 버림
-	if Vector2(mid.x, mid.z).length() > RAFT_R - 0.5 or a0.distance_to(a1) < 1.0:
+	if a0.distance_to(a1) < 1.5 or Vector2(mid.x, mid.z).length() > RAFT_R - 1.2 \
+			or Vector2(a0.x, a0.z).length() > RAFT_R - 0.6 or Vector2(a1.x, a1.z).length() > RAFT_R - 0.6:
 		return
-	var full := Vector3(STRIPE_W * 0.5 + 0.1, 1.0, a0.distance_to(a1) * 0.5 + 0.2)
-	var mark := danger_ring(Vector3(mid.x, 0, mid.z), 1.0, full, atan2(dir.x, dir.z), _raft)
-	var ring := {"a": Vector3(a0.x, 0, a0.z), "b": Vector3(a1.x, 0, a1.z), "t_hit": _elapsed + warn, "mark": mark}
+	var mark := rect_mark(a0, a1, STRIPE_W, _raft)
+	var ring := {"a": a0, "b": a1, "t_hit": _elapsed + warn, "mark": mark}
 	_rings.append(ring)
 	sfx("tick", 60)
 	slam_tentacle(Vector3(root.x, 0, root.z), dir, length, warn, 0.0, -0.4)
 
 
 func _clip_to_raft(p: Vector3, toward: Vector3) -> Vector3:
-	var r := RAFT_R - 0.4
+	var r := RAFT_R - 0.85
 	if Vector2(p.x, p.z).length() <= r:
 		return p
 	# p → toward 선분에서 원 안으로 처음 들어오는 점
@@ -274,8 +276,7 @@ func _hit_ring(ring: Dictionary) -> void:
 	var mark: MeshInstance3D = ring["mark"]
 	var tw := create_tween()
 	tw.tween_interval(0.5)
-	tw.tween_property(mark, "scale", Vector3(0.01, 1, 0.01), 0.25)
-	tw.parallel().tween_property(mark, "transparency", 1.0, 0.25)
+	tw.tween_property(mark, "transparency", 1.0, 0.3)
 	tw.tween_callback(mark.queue_free)
 	tw.tween_callback(func() -> void: _rings.erase(ring))
 	for s in walkers:
@@ -283,10 +284,10 @@ func _hit_ring(ring: Dictionary) -> void:
 		if w["out"] or float(_inv[s]) > 0.0:
 			continue
 		var pos: Vector3 = w["pos"]
-		var cl := Geometry3D.get_closest_point_to_segment(Vector3(pos.x, 0, pos.z), a, b)
-		var d := Vector3(pos.x, 0, pos.z) - cl
-		if d.length() <= STRIPE_W * 0.5 + 0.2:
-			_hurt(int(s), d)
+		# 붉은 직사각형 안에 (말 몸 반지름만큼 걸쳐도) 있으면 맞음
+		if in_rect(pos, a, b, STRIPE_W, 0.25):
+			var cl := Geometry3D.get_closest_point_to_segment(Vector3(pos.x, 0, pos.z), a, b)
+			_hurt(int(s), Vector3(pos.x, 0, pos.z) - cl)
 
 
 func _hurt(s: int, away: Vector3) -> void:
@@ -362,9 +363,7 @@ func _in_danger(pos: Vector3, margin: float) -> bool:
 	for ring in _rings:
 		if ring.get("done", false):
 			continue
-		var q := Vector3(pos.x, 0, pos.z)
-		var cl := Geometry3D.get_closest_point_to_segment(q, ring["a"], ring["b"])
-		if q.distance_to(cl) < STRIPE_W * 0.5 + margin:
+		if in_rect(pos, ring["a"], ring["b"], STRIPE_W, margin):
 			return true
 	return false
 

@@ -100,17 +100,35 @@ func _build_chest() -> void:
 	var hm := add_mesh(heap, gold, Vector3(0, 0.95, 0), Basis(), _chest)
 	hm.scale = Vector3(1.05, 0.7, 0.62)
 	_lid.rotation.x = -0.35
-	# 상자를 감싼 크라켄 촉수 (양옆 모래에서 솟아 상자 위로 휘어 감음)
-	for sd: float in [-1.0, 1.0]:
-		var tn := tentacle(3.6, 0.36, Vector3(-sd, 0, 0.0))
-		var n: Node3D = tn["root"]
-		n.position = Vector3(sd * 1.55, -0.5, 0.15)
-		var m: ShaderMaterial = tn["mat"]
-		m.set_shader_parameter("pitch", -0.05)
-		m.set_shader_parameter("curl", 2.1)
-		m.set_shader_parameter("wave", 0.12)
-		m.set_shader_parameter("tip", 0.14)
-		_arm_mats.append(m)
+	# 크라켄 촉수: 모래 속에서 기어 나와 상자를 비스듬히 타고 오르며 휘감고, 끝은 들려 꿈틀
+	var hw := 0.95
+	var hd := 0.6
+	var h := 0.95
+	# 큰 촉수: 왼쪽 뒤 모래 → 왼쪽 면을 타고 오름 → 앞면을 비스듬히 가로질러 내려옴 → 오른쪽 면을 다시 타고 오름 → 뒷면 위쪽 → 끝이 허공으로 들려 말림
+	var a := chest_path(hw, hd, h, 0.0, 0.27, [
+		Vector3(-1, 0.12, -1), Vector3(-1, 0.42, -0.35), Vector3(-1, 0.7, 0.45), Vector3(-1, 0.8, 1),
+		Vector3(-0.45, 0.66, 1), Vector3(0.15, 0.4, 1), Vector3(0.7, 0.22, 1), Vector3(1, 0.24, 1),
+		Vector3(1, 0.46, 0.3), Vector3(1, 0.74, -0.45), Vector3(1, 0.82, -1), Vector3(0.45, 0.8, -1)], 3)
+	var pa := [Vector3(-3.0, -0.4, -2.3), Vector3(-2.2, -0.12, -1.75), Vector3(-1.45, 0.06, -1.15)]
+	pa.append_array(a)
+	pa.append(Vector3(0.05, 1.05, -0.95))
+	pa.append(Vector3(-0.3, 1.32, -1.05))
+	pa.append(Vector3(-0.42, 1.38, -0.8))
+	spline_tentacle(pa, 0.34, _chest_belly, 0.1, _chest)
+	# 작은 촉수: 오른쪽 모래 → 오른쪽 뒤 모서리 아래를 감아 → 뒷면 아래를 기어가다 끝이 왼쪽 위로 들림
+	var b := chest_path(hw, hd, h, 0.0, 0.2, [
+		Vector3(1, 0.1, -0.2), Vector3(1, 0.13, -1), Vector3(0.35, 0.16, -1), Vector3(-0.3, 0.26, -1)], 7)
+	var pb := [Vector3(2.7, -0.4, 0.6), Vector3(1.9, -0.1, 0.35), Vector3(1.3, 0.04, 0.05)]
+	pb.append_array(b)
+	pb.append(Vector3(-0.68, 0.48, -0.95))
+	pb.append(Vector3(-0.78, 0.68, -0.98))
+	pb.append(Vector3(-0.7, 0.78, -1.18))
+	spline_tentacle(pb, 0.24, _chest_belly, 0.12, _chest)
+
+
+## 빨판은 상자 쪽(가운데)을 향함
+func _chest_belly(p: Vector3) -> Vector3:
+	return Vector3(-p.x, 0.45 - p.y, -p.z)
 
 
 func _setup_game() -> void:
@@ -345,13 +363,13 @@ func _slam() -> void:
 	var length := 8.0
 	var root := target + out * (length * 0.42)
 	var dir := -out
-	var a0 := root + dir * length * 0.2
-	var a1 := root + dir * length * 0.7
+	var a0 := root + dir * length * 0.12
+	var a1 := root + dir * length * 0.74
+	a0.y = 0.0
+	a1.y = 0.0
 	var warn := lerpf(1.2, 0.7, pr)
-	var mid := (a0 + a1) * 0.5
-	var full := Vector3(0.85, 1.0, a0.distance_to(a1) * 0.5 + 0.2)
-	var mark := danger_ring(Vector3(mid.x, 0.02, mid.z), 1.0, full, atan2(dir.x, dir.z))
-	_stripes.append({"a": Vector3(a0.x, 0, a0.z), "b": Vector3(a1.x, 0, a1.z), "t_hit": _elapsed + warn, "mark": mark})
+	var mark := rect_mark(a0, a1, 1.6, null, 0.03)
+	_stripes.append({"a": a0, "b": a1, "t_hit": _elapsed + warn, "mark": mark})
 	slam_tentacle(Vector3(root.x, 0, root.z), dir, length, warn, 0.0)
 	sfx("tick", 60)
 
@@ -369,7 +387,7 @@ func _slam_hit(st: Dictionary) -> void:
 		var pos: Vector3 = w["pos"]
 		var q := Vector3(pos.x, 0, pos.z)
 		var cl := Geometry3D.get_closest_point_to_segment(q, st["a"], st["b"])
-		if q.distance_to(cl) <= 0.95:
+		if in_rect(pos, st["a"], st["b"], 1.6, 0.25):
 			_stun[s] = 1.1
 			var lost := mini(int(scores[s]), 3)
 			scores[s] = int(scores[s]) - lost
@@ -473,8 +491,7 @@ func _think(delta: float) -> void:
 			if _in_ink(to, 0.3):
 				v *= 0.4
 			for st in _stripes:
-				var cl := Geometry3D.get_closest_point_to_segment(Vector3(to.x, 0, to.z), st["a"], st["b"])
-				if Vector3(to.x, 0, to.z).distance_to(cl) < 1.3:
+				if in_rect(to, st["a"], st["b"], 1.6, 0.6):
 					v *= lerpf(0.6, 0.05, sk / 2.0)
 			# 다른 말이 더 가까우면 덜 끌림
 			for o in walkers.values():
