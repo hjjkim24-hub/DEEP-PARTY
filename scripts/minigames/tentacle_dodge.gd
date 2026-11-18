@@ -28,7 +28,8 @@ func _init() -> void:
 
 func _build_stage() -> void:
 	env_sea_day()
-	ocean(-0.55, 180.0, RAFT_R + 1.5)
+	var sea := ocean(-0.55, 180.0, RAFT_R + 1.5)
+	(sea.material_override as ShaderMaterial).set_shader_parameter("crest_foam", 0.6)
 	cam.position = Vector3(0, 13.2, 12.0)
 	cam.look_at(Vector3(0, 0, 0.6))
 	_raft = Node3D.new()
@@ -227,6 +228,9 @@ func _add_stripe(target: Vector3, out: Vector3, warn: float) -> void:
 	var dir := -out
 	var a0 := root + dir * length * 0.2
 	var a1 := root + dir * length * 0.7
+	# 붉은 띠는 뗏목 위에만 (물 위로 삐져나온 부분은 잘라냄)
+	a0 = _clip_to_raft(a0, a1)
+	a1 = _clip_to_raft(a1, a0)
 	var mid := (a0 + a1) * 0.5
 	var full := Vector3(STRIPE_W * 0.5 + 0.1, 1.0, a0.distance_to(a1) * 0.5 + 0.2)
 	var mark := danger_ring(Vector3(mid.x, 0, mid.z), 1.0, full, atan2(dir.x, dir.z), _raft)
@@ -234,6 +238,18 @@ func _add_stripe(target: Vector3, out: Vector3, warn: float) -> void:
 	_rings.append(ring)
 	sfx("tick", 60)
 	_swing(ring, Vector3(root.x, 0, root.z), dir, length, warn)
+
+
+func _clip_to_raft(p: Vector3, toward: Vector3) -> Vector3:
+	var r := RAFT_R - 0.4
+	if Vector2(p.x, p.z).length() <= r:
+		return p
+	# p → toward 선분에서 원 안으로 처음 들어오는 점
+	for k in 40:
+		var q := p.lerp(toward, float(k) / 40.0)
+		if Vector2(q.x, q.z).length() <= r:
+			return q
+	return p
 
 
 func _swing(ring: Dictionary, root: Vector3, dir: Vector3, length: float, warn: float) -> void:

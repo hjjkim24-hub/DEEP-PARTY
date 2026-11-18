@@ -187,11 +187,13 @@ func ocean(y: float = 0.0, size: float = 160.0, calm_r: float = 0.0, day: bool =
 	m.shader = OceanShader
 	m.render_priority = -1     # 다른 투명한 것(촉수 · 연기)보다 먼저
 	m.set_shader_parameter("calm_radius", calm_r)
+	m.set_shader_parameter("normal_a", load("res://textures/ocean/water_normal_a.png"))
+	m.set_shader_parameter("normal_b", load("res://textures/ocean/water_normal_b.png"))
+	m.set_shader_parameter("foam_tex", load("res://textures/ocean/foam.png"))
 	if day:
-		m.set_shader_parameter("deep", Color(0.01, 0.13, 0.2))
-		m.set_shader_parameter("shallow", Color(0.03, 0.36, 0.42))
-		m.set_shader_parameter("sky", Color(0.62, 0.76, 0.86))
-		m.set_shader_parameter("sss_col", Color(0.1, 0.75, 0.62))
+		m.set_shader_parameter("deep", Color(0.0, 0.075, 0.13))
+		m.set_shader_parameter("shallow", Color(0.03, 0.3, 0.32))
+		m.set_shader_parameter("sss_col", Color(0.04, 0.48, 0.44))
 	var mi := MeshInstance3D.new()
 	mi.mesh = pm
 	mi.material_override = m
