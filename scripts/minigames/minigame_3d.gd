@@ -14,6 +14,8 @@ const SmokeShader := preload("res://shaders/smoke_puff.gdshader")
 const KrakenBodyShader := preload("res://shaders/kraken_body.gdshader")
 const KrakenEyeShader := preload("res://shaders/kraken_eye.gdshader")
 const KRAKEN_BODY := preload("res://models/kraken_body.obj")
+const CloudShader := preload("res://shaders/cloud_puff.gdshader")
+const RayShader := preload("res://shaders/light_ray.gdshader")
 
 const PAWN_SCALE := 1.25
 
@@ -28,6 +30,9 @@ var walkers := {}                 ## slot → {node, pos, vel, target, speed, ou
 var walk_radius := 6.0            ## 말이 다닐 수 있는 원 (가운데 0,0)
 var walk_y := 0.0
 var _t3 := 0.0
+var cam_base := Transform3D()   ## 흔들림 없는 카메라 자리 (무대 만든 뒤 저장)
+var _shake := 0.0
+var _shake_t := 0.0
 
 
 func _make_stage() -> void:
@@ -58,6 +63,12 @@ func _make_stage() -> void:
 	env.ssao_enabled = true
 	env.ssao_radius = 0.8
 	env.ssao_intensity = 1.2
+	env.ssr_enabled = true          # 물 · 젖은 면에 비치는 모습 (Forward+)
+	env.ssr_max_steps = 48
+	env.adjustment_enabled = true
+	env.adjustment_contrast = 1.08
+	env.adjustment_saturation = 1.1
+	env.glow_hdr_threshold = 0.85
 	we.environment = env
 	world3.add_child(we)
 	sun = DirectionalLight3D.new()
@@ -67,6 +78,28 @@ func _make_stage() -> void:
 	world3.add_child(sun)
 	kit = BoardWorld.new()
 	_build_stage()
+	cam_base = cam.transform
+
+
+func _process(delta: float) -> void:
+	super._process(delta)
+	if cam == null:
+		return
+	if _shake > 0.0:
+		_shake_t += delta
+		_shake = maxf(0.0, _shake - delta * 2.4)
+		var a := _shake * _shake
+		var off := Vector3(sin(_shake_t * 47.0) * 0.6 + sin(_shake_t * 23.0) * 0.4, cos(_shake_t * 41.0) * 0.5 + sin(_shake_t * 29.0) * 0.3, 0.0) * a * 0.35
+		cam.transform = cam_base * Transform3D(Basis(Vector3(0, 0, 1), sin(_shake_t * 37.0) * a * 0.01), off)
+	else:
+		cam.transform = cam_base
+
+
+## 화면 흔들림 (0~1)
+func shake(strength: float) -> void:
+	if demo:
+		strength *= 0.4
+	_shake = clampf(maxf(_shake, strength), 0.0, 1.0)
 
 
 func _exit_tree() -> void:
@@ -152,11 +185,13 @@ func ocean(y: float = 0.0, size: float = 160.0, calm_r: float = 0.0, day: bool =
 	pm.subdivide_depth = 220
 	var m := ShaderMaterial.new()
 	m.shader = OceanShader
+	m.render_priority = -1     # 다른 투명한 것(촉수 · 연기)보다 먼저
 	m.set_shader_parameter("calm_radius", calm_r)
 	if day:
 		m.set_shader_parameter("deep", Color(0.01, 0.13, 0.2))
 		m.set_shader_parameter("shallow", Color(0.03, 0.36, 0.42))
 		m.set_shader_parameter("sky", Color(0.62, 0.76, 0.86))
+		m.set_shader_parameter("sss_col", Color(0.1, 0.75, 0.62))
 	var mi := MeshInstance3D.new()
 	mi.mesh = pm
 	mi.material_override = m
@@ -337,14 +372,14 @@ func step_walkers(delta: float) -> void:
 
 # ── 효과 ─────────────────────────────────────────────────────
 ## 바닥의 붉은 경고 원
-func danger_ring(pos: Vector3, r: float, full: Vector3 = Vector3.ONE, yaw: float = 0.0) -> MeshInstance3D:
+func danger_ring(pos: Vector3, r: float, full: Vector3 = Vector3.ONE, yaw: float = 0.0, parent: Node3D = null) -> MeshInstance3D:
 	var q := QuadMesh.new()
 	q.size = Vector2(r * 2.0, r * 2.0)
 	q.orientation = PlaneMesh.FACE_Y
 	var m := ShaderMaterial.new()
 	m.shader = DangerShader
 	m.set_shader_parameter("aspect", full.z / maxf(full.x, 0.01))
-	var mi := add_mesh(q, m, pos + Vector3(0, 0.04, 0), Basis(Vector3.UP, yaw))
+	var mi := add_mesh(q, m, pos + Vector3(0, 0.04, 0), Basis(Vector3.UP, yaw), parent)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.scale = full * 0.2
 	create_tween().tween_property(mi, "scale", full, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -425,6 +460,135 @@ func pose_tentacle(m: ShaderMaterial, a: Array, b: Array, f: float) -> void:
 	m.set_shader_parameter("tipback", lerpf(a[3], b[3], f))
 	m.set_shader_parameter("wave", lerpf(a[4], b[4], f))
 	m.set_shader_parameter("wtime", _t3)
+
+
+## 하늘의 뭉게구름 (빌보드) — 수평선 둘레에
+func sky_clouds(count: int, dist: float, h: float, center: Vector3 = Vector3.ZERO, arc: Vector2 = Vector2(-PI, PI)) -> void:
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 21
+	for k in count:
+		var a := lerpf(arc.x, arc.y, (k + rr.randf()) / count)
+		var d := dist * rr.randf_range(0.8, 1.2)
+		var q := QuadMesh.new()
+		var w := rr.randf_range(28.0, 60.0) * dist / 160.0
+		q.size = Vector2(w, w * rr.randf_range(0.42, 0.6))
+		var m := ShaderMaterial.new()
+		m.shader = CloudShader
+		m.set_shader_parameter("top_col", Color(1.0, 0.98, 0.96))
+		m.set_shader_parameter("shade_col", Color(0.62, 0.7, 0.8))
+		m.set_shader_parameter("seed", rr.randf() * 10.0)
+		m.set_shader_parameter("opacity", rr.randf_range(0.7, 0.95))
+		var mi := add_mesh(q, m, center + Vector3(sin(a) * d, h + rr.randf_range(-0.2, 0.5) * h, -cos(a) * d))
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## 물속 분위기: 떠다니는 알갱이 · 비스듬한 빛줄기 · 물고기 떼 · 해파리
+func underwater_fx(half: float, top: float = 12.0) -> void:
+	var snow := CPUParticles3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.025
+	sm.height = 0.05
+	sm.radial_segments = 4
+	sm.rings = 2
+	var smat := StandardMaterial3D.new()
+	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	smat.albedo_color = Color(0.85, 1.0, 0.95, 0.55)
+	smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	sm.material = smat
+	snow.mesh = sm
+	snow.amount = 500
+	snow.lifetime = 14.0
+	snow.preprocess = 14.0
+	snow.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	snow.emission_box_extents = Vector3(half, top * 0.5, half)
+	snow.position = Vector3(0, top * 0.5, 0)
+	snow.gravity = Vector3(0, -0.03, 0)
+	snow.initial_velocity_max = 0.15
+	snow.spread = 180.0
+	world3.add_child(snow)
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 4
+	for k in 8:
+		var q := QuadMesh.new()
+		q.size = Vector2(rr.randf_range(2.0, 4.5), 30.0)
+		var m := ShaderMaterial.new()
+		m.shader = RayShader
+		m.set_shader_parameter("phase", rr.randf() * TAU)
+		m.set_shader_parameter("strength", rr.randf_range(0.018, 0.04))
+		var p := Vector3(rr.randf_range(-half, half), top, rr.randf_range(-half, half * 0.4))
+		var b := Basis(Vector3.UP, rr.randf_range(-0.5, 0.5)) * Basis(Vector3(0, 0, 1), deg_to_rad(18))
+		add_mesh(q, m, p, b).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+func fish_school(center: Vector3, radius: float, count: int, speed: float, length: float, a: Color, b: Color) -> void:
+	var before := kit.get_child_count()
+	kit._fish_school(center, radius, count, speed, length, a, b)
+	for n in kit.get_children().slice(before):
+		kit.remove_child(n)
+		world3.add_child(n)
+
+
+func jelly(p: Vector3, c: Color) -> void:
+	var before := kit.get_child_count()
+	kit._jelly(p, c)
+	for n in kit.get_children().slice(before):
+		kit.remove_child(n)
+		world3.add_child(n)
+
+
+## 보물상자 (널빤지 몸통 · 쇠띠 · 모서리 쇠 · 자물쇠판 · 둥근 뚜껑). 크기 w × h × d, 돌려줌 {root, lid}
+func treasure_chest(w: float, h: float, d: float, parent: Node3D = null) -> Dictionary:
+	var root := Node3D.new()
+	(parent if parent else world3).add_child(root)
+	var cols := [Color(0.34, 0.2, 0.11), Color(0.38, 0.23, 0.13), Color(0.31, 0.18, 0.1)]
+	var iron := std_mat(Color(0.16, 0.15, 0.14), 0.5, 0.85)
+	var gold := std_mat(Color(0.92, 0.7, 0.3), 0.28, 0.95)
+	# 몸통: 가로 널 여러 장
+	var rows := 4
+	for k in rows:
+		var m := wood_mat(cols[k % 3], Vector3(1, 0, 0), 0.25)
+		box(Vector3(w, h / rows - 0.012, d), m, Vector3(0, h / rows * (k + 0.5), 0), Basis(), root)
+	# 쇠띠 (세로) · 모서리 쇠
+	for x: float in [-w * 0.32, w * 0.32]:
+		box(Vector3(w * 0.07, h + 0.02, d + 0.03), iron, Vector3(x, h * 0.5, 0), Basis(), root)
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			box(Vector3(w * 0.09, h + 0.03, w * 0.09), iron, Vector3(sx * (w * 0.5 - w * 0.035), h * 0.5, sz * (d * 0.5 - w * 0.035)), Basis(), root)
+	# 리벳
+	var rv := SphereMesh.new()
+	rv.radius = w * 0.016
+	rv.height = w * 0.032
+	rv.radial_segments = 8
+	rv.rings = 4
+	for x: float in [-w * 0.32, w * 0.32]:
+		for k in 3:
+			add_mesh(rv, iron, Vector3(x, h * (0.2 + k * 0.3), d * 0.5 + 0.018), Basis(), root)
+	# 자물쇠판 + 열쇠구멍
+	box(Vector3(w * 0.16, h * 0.32, 0.03), gold, Vector3(0, h * 0.7, d * 0.5 + 0.02), Basis(), root)
+	box(Vector3(w * 0.025, h * 0.1, 0.02), std_mat(Color(0.02, 0.02, 0.02), 0.9), Vector3(0, h * 0.66, d * 0.5 + 0.035), Basis(), root)
+	# 뚜껑 (뒤 경첩, 반원통: 널 + 쇠띠)
+	var lid := Node3D.new()
+	lid.position = Vector3(0, h, -d * 0.5)
+	root.add_child(lid)
+	var rr := d * 0.5
+	var planks := 6
+	for k in planks:
+		var a0 := PI * k / planks
+		var a1 := PI * (k + 1) / planks
+		var am := (a0 + a1) * 0.5
+		var pos := Vector3(0, sin(am) * rr * 0.62, d * 0.5 - cos(am) * rr)
+		var m := wood_mat(cols[(k + 1) % 3], Vector3(1, 0, 0), 0.25)
+		var nrm := Vector2(-cos(am), sin(am) * 0.62).normalized()   # (z, y) 바깥쪽
+		box(Vector3(w, 0.05, rr * (a1 - a0) * 1.04), m, pos, Basis(Vector3(1, 0, 0), atan2(nrm.x, nrm.y)), lid)
+	for x: float in [-w * 0.32, w * 0.32, -w * 0.48, w * 0.48]:
+		var band := CylinderMesh.new()
+		band.top_radius = rr * 1.03
+		band.bottom_radius = rr * 1.03
+		band.height = w * 0.06
+		band.radial_segments = 20
+		var bm := add_mesh(band, iron, Vector3(x, 0, d * 0.5), Basis(Vector3(0, 0, 1), PI / 2), lid)
+		bm.scale = Vector3(0.64, 1.0, 1.0)
+	return {"root": root, "lid": lid, "gold": gold}
 
 
 ## 보드의 크라켄 머리 (외투막 + 눈). 바다 멀리서 지켜보게

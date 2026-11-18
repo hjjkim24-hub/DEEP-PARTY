@@ -66,6 +66,21 @@ func _build_stage() -> void:
 		m.set_shader_parameter("curl", 0.6)
 		m.set_shader_parameter("tip", 0.16)
 		_arms.append(m)
+	underwater_fx(10.0, 10.0)
+	fish_school(Vector3(0.0, 5.5, -6.0), 8.0, 24, 0.3, 0.5, Color(1.0, 0.8, 0.35), Color(0.95, 0.95, 1.0))
+	# 무대 조명: 위에서 상자들을 비추는 빛 (주변은 살짝 어둡게)
+	env.ambient_light_energy = 0.45
+	sun.light_energy = 0.8
+	var spot := SpotLight3D.new()
+	spot.light_color = Color(0.85, 1.0, 0.95)
+	spot.light_energy = 6.0
+	spot.spot_range = 16.0
+	spot.spot_angle = 26.0
+	spot.spot_attenuation = 0.6
+	spot.shadow_enabled = true
+	spot.position = Vector3(0, 10.0, 2.5)
+	spot.rotation_degrees = Vector3(-80, 0, 0)
+	world3.add_child(spot)
 	# 진주
 	var ps := SphereMesh.new()
 	ps.radius = 0.28
@@ -84,31 +99,8 @@ func _build_stage() -> void:
 
 
 func _make_chest(i: int) -> Dictionary:
-	var root := Node3D.new()
-	world3.add_child(root)
-	var wood := wood_mat(Color(0.36, 0.22, 0.13), Vector3(1, 0, 0), 0.35)
-	var gold := std_mat(Color(0.95, 0.72, 0.28), 0.3, 0.9)
-	box(Vector3(1.3, 0.75, 0.9), wood, Vector3(0, 0.375, 0), Basis(), root)
-	for x: float in [-0.55, 0.55]:
-		box(Vector3(0.08, 0.79, 0.94), gold, Vector3(x, 0.375, 0), Basis(), root)
-	box(Vector3(1.34, 0.08, 0.94), gold, Vector3(0, 0.02, 0), Basis(), root)
-	box(Vector3(0.18, 0.22, 0.05), gold, Vector3(0, 0.6, 0.47), Basis(), root)
-	var lid := Node3D.new()
-	lid.position = Vector3(0, 0.75, -0.45)
-	root.add_child(lid)
-	var lm := CylinderMesh.new()
-	lm.top_radius = 0.45
-	lm.bottom_radius = 0.45
-	lm.height = 1.3
-	lm.radial_segments = 20
-	add_mesh(lm, wood, Vector3(0, 0, 0.45), Basis(Vector3(0, 0, 1), PI / 2), lid).scale = Vector3(0.55, 1.0, 1.0)
-	for x: float in [-0.55, 0.55]:
-		var band := CylinderMesh.new()
-		band.top_radius = 0.465
-		band.bottom_radius = 0.465
-		band.height = 0.08
-		add_mesh(band, gold, Vector3(x, 0, 0.45), Basis(Vector3(0, 0, 1), PI / 2), lid).scale = Vector3(0.57, 1.0, 1.02)
-	return {"node": root, "lid": lid, "slot": i}
+	var c := treasure_chest(1.35, 0.72, 0.92)
+	return {"node": c["root"], "lid": c["lid"], "slot": i}
 
 
 func _layout(n: int) -> void:
@@ -232,6 +224,8 @@ func _swap(a: int, b: int, time: float) -> void:
 	var pa := na.position
 	var pb := nb.position
 	sfx("whoosh", 60)
+	_sand_puff(pa)
+	_sand_puff(pb)
 	var t := create_tween().set_parallel(true)
 	t.tween_method(func(f: float) -> void:
 		var e := smoothstep(0.0, 1.0, f)
@@ -255,6 +249,42 @@ func _swap(a: int, b: int, time: float) -> void:
 			if rng.randf() < miss:
 				# 다른 쪽 상자를 따라감 (헷갈림)
 				_track[s] = b if int(_track[s]) == a else a
+
+
+## 상자가 미끄러질 때 모래가 뿌옇게
+func _sand_puff(at: Vector3) -> void:
+	var p := CPUParticles3D.new()
+	p.one_shot = true
+	p.amount = 10
+	p.lifetime = 1.2
+	p.explosiveness = 0.9
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	p.emission_sphere_radius = 0.5
+	p.direction = Vector3.UP
+	p.spread = 70.0
+	p.initial_velocity_min = 0.3
+	p.initial_velocity_max = 0.9
+	p.gravity = Vector3(0, -0.3, 0)
+	p.damping_min = 1.0
+	p.damping_max = 2.0
+	p.scale_amount_min = 0.8
+	p.scale_amount_max = 1.6
+	var q := QuadMesh.new()
+	q.size = Vector2(0.8, 0.8)
+	var m := ShaderMaterial.new()
+	m.shader = SmokeShader
+	m.set_shader_parameter("tint", Color(0.85, 0.78, 0.6))
+	m.set_shader_parameter("opacity", 0.45)
+	q.material = m
+	p.mesh = q
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 0.9))
+	g.set_color(1, Color(1, 1, 1, 0))
+	p.color_ramp = g
+	p.position = at + Vector3(0, 0.15, 0)
+	world3.add_child(p)
+	p.emitting = true
+	p.finished.connect(p.queue_free)
 
 
 func _tick(delta: float) -> void:

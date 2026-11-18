@@ -42,6 +42,14 @@ func _build_stage() -> void:
 	cam.position = Vector3(0, 6.2, 9.0)
 	cam.look_at(Vector3(0, -1.0, -14.0))
 	_build_deck()
+	# 수평선: 구름 · 먼 바위섬
+	sky_clouds(14, 260.0, 38.0, Vector3.ZERO, Vector2(-1.3, 1.3))
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 17
+	for k in 3:
+		var c := Vector3(rr.randf_range(-120, 120), SEA_Y - 2.0, rr.randf_range(-220, -160))
+		for j in 4:
+			reef("rock", c + Vector3(rr.randf_range(-14, 14), 0, rr.randf_range(-6, 6)), Color.WHITE, rr.randf_range(9.0, 17.0))
 
 
 
@@ -69,6 +77,24 @@ func _build_deck() -> void:
 		c.bottom_radius = 0.42
 		c.height = 1.0
 		add_mesh(c, barrel, Vector3(x, 0.5, 2.2))
+	# 포탄 더미 · 밧줄 감개 · 양동이
+	var iron := std_mat(Color(0.07, 0.07, 0.08), 0.45, 0.8)
+	var ball := SphereMesh.new()
+	ball.radius = 0.1
+	ball.height = 0.2
+	for cx: float in [-6.2, -1.4, 1.8, 6.6]:
+		var base := Vector3(cx, 0.1, 1.15)
+		for i in 3:
+			for j in 3 - i:
+				for kk in 3 - i:
+					add_mesh(ball, iron, base + Vector3((j - (2 - i) * 0.5) * 0.205, i * 0.165, (kk - (2 - i) * 0.5) * 0.205))
+	var rope := std_mat(Color(0.62, 0.5, 0.33), 0.95)
+	for x: float in [-11.5, 11.5]:
+		for k in 4:
+			var tor := TorusMesh.new()
+			tor.inner_radius = 0.25 + k * 0.04
+			tor.outer_radius = 0.42 + k * 0.04
+			add_mesh(tor, rope, Vector3(x, 0.07 + k * 0.1, 3.0))
 	# 돛대 밑동 (뒤쪽 화면 밖으로)
 	var mast := CylinderMesh.new()
 	mast.top_radius = 0.35
@@ -230,9 +256,10 @@ func _update_targets(delta: float) -> void:
 		var e := 1.0 - pow(1.0 - clampf(r, 0.0, 1.0), 3.0)
 		node.position.y = SEA_Y - length * (1.0 - e) - 0.4
 		var ph: float = t["phase"]
-		m.set_shader_parameter("pitch", sin(_t3 * 1.7 + ph) * 0.25)
-		m.set_shader_parameter("curl", 0.55 + sin(_t3 * 2.3 + ph) * 0.35)
-		m.set_shader_parameter("wave", 0.35)
+		m.set_shader_parameter("pitch", sin(_t3 * 1.7 + ph) * 0.3)
+		m.set_shader_parameter("curl", 1.1 + sin(_t3 * 2.3 + ph) * 0.6)
+		m.set_shader_parameter("wave", 0.5)
+		m.set_shader_parameter("sway", 0.6)
 		m.set_shader_parameter("wtime", _t3)
 
 
@@ -318,7 +345,10 @@ func _fire_at(s: int, at: Vector3, target_id: int) -> void:
 	tw.tween_property(pn, "position:z", 0.35, 0.05)
 	tw.tween_property(pn, "position:z", 0.0, 0.3).set_trans(Tween.TRANS_SINE)
 	_smoke(muzzle)
+	_flash(muzzle)
 	sfx("cannon", 50)
+	if is_human(player_by_slot(s)):
+		shake(0.3)
 
 
 func _update_balls(delta: float) -> void:
@@ -346,12 +376,57 @@ func _land(b: Dictionary) -> void:
 			scores[s] = int(scores[s]) + pts
 			sfx("explode", 60)
 			_burst(at, t["gold"])
+			_flinch(t)
 			var p := player_by_slot(s)
 			float_at(at + Vector3(0, 1.2, 0), "+%d" % pts, GOLD if t["gold"] else Color(p["color"]).lightened(0.3), 48)
 			return
 	# 빗나감: 물기둥
-	splash(Vector3(at.x, SEA_Y + 0.2, at.z), 26, 1.0)
+	splash(Vector3(at.x, SEA_Y + 0.2, at.z), 40, 1.5)
 	sfx("splash", 60)
+
+
+## 맞은 촉수: 확 젖혀지며 움찔 → 물속으로
+func _flinch(t: Dictionary) -> void:
+	var m: ShaderMaterial = (t["tn"] as Dictionary)["mat"]
+	t["phase"] = float(t["phase"]) + 2.0
+	m.set_shader_parameter("glow", 1.0)
+	var tw := create_tween()
+	tw.tween_method(func(v: float) -> void: m.set_shader_parameter("glow", v), 1.0, 0.0, 0.5)
+	var n: Node3D = t["node"]
+	var r0 := n.rotation
+	var tw2 := create_tween()
+	tw2.tween_property(n, "rotation", r0 + Vector3(-0.5, 0, 0.3), 0.08)
+	tw2.tween_property(n, "rotation", r0, 0.35).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+	# 먹물이 퍽
+	var p := CPUParticles3D.new()
+	p.one_shot = true
+	p.amount = 14
+	p.lifetime = 1.4
+	p.explosiveness = 0.95
+	p.spread = 180.0
+	p.initial_velocity_min = 1.0
+	p.initial_velocity_max = 3.0
+	p.gravity = Vector3(0, -1.5, 0)
+	p.damping_min = 1.5
+	p.damping_max = 2.5
+	p.scale_amount_min = 1.0
+	p.scale_amount_max = 2.2
+	var q := QuadMesh.new()
+	q.size = Vector2(1.0, 1.0)
+	var sm := ShaderMaterial.new()
+	sm.shader = SmokeShader
+	sm.set_shader_parameter("tint", Color(0.05, 0.12, 0.04))
+	sm.set_shader_parameter("opacity", 0.75)
+	q.material = sm
+	p.mesh = q
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	p.color_ramp = g
+	p.position = _aim_point(t)
+	world3.add_child(p)
+	p.emitting = true
+	p.finished.connect(p.queue_free)
 
 
 func _burst(at: Vector3, gold: bool) -> void:
@@ -381,11 +456,39 @@ func _burst(at: Vector3, gold: bool) -> void:
 	splash(Vector3(at.x, SEA_Y + 0.2, at.z), 40, 1.3)
 
 
+## 포구 화염: 순간 번쩍이는 불덩이 + 빛
+func _flash(at: Vector3) -> void:
+	var fb := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.35
+	sm.height = 0.7
+	fb.mesh = sm
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_color = Color(1.0, 0.75, 0.35, 0.95)
+	fb.material_override = m
+	fb.position = at
+	world3.add_child(fb)
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.7, 0.35)
+	l.light_energy = 6.0
+	l.omni_range = 7.0
+	l.position = at
+	world3.add_child(l)
+	var t := create_tween().set_parallel(true)
+	t.tween_property(fb, "scale", Vector3.ONE * 2.2, 0.12)
+	t.tween_property(m, "albedo_color:a", 0.0, 0.14)
+	t.tween_property(l, "light_energy", 0.0, 0.18)
+	t.chain().tween_callback(fb.queue_free)
+	t.chain().tween_callback(l.queue_free)
+
+
 func _smoke(at: Vector3) -> void:
 	var p := CPUParticles3D.new()
 	p.one_shot = true
-	p.amount = 10
-	p.lifetime = 1.2
+	p.amount = 18
+	p.lifetime = 1.8
 	p.explosiveness = 0.9
 	p.direction = Vector3(0, 0.4, -1)
 	p.spread = 25.0

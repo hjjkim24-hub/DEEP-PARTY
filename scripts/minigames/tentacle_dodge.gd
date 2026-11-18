@@ -134,7 +134,9 @@ func _setup_game() -> void:
 	for i in n:
 		var p: Dictionary = players[i]
 		var a := TAU * float(i) / n + PI * 0.25
-		add_walker(p, Vector3(cos(a), 0, sin(a)) * 2.6, 5.2)
+		var w := add_walker(p, Vector3(cos(a), 0, sin(a)) * 2.6, 5.2)
+		# 말도 뗏목과 함께 출렁이게 뗏목에 붙임
+		(w["node"] as Node3D).reparent(_raft, false)
 		var s := int(p["slot"])
 		_hearts[s] = HEARTS
 		_inv[s] = 0.0
@@ -145,6 +147,15 @@ func _setup_game() -> void:
 func _start_game() -> void:
 	_elapsed = 0.0
 	_next_attack = 1.0
+
+
+func _process(delta: float) -> void:
+	super._process(delta)
+	# 뗏목이 파도에 천천히 출렁
+	if _raft:
+		var t := Time.get_ticks_msec() / 1000.0
+		_raft.rotation = Vector3(sin(t * 0.83) * 0.022, 0.0, sin(t * 0.61 + 1.0) * 0.028)
+		_raft.position.y = sin(t * 1.05) * 0.07
 
 
 func _tick(delta: float) -> void:
@@ -190,8 +201,8 @@ func _attack() -> void:
 		# 들어오는 방향: 카메라 쪽(앞)은 빼고, 앞서 고른 방향과 겹치지 않게
 		var ang := 0.0
 		for tries in 12:
-			# 뿌리가 카메라 쪽(+z)에 오지 않게: cos(ang) <= 0.3 인 각도만
-			ang = rng.randf_range(1.27, 5.01)
+			# 뿌리는 뗏목 뒤쪽 · 옆 뒤쪽 바다에서만 (카메라 앞을 가리지 않게)
+			ang = rng.randf_range(1.85, 4.43)
 			var ok := true
 			for u in used:
 				if absf(angle_difference(ang, float(u))) < 0.7:
@@ -218,7 +229,7 @@ func _add_stripe(target: Vector3, out: Vector3, warn: float) -> void:
 	var a1 := root + dir * length * 0.7
 	var mid := (a0 + a1) * 0.5
 	var full := Vector3(STRIPE_W * 0.5 + 0.1, 1.0, a0.distance_to(a1) * 0.5 + 0.2)
-	var mark := danger_ring(Vector3(mid.x, 0, mid.z), 1.0, full, atan2(dir.x, dir.z))
+	var mark := danger_ring(Vector3(mid.x, 0, mid.z), 1.0, full, atan2(dir.x, dir.z), _raft)
 	var ring := {"a": Vector3(a0.x, 0, a0.z), "b": Vector3(a1.x, 0, a1.z), "t_hit": _elapsed + warn, "mark": mark}
 	_rings.append(ring)
 	sfx("tick", 60)
@@ -264,6 +275,7 @@ func _hit_ring(ring: Dictionary) -> void:
 	var a: Vector3 = ring["a"]
 	var b: Vector3 = ring["b"]
 	sfx("kraken_slam", 90)
+	shake(0.55)
 	for k in 3:
 		var p := a.lerp(b, (k + 0.5) / 3.0)
 		debris(p + Vector3(0, 0.1, 0), Color(0.42, 0.33, 0.25), 8)
@@ -295,6 +307,8 @@ func _hurt(s: int, away: Vector3) -> void:
 	w["push"] = dir * 7.0
 	w["slow"] = 0.5
 	sfx("thud")
+	if is_human(w["p"]):
+		shake(0.8)
 	float_at((w["pos"] as Vector3) + Vector3(0, 2.0, 0), "-1", Color(1.0, 0.45, 0.4), 44)
 	if int(_hearts[s]) <= 0:
 		_knock_out(s, dir)
@@ -319,7 +333,11 @@ func _knock_out(s: int, dir: Vector3) -> void:
 	t.tween_callback(func() -> void:
 		splash(Vector3(to.x, -0.4, to.z), 50, 1.1)
 		sfx("splash")
-		n.visible = false)
+		# 물에 빠진 말은 비스듬히 둥둥 떠다님
+		n.rotation = Vector3(0.9, rng.randf() * TAU, 0.3)
+		var bob := create_tween().set_loops()
+		bob.tween_property(n, "position:y", -0.62, 0.9).set_trans(Tween.TRANS_SINE)
+		bob.tween_property(n, "position:y", -0.85, 0.9).set_trans(Tween.TRANS_SINE))
 
 
 ## CPU: 붉은 원 안이면 가장 가까운 안전한 곳으로, 아니면 가끔 어슬렁 (실력에 따라 늦게 · 가끔 실수)

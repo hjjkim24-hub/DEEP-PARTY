@@ -66,6 +66,9 @@ func _build_stage() -> void:
 		var a := TAU * (k + 0.25) / 10.0
 		reef("kelp", Vector3(cos(a), 0, sin(a)) * (ARENA_R + 2.6), Color.WHITE, rr.randf_range(4.0, 6.5))
 	_build_chest()
+	underwater_fx(13.0, 13.0)
+	fish_school(Vector3(-2.0, 6.5, -4.0), 7.0, 26, 0.35, 0.45, Color(1.0, 0.75, 0.3), Color(0.95, 0.95, 1.0))
+	fish_school(Vector3(4.0, 8.0, -7.0), 9.0, 18, 0.25, 0.6, Color(0.4, 0.8, 1.0), Color(0.2, 0.35, 0.8))
 	# 빛줄기 (수면에서 비스듬히)
 	for k in 5:
 		var q := QuadMesh.new()
@@ -84,39 +87,26 @@ func _build_stage() -> void:
 func _build_chest() -> void:
 	_chest = Node3D.new()
 	world3.add_child(_chest)
-	var wood := wood_mat(Color(0.35, 0.21, 0.12), Vector3(1, 0, 0), 0.5)
-	var gold := std_mat(Color(0.95, 0.7, 0.25), 0.3, 0.9)
-	box(Vector3(1.8, 0.9, 1.15), wood, Vector3(0, 0.45, 0), Basis(), _chest)
-	for x: float in [-0.72, 0.0, 0.72]:
-		box(Vector3(0.1, 0.94, 1.2), gold, Vector3(x, 0.45, 0), Basis(), _chest)
-	box(Vector3(0.22, 0.28, 0.06), gold, Vector3(0, 0.72, 0.6), Basis(), _chest)
-	# 금화 더미 (안쪽)
-	var coins := CylinderMesh.new()
-	coins.top_radius = 0.75
-	coins.bottom_radius = 0.82
-	coins.height = 0.25
-	add_mesh(coins, gold, Vector3(0, 0.85, 0), Basis(), _chest).scale = Vector3(1.0, 1.0, 0.65)
-	# 뚜껑 (뒤쪽 경첩)
-	_lid = Node3D.new()
-	_lid.position = Vector3(0, 0.9, -0.57)
-	_chest.add_child(_lid)
-	var lidm := CylinderMesh.new()
-	lidm.top_radius = 0.58
-	lidm.bottom_radius = 0.58
-	lidm.height = 1.8
-	lidm.radial_segments = 20
-	add_mesh(lidm, wood, Vector3(0, 0.0, 0.57), Basis(Vector3(0, 0, 1), PI / 2), _lid).scale = Vector3(0.62, 1.0, 1.0)
+	var c := treasure_chest(1.9, 0.95, 1.2, _chest)
+	_lid = c["lid"]
+	# 안에 수북한 금화
+	var gold: Material = c["gold"]
+	var heap := SphereMesh.new()
+	heap.radius = 0.8
+	heap.height = 0.5
+	var hm := add_mesh(heap, gold, Vector3(0, 0.95, 0), Basis(), _chest)
+	hm.scale = Vector3(1.05, 0.7, 0.62)
 	_lid.rotation.x = -0.35
-	# 상자를 휘감은 크라켄 촉수 (보드와 같은 것)
+	# 상자를 감싼 크라켄 촉수 (양옆 모래에서 솟아 상자 위로 휘어 감음)
 	for sd: float in [-1.0, 1.0]:
-		var tn := tentacle(4.5, 0.42, Vector3(-sd, 0, 0.3))
+		var tn := tentacle(3.6, 0.36, Vector3(-sd, 0, 0.0))
 		var n: Node3D = tn["root"]
-		n.position = Vector3(sd * 2.2, -0.6, -0.4)
+		n.position = Vector3(sd * 1.55, -0.5, 0.15)
 		var m: ShaderMaterial = tn["mat"]
-		m.set_shader_parameter("pitch", 0.6)
-		m.set_shader_parameter("curl", 1.4)
-		m.set_shader_parameter("wave", 0.2)
-		m.set_shader_parameter("tip", 0.15)
+		m.set_shader_parameter("pitch", -0.05)
+		m.set_shader_parameter("curl", 2.1)
+		m.set_shader_parameter("wave", 0.12)
+		m.set_shader_parameter("tip", 0.14)
 		_arm_mats.append(m)
 
 
@@ -133,38 +123,68 @@ func _setup_game() -> void:
 
 
 func _make_item_meshes() -> void:
-	var c := CylinderMesh.new()
-	c.top_radius = 0.24
-	c.bottom_radius = 0.24
-	c.height = 0.06
-	c.radial_segments = 20
-	var cm := std_mat(KINDS["coin"]["col"], 0.25, 0.95)
+	# 금화: 가장자리 테가 도톰한 진짜 동전 모양 (돌림 단면)
+	var prof := [Vector2(0.0, 0.022), Vector2(0.17, 0.02), Vector2(0.19, 0.032), Vector2(0.235, 0.034), Vector2(0.25, 0.02),
+		Vector2(0.25, -0.02), Vector2(0.235, -0.034), Vector2(0.19, -0.032), Vector2(0.17, -0.02), Vector2(0.0, -0.022)]
+	_meshes["coin"] = _lathe(prof, 28)
+	var cm := std_mat(Color(1.0, 0.8, 0.32), 0.3, 0.75)
 	cm.emission_enabled = true
-	cm.emission = Color(0.5, 0.35, 0.05)
-	c.material = cm
-	_meshes["coin"] = c
+	cm.emission = Color(0.55, 0.38, 0.08)
+	(_meshes["coin"] as ArrayMesh).surface_set_material(0, cm)
 	var p := SphereMesh.new()
 	p.radius = 0.2
 	p.height = 0.4
-	var pmat := std_mat(KINDS["pearl"]["col"], 0.1, 0.0)
+	var pmat := std_mat(KINDS["pearl"]["col"], 0.08, 0.0)
 	pmat.clearcoat_enabled = true
+	pmat.clearcoat = 1.0
 	pmat.rim_enabled = true
-	pmat.rim = 0.6
+	pmat.rim = 0.8
+	pmat.rim_tint = 0.3
 	pmat.emission_enabled = true
-	pmat.emission = Color(0.25, 0.27, 0.3)
+	pmat.emission = Color(0.22, 0.24, 0.28)
 	p.material = pmat
 	_meshes["pearl"] = p
-	var g := SphereMesh.new()
-	g.radius = 0.3
-	g.height = 0.6
-	g.radial_segments = 6
-	g.rings = 2
-	var gm := std_mat(KINDS["gem"]["col"], 0.05, 0.2)
+	# 보석: 브릴리언트 컷 (윗면 평평한 테이블 + 뾰족한 아래)
+	var gp := [Vector2(0.0, 0.16), Vector2(0.17, 0.16), Vector2(0.3, 0.06), Vector2(0.3, 0.03), Vector2(0.0, -0.3)]
+	_meshes["gem"] = _lathe(gp, 8, true)
+	var gm := std_mat(KINDS["gem"]["col"], 0.02, 0.1)
 	gm.emission_enabled = true
-	gm.emission = Color(0.6, 0.05, 0.12)
-	gm.emission_energy_multiplier = 1.5
-	g.material = gm
-	_meshes["gem"] = g
+	gm.emission = Color(0.7, 0.04, 0.12)
+	gm.emission_energy_multiplier = 1.2
+	gm.rim_enabled = true
+	gm.rim = 1.0
+	gm.rim_tint = 0.0
+	gm.clearcoat_enabled = true
+	(_meshes["gem"] as ArrayMesh).surface_set_material(0, gm)
+
+
+## 단면(반지름, 높이)을 돌려 깎은 메시. flat = 면마다 각지게 (보석)
+func _lathe(prof: Array, seg: int, flat: bool = false) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for k in prof.size() - 1:
+		var p0: Vector2 = prof[k]
+		var p1: Vector2 = prof[k + 1]
+		for j in seg:
+			var a0 := TAU * j / seg
+			var a1 := TAU * (j + 1) / seg
+			var v00 := Vector3(cos(a0) * p0.x, p0.y, sin(a0) * p0.x)
+			var v01 := Vector3(cos(a1) * p0.x, p0.y, sin(a1) * p0.x)
+			var v10 := Vector3(cos(a0) * p1.x, p1.y, sin(a0) * p1.x)
+			var v11 := Vector3(cos(a1) * p1.x, p1.y, sin(a1) * p1.x)
+			if flat:
+				var nrm := (v01 - v00).cross(v11 - v00).normalized()
+				if nrm.dot((v00 + v11) * 0.5) < 0.0:
+					nrm = -nrm
+				for v in [v00, v11, v01, v00, v10, v11]:
+					st.set_normal(nrm)
+					st.add_vertex(v)
+			else:
+				for v in [v00, v11, v01, v00, v10, v11]:
+					st.add_vertex(v)
+	if not flat:
+		st.generate_normals()
+	return st.commit()
 
 
 func _start_game() -> void:
