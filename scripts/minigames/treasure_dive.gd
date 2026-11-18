@@ -100,35 +100,6 @@ func _build_chest() -> void:
 	var hm := add_mesh(heap, gold, Vector3(0, 0.95, 0), Basis(), _chest)
 	hm.scale = Vector3(1.05, 0.7, 0.62)
 	_lid.rotation.x = -0.35
-	# 크라켄 촉수: 모래 속에서 기어 나와 상자를 비스듬히 타고 오르며 휘감고, 끝은 들려 꿈틀
-	var hw := 0.95
-	var hd := 0.6
-	var h := 0.95
-	# 큰 촉수: 왼쪽 뒤 모래 → 왼쪽 면을 타고 오름 → 앞면을 비스듬히 가로질러 내려옴 → 오른쪽 면을 다시 타고 오름 → 뒷면 위쪽 → 끝이 허공으로 들려 말림
-	var a := chest_path(hw, hd, h, 0.0, 0.27, [
-		Vector3(-1, 0.12, -1), Vector3(-1, 0.42, -0.35), Vector3(-1, 0.7, 0.45), Vector3(-1, 0.8, 1),
-		Vector3(-0.45, 0.66, 1), Vector3(0.15, 0.4, 1), Vector3(0.7, 0.22, 1), Vector3(1, 0.24, 1),
-		Vector3(1, 0.46, 0.3), Vector3(1, 0.74, -0.45), Vector3(1, 0.82, -1), Vector3(0.45, 0.8, -1)], 3)
-	var pa := [Vector3(-3.0, -0.4, -2.3), Vector3(-2.2, -0.12, -1.75), Vector3(-1.45, 0.06, -1.15)]
-	pa.append_array(a)
-	pa.append(Vector3(0.05, 1.05, -0.95))
-	pa.append(Vector3(-0.3, 1.32, -1.05))
-	pa.append(Vector3(-0.42, 1.38, -0.8))
-	spline_tentacle(pa, 0.34, _chest_belly, 0.1, _chest)
-	# 작은 촉수: 오른쪽 모래 → 오른쪽 뒤 모서리 아래를 감아 → 뒷면 아래를 기어가다 끝이 왼쪽 위로 들림
-	var b := chest_path(hw, hd, h, 0.0, 0.2, [
-		Vector3(1, 0.1, -0.2), Vector3(1, 0.13, -1), Vector3(0.35, 0.16, -1), Vector3(-0.3, 0.26, -1)], 7)
-	var pb := [Vector3(2.7, -0.4, 0.6), Vector3(1.9, -0.1, 0.35), Vector3(1.3, 0.04, 0.05)]
-	pb.append_array(b)
-	pb.append(Vector3(-0.68, 0.48, -0.95))
-	pb.append(Vector3(-0.78, 0.68, -0.98))
-	pb.append(Vector3(-0.7, 0.78, -1.18))
-	spline_tentacle(pb, 0.24, _chest_belly, 0.12, _chest)
-
-
-## 빨판은 상자 쪽(가운데)을 향함
-func _chest_belly(p: Vector3) -> Vector3:
-	return Vector3(-p.x, 0.45 - p.y, -p.z)
 
 
 func _setup_game() -> void:

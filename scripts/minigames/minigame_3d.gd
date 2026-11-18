@@ -820,12 +820,13 @@ func kraken_head(pos: Vector3, scl: float, yaw: float = 0.0, tilt: float = -0.35
 ## water_y 가 있으면 뿌리에 물보라, 없으면(물속 모래) 모래 먼지
 func slam_tentacle(root: Vector3, dir: Vector3, length: float, warn: float, floor_y: float, water_y: float = NAN) -> void:
 	root.y = floor_y + 0.55 - 0.25 * length
-	var tn := tentacle(length, 0.78, dir)
+	var rad := clampf(0.3 + length * 0.04, 0.55, 0.8)
+	var tn := tentacle(length, rad, dir)
 	var node: Node3D = tn["root"]
 	var m: ShaderMaterial = tn["mat"]
 	m.set_shader_parameter("tip", 0.22)
 	m.set_shader_parameter("hook_at", 0.2)
-	m.set_shader_parameter("pattern_scale", 1.6 / 0.78)
+	m.set_shader_parameter("pattern_scale", 1.6 / rad)
 	var straight := [0.0, 0.0, 0.0, 0.0, 0.15]
 	var raised := [-0.25, 0.9, 0.0, -0.5, 0.25]
 	var wound := [-0.6, 1.5, 0.0, -0.9, 0.1]

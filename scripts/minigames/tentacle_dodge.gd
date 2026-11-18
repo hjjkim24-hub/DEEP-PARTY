@@ -222,29 +222,33 @@ func _attack() -> void:
 
 
 ## 촉수 하나: 뿌리 = 과녁에서 out 쪽 바다. 눕는 띠는 뿌리에서 0.23L ~ 0.68L (셰이더 자세로 계산한 값)
+## 촉수 하나: 경고 직사각형을 먼저 정하고(뗏목 가장자리 → 과녁 너머), 촉수 길이를 그 직사각형에 딱 맞춤.
+## 촉수가 바닥에 눕는 구간은 뿌리에서 0.12L ~ 0.8L (셰이더 자세로 계산한 값) → L = 직사각형 길이 / 0.68
 func _add_stripe(target: Vector3, out: Vector3, warn: float) -> void:
-	var edge_d := RAFT_R + 1.3
-	# 과녁에서 out 방향으로 뗏목 밖(물)까지의 거리
-	var tp := Vector2(target.x, target.z)
-	var od := Vector2(out.x, out.z)
-	var b := tp.dot(od)
-	var c := tp.length_squared() - edge_d * edge_d
-	var to_edge := -b + sqrt(maxf(b * b - c, 0.0))
-	var length := clampf(to_edge / 0.42, 8.0, 19.0)
-	var root := target + out * (length * 0.42)
 	var dir := -out
-	# 촉수가 실제로 갑판에 닿는 길이 전체: 뿌리에서 0.12L(갑판 높이로 내려온 곳) ~ 0.74L(끝이 말려 오르기 전)
-	var a0 := root + dir * length * 0.12
-	var a1 := root + dir * length * 0.74
-	a0 = _clip_to_raft(a0, a1)
-	a1 = _clip_to_raft(a1, a0)
-	a0.y = 0.0
-	a1.y = 0.0
-	# 뗏목 위에 제대로 걸치지 않는 촉수는 버림 (물 위에만 표시되는 일 없게)
-	var mid := (a0 + a1) * 0.5
-	if a0.distance_to(a1) < 1.5 or Vector2(mid.x, mid.z).length() > RAFT_R - 1.2 \
-			or Vector2(a0.x, a0.z).length() > RAFT_R - 0.6 or Vector2(a1.x, a1.z).length() > RAFT_R - 0.6:
+	var edge := RAFT_R - 0.7
+	var tp := Vector2(target.x, target.z)
+	if tp.length() > edge - 0.5:
+		tp = tp.normalized() * (edge - 0.5)
+	var od := Vector2(out.x, out.z)
+	# 과녁에서 out 쪽으로 뗏목 가장자리까지 (촉수가 넘어오는 곳)
+	var b := tp.dot(od)
+	var c := tp.length_squared() - edge * edge
+	var t_edge := -b + sqrt(maxf(b * b - c, 0.0))
+	var a0v := tp + od * t_edge
+	# 과녁 너머로 조금 더 뻗되 뗏목 안에서 끝남
+	var dd := -od
+	var b2 := tp.dot(dd)
+	var c2 := tp.length_squared() - edge * edge
+	var t_far := -b2 + sqrt(maxf(b2 * b2 - c2, 0.0))
+	var a1v := tp + dd * minf(rng.randf_range(1.2, 3.2), t_far)
+	var a0 := Vector3(a0v.x, 0, a0v.y)
+	var a1 := Vector3(a1v.x, 0, a1v.y)
+	var span := a0.distance_to(a1)
+	if span < 2.0:
 		return
+	var length := span / 0.68
+	var root := a0 - dir * length * 0.12
 	var mark := rect_mark(a0, a1, STRIPE_W, _raft)
 	var ring := {"a": a0, "b": a1, "t_hit": _elapsed + warn, "mark": mark}
 	_rings.append(ring)
