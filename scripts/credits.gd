@@ -6,30 +6,31 @@ extends RefCounted
 
 const FONT_LICENSE_PATH := "res://fonts/FONT_LICENSE.txt"
 
-## [파일, 곡 제목]  — 모두 FreePD.com, 퍼블릭 도메인(CC0)
+## [영어 이름, 한국어 이름, 곡 제목]  — 모두 FreePD.com, CC0
 const MUSIC := [
-	["Main menu", "Land of Pirates"],
-	["Board", "Aquatic City Vanished"],
-	["Kraken's ship", "Evil Incoming"],
-	["Minigame intro", "Busybody"],
-	["Results", "Fanfare X"],
-	["Tentacle Dodge", "Action Strike"],
-	["Cannon Volley", "Heroic Adventure"],
-	["Treasure Dive", "The Lagoon"],
-	["Chest Shuffle", "Managing Mischief"],
-	["Tentacle Tug", "Hit n Smash"],
-	["Powder Keg", "Night Attack"],
-	["Anchor Drop", "Windy Old Weather"],
-	["Ink Splat", "Funky Energy Loop"],
-	["Clam Snatch", "Neptunian Princess"],
-	["Extra tracks", "Going Bananas, Wakka Wakka, Gotta Keep On Movin, Funshine, Adventures of Flying Jack"],
+	["Main Menu", "메인 메뉴", "Land of Pirates"],
+	["Board", "보드", "Aquatic City Vanished"],
+	["Kraken's Ship", "크라켄의 배", "Evil Incoming"],
+	["Minigame Intro", "미니게임 소개", "Busybody"],
+	["Results", "결과", "Fanfare X"],
+	["Tentacle Dodge", "촉수 피하기", "Action Strike"],
+	["Cannon Volley", "대포 사격", "Heroic Adventure"],
+	["Treasure Dive", "보물 줍기", "The Lagoon"],
+	["Chest Shuffle", "보물상자 섞기", "Managing Mischief"],
+	["Tentacle Tug", "촉수 줄다리기", "Hit n Smash"],
+	["Powder Keg", "화약통 넘기기", "Night Attack"],
+	["Anchor Drop", "닻 내리기", "Windy Old Weather"],
+	["Ink Splat", "먹물 땅따먹기", "Funky Energy Loop"],
+	["Clam Snatch", "조개 낚아채기", "Neptunian Princess"],
 ]
+## 예비 곡 (지금은 쓰는 게임 없음)
+const MUSIC_EXTRA := "Going Bananas, Wakka Wakka, Gotta Keep On Movin, Funshine, Adventures of Flying Jack"
 
 const FONTS := [
 	["Pirata One", "Rodrigo Fuenzalida, Nicolas Massi"],
 	["Almendra", "Ana Sanfelippo"],
-	["Poppins", "The Poppins Project Authors (Indian Type Foundry)"],
-	["Gowun Batang", "The Gowun Batang Project Authors (Yanghee Ryu)"],
+	["Poppins", "Indian Type Foundry"],
+	["Gowun Batang", "Yanghee Ryu"],
 ]
 
 
@@ -37,43 +38,27 @@ static func _t(ko: bool, en: String, kr: String) -> String:
 	return kr if ko else en
 
 
-## 사람이 읽는 크레딧 (화면 · 파일 공통). 엔진/폰트 라이선스 전문은 따로 붙임
+## [제목, 줄들] — 크레딧은 짧게 "이름 — 출처/라이선스"
 static func _credit_sections(ko: bool) -> Array:
 	var music := []
 	for m in MUSIC:
-		music.append("%s — \"%s\"" % [m[0], m[1]])
+		music.append("%s — %s" % [m[1] if ko else m[0], m[2]])
+	music.append("%s — %s" % [_t(ko, "Extra", "예비 곡"), MUSIC_EXTRA])
 	var fonts := []
 	for f in FONTS:
 		fonts.append("%s — %s" % [f[0], f[1]])
 	return [
 		[_t(ko, "Engine", "엔진"), [
-			_t(ko, "Made with Godot Engine (godotengine.org), MIT License. Full license texts are at the end of this page.",
-				"Godot 엔진(godotengine.org)으로 만들었습니다. MIT 라이선스이며, 전문은 이 화면 맨 아래에 있습니다."),
-			_t(ko, "Godot logo by Andrea Calabró, licensed under CC BY 4.0 (creativecommons.org/licenses/by/4.0). The text color was changed to white.",
-				"Godot 로고: Andrea Calabró, CC BY 4.0 (creativecommons.org/licenses/by/4.0). 글자색을 흰색으로 바꿨습니다."),
+			"Godot Engine — MIT",
+			_t(ko, "Godot logo — Andrea Calabró, CC BY 4.0 (recolored)", "Godot 로고 — Andrea Calabró, CC BY 4.0 (색 변경)"),
 		]],
-		[_t(ko, "Music", "음악"), [
-			_t(ko, "All music from FreePD.com — public domain (CC0 1.0). Edited for looping and volume.",
-				"모든 곡은 FreePD.com 의 퍼블릭 도메인(CC0 1.0) 음악입니다. 반복 재생과 음량에 맞게 다듬었습니다."),
-		] + music],
-		[_t(ko, "Sound effects", "효과음"), [
-			_t(ko, "Kenney (kenney.nl): Interface Sounds, UI Audio, RPG Audio, Casino Audio, Impact Sounds, Digital Audio, Music Jingles — CC0 1.0.",
-				"Kenney (kenney.nl): Interface Sounds, UI Audio, RPG Audio, Casino Audio, Impact Sounds, Digital Audio, Music Jingles — CC0 1.0."),
-			_t(ko, "CC0 sound packs from the CC0-Public-Domain-Sounds collection (github.com/lavenderdotpet): creature, bang, water/splash and breaking/hit SFX packs — CC0 1.0.",
-				"CC0-Public-Domain-Sounds 모음집(github.com/lavenderdotpet)의 생물 · 폭발 · 물 · 충돌 효과음 팩 — CC0 1.0."),
-			_t(ko, "\"Micro Pack: Organic Wooshes\" by Ben Burnes (abstractionmusic.com) — CC0 1.0.",
-				"\"Micro Pack: Organic Wooshes\" — Ben Burnes (abstractionmusic.com), CC0 1.0."),
-			_t(ko, "Mixed and edited for DEEP PARTY. Wind ambience is synthesized.",
-				"DEEP PARTY 에 맞게 섞고 다듬었습니다. 바람 소리는 직접 합성했습니다."),
+		[_t(ko, "Music — FreePD.com (CC0)", "음악 — FreePD.com (CC0)"), music],
+		[_t(ko, "Sound Effects", "효과음"), [
+			"Kenney (kenney.nl) — CC0",
+			"CC0-Public-Domain-Sounds (github.com/lavenderdotpet) — CC0",
+			"Organic Wooshes — Ben Burnes, CC0",
 		]],
-		[_t(ko, "Fonts", "글꼴"), [
-			_t(ko, "Licensed under the SIL Open Font License 1.1. Full text is at the end of this page.",
-				"모두 SIL Open Font License 1.1 이며, 전문은 이 화면 맨 아래에 있습니다."),
-		] + fonts],
-		[_t(ko, "Art", "그림"), [
-			_t(ko, "Textures, icons, 3D models and shaders were made procedurally for this game.",
-				"텍스처 · 아이콘 · 3D 모델 · 셰이더는 이 게임을 위해 직접 만들었습니다."),
-		]],
+		[_t(ko, "Fonts — SIL OFL 1.1", "글꼴 — SIL OFL 1.1"), fonts],
 	]
 
 
