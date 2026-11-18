@@ -20,9 +20,9 @@ var _raft: Node3D
 
 func _init() -> void:
 	title = "TENTACLE DODGE"
-	how_to = "The kraken slams the red circles! Move your pawn with the mouse and get out of the way. 3 hearts each - last one on the raft wins!"
+	how_to = "The kraken slams the red zones! Move your pawn with WASD or the arrow keys and get out of the way. 3 hearts each - last one on the raft wins!"
 	goal = "Last one on the raft wins!"
-	controls = "MOUSE_MOVE"
+	controls = "KEYS"
 	duration = 30.0
 
 

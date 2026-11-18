@@ -255,7 +255,7 @@ func _build() -> void:
 		or_l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		ch.add_child(or_l)
 		ch.add_child(_keys_icon(["↑", "←", "↓", "→"]))
-		var t2 := _ink("Swim", 26)
+		var t2 := _ink("Move", 26)
 		t2.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		ch.add_child(t2)
 

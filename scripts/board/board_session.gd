@@ -1436,7 +1436,7 @@ func _run_minigame(lander: Dictionary, trophy: bool) -> void:
 			if q == lander:
 				reward += Rules.MINIGAME_LANDER_BONUS
 		v.add_child(_result_row(k + 1, q, reward, got_trophy))
-	if not trophy:
+	if not trophy and Rules.MINIGAME_LANDER_BONUS > 0:
 		var note := Label.new()
 		note.text = tr("Whoever landed on the space gets +%d bonus coins.") % Rules.MINIGAME_LANDER_BONUS
 		note.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
@@ -1500,7 +1500,7 @@ func _play_minigame(id: String) -> Array:
 	var mg := Minigames.create(id, _rng)
 	mg.setup(_pawns, auto, hint_cb)
 	if has_method("_round_limit"):
-		mg.heat = clampf(float(_round - 1) / maxf(float(call("_round_limit")) - 1.0, 1.0), 0.0, 1.0)
+		pass   # 보드 진행에 따른 난이도 변화 없음 (미니게임 기본 난이도만 살짝 높게 · heat 기본값)
 	if GameState.debug_autoplay and mg.duration < 100.0:
 		mg.duration *= 0.4   # 자동 점검은 짧게
 	layer.add_child(mg)

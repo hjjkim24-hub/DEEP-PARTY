@@ -318,13 +318,34 @@ func add_walker(p: Dictionary, pos: Vector3, speed: float = 5.0) -> Dictionary:
 	return w
 
 
-## 사람: 마우스 쪽으로. (자동 점검 · 미리보기면 ai 가 정한 target)
+## 사람: WASD / 방향키로 이동 (카메라가 보는 쪽이 위). 자동 점검 · 미리보기면 ai 가 정한 target
 func human_target(w: Dictionary) -> void:
 	var p: Dictionary = w["p"]
 	if is_human(p) and playing:
-		var g := mouse_ground(walk_y)
-		if g != Vector3.INF:
-			w["target"] = Vector3(g.x, walk_y, g.z)
+		var d := key_dir()
+		var pos: Vector3 = w["pos"]
+		w["target"] = pos + d * 2.0 if d != Vector3.ZERO else pos
+
+
+## 키보드 방향 (월드 바닥 기준, 화면 위 = 카메라 앞쪽)
+func key_dir() -> Vector3:
+	var v := Vector2.ZERO
+	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP):
+		v.y -= 1.0
+	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN):
+		v.y += 1.0
+	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT):
+		v.x -= 1.0
+	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT):
+		v.x += 1.0
+	if v == Vector2.ZERO:
+		return Vector3.ZERO
+	v = v.normalized()
+	var fwd := -cam_base.basis.z
+	fwd.y = 0.0
+	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector3(0, 0, -1)
+	var right := fwd.cross(Vector3.UP).normalized()
+	return (right * v.x - fwd * v.y).normalized()
 
 
 func step_walkers(delta: float) -> void:

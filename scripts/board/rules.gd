@@ -21,8 +21,8 @@ const SHOP_TROPHY_CHANCE := 0.10
 const SHOP_TROPHY_PRICE := 40
 
 ## 미니게임: 순위별 동전, 칸을 밟은 사람은 보너스
-const MINIGAME_REWARDS := [10, 6, 3, 1]
-const MINIGAME_LANDER_BONUS := 2
+const MINIGAME_REWARDS := [7, 5, 3, 1]
+const MINIGAME_LANDER_BONUS := 0     ## 모든 미니게임 보상 통일 (1~4등 7·5·3·1)
 
 ## 찬스 카드로 생기는 동전 칸
 const COIN_SPACE_AMOUNT := 5

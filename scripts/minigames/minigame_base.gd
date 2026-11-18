@@ -31,7 +31,7 @@ var players: Array = []          ## 보드의 말 정보 (name, color, cpu, slot
 var auto_human := false          ## 자동 점검: 사람도 CPU처럼
 var demo := false                ## 소개 화면의 미리보기 (모두 자동, 소리 없음)
 var scores := {}                 ## slot → 점수
-var heat := 0.0                  ## 보드 진행도 (0 처음 ~ 1 마지막 라운드). 뒤로 갈수록 미니게임이 처음부터 더 어려움
+var heat := 0.25                 ## 기본 난이도를 살짝 높이는 값 (보드 진행과 상관없이 늘 같음)
 var time_left := 0.0
 var playing := false
 var arena: Control

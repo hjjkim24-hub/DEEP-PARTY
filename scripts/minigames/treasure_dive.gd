@@ -31,9 +31,9 @@ var _arm_mats: Array = []
 
 func _init() -> void:
 	title = "TREASURE DIVE"
-	how_to = "The kraken's chest is spitting out treasure! Move your pawn with the mouse to grab it. Coin 1, pearl 2, gem 5. Ink clouds slow you down!"
+	how_to = "The kraken's chest is spitting out treasure! Move your pawn with WASD or the arrow keys to grab it. Coin 1, pearl 2, gem 5. Ink clouds slow you down!"
 	goal = "Most treasure wins!"
-	controls = "MOUSE_MOVE"
+	controls = "KEYS"
 	duration = 30.0
 
 

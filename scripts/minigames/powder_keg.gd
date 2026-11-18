@@ -22,9 +22,9 @@ var _raft: Node3D
 
 func _init() -> void:
 	title = "POWDER KEG"
-	how_to = "Someone is holding a lit powder keg! Bump into another player to pass it on. When the fuse runs out - BOOM - whoever holds it is out. Last one standing wins!"
+	how_to = "Someone is holding a lit powder keg! Bump into another player to pass it on. It blows up at a random moment - whoever holds it is out. Last one standing wins!"
 	goal = "Don't be holding it when it blows!"
-	controls = "MOUSE_MOVE"
+	controls = "KEYS"
 	duration = 999.0
 	show_timer = false
 
@@ -167,9 +167,8 @@ func _new_round() -> void:
 	if alive.size() <= 1:
 		return
 	_holder = alive[rng.randi() % alive.size()]
-	# 터질수록 심지가 짧아짐 (마지막 두 명은 진짜 짧게)
-	var left := alive.size()
-	_fuse_max = (lerpf(7.0, 4.5, heat) if left >= 4 else (5.5 if left == 3 else 4.2)) * rng.randf_range(0.85, 1.2)
+	# 15 ~ 25초 사이 아무 때나 터짐 (아무도 모름)
+	_fuse_max = rng.randf_range(15.0, 25.0)
 	_fuse = _fuse_max
 	_no_pass = 0.8
 	_keg.visible = true
@@ -197,11 +196,10 @@ func _tick(delta: float) -> void:
 	var hp: Vector3 = (hw["node"] as Node3D).global_position
 	_keg.global_position = hp + Vector3(0, 1.75 + sin(_t3 * 14.0) * 0.03, 0)
 	_keg.rotation.y += delta * 2.0
-	var f := 1.0 - _fuse / _fuse_max
-	_keg_light.light_energy = 2.0 + f * 4.0 + sin(_t3 * (8.0 + f * 30.0)) * f * 2.0
-	_spark.amount = 30
-	_keg.scale = Vector3.ONE * (1.15 + sin(_t3 * (6.0 + f * 26.0)) * 0.08 * f)
-	if fmod(_t3, maxf(0.12, 0.7 - f * 0.6)) < delta:
+	# 언제 터질지 알 수 없게: 늘 같은 빠르기로 지글지글 · 깜빡
+	_keg_light.light_energy = 3.0 + sin(_t3 * 11.0) * 1.2
+	_keg.scale = Vector3.ONE * (1.15 + sin(_t3 * 9.0) * 0.03)
+	if fmod(_t3, 0.5) < delta:
 		sfx("tick", 40)
 	# 넘기기: 닿으면
 	if _no_pass <= 0.0:
@@ -335,4 +333,4 @@ func _score_text(p: Dictionary) -> String:
 	var s := int(p["slot"])
 	if walkers.has(s) and walkers[s]["out"]:
 		return "✕"
-	return "BOOM?" if s == _holder else "OK"
+	return tr("KEG!") if s == _holder else tr("Safe")

@@ -4,7 +4,7 @@ extends "res://scripts/minigames/minigame_3d.gd"
 ## 반대로 끌려가 난간을 넘으면 바다에 풍덩 (탈락). 촉수는 갈수록 세게 · 갑자기 확 잡아채기도 해요.
 
 const SEA_Y := -2.8
-const PULL := 0.036            ## 한 번 당길 때
+const PULL := 0.024            ## 한 번 당길 때
 const LANE_GAP := 3.3
 
 var _lanes := {}              ## slot → {x, p, done, out, time, pawn, tn, root, rope[], tense, cps, next_click}
@@ -140,7 +140,7 @@ func _tick(delta: float) -> void:
 	_t3 += delta
 	var pr := pressure()
 	# 촉수 힘: 갈수록 세짐 (마지막엔 연타로도 버티기 버거움)
-	var force := lerpf(0.05, 0.27, pr)
+	var force := lerpf(0.04, 0.12, pr)
 	# 잡아채기: 촉수가 번쩍 빛나며 움찔하는 예고 → 0.5초 뒤 확 끌어감
 	_yank_t -= delta
 	if _yank_t <= 0.0 and _yank_warn < 0.0:
@@ -152,10 +152,10 @@ func _tick(delta: float) -> void:
 			for s in _lanes:
 				var L: Dictionary = _lanes[s]
 				if not L["done"] and not L["out"]:
-					L["p"] = float(L["p"]) - lerpf(0.1, 0.22, pr)
+					L["p"] = maxf(float(L["p"]) - lerpf(0.05, 0.09, pr), -0.8)
 			sfx("kraken_slam", 200)
 			shake(0.35)
-			_yank_t = lerpf(5.5, 2.2, pr) * rng.randf_range(0.8, 1.2)
+			_yank_t = lerpf(6.0, 3.5, pr) * rng.randf_range(0.8, 1.2)
 	for s in _lanes:
 		var L: Dictionary = _lanes[s]
 		if L["done"] or L["out"]:
@@ -170,8 +170,14 @@ func _tick(delta: float) -> void:
 				L["next"] = float(L["next"]) + 1.0 / maxf(cps, 1.0)
 				_pull(s)
 		L["p"] = float(L["p"]) - force * delta * (1.0 + 0.25 * sin(_t3 * 2.1 + s))
+		# 처음 4초는 절대 안 끌려감, 그 뒤에도 끝자리에 1.2초 버텨야 끌려감 (한 번 실수로 탈락하지 않게)
 		if float(L["p"]) <= -1.0:
-			_drag_out(s)
+			L["p"] = -1.0
+			L["edge"] = float(L.get("edge", 0.0)) + delta
+			if _elapsed > 4.0 and float(L["edge"]) >= 1.2:
+				_drag_out(s)
+		else:
+			L["edge"] = 0.0
 		scores[s] = float(L["p"])
 	_place_all(delta)
 
@@ -254,7 +260,7 @@ func _place_all(delta: float) -> void:
 		# 밧줄: 말 허리 → 난간 고리 → 촉수 끝
 		if L["out"] or L["done"]:
 			continue
-		var hand := pawn.position + Vector3(0, 0.85, -0.2)
+		var hand := pawn.position + Vector3(0, 1.05, 0.05)
 		var hook := Vector3(x, 1.12, -0.1)
 		_rope(L["rope"], [hand, hook, L["grip"]])
 

@@ -23,7 +23,7 @@ func _init() -> void:
 	title = "INK SPLAT"
 	how_to = "Walk to paint the deck in your color! You can paint over other colors too. Watch out - the kraken spits black ink that wipes the deck clean. Biggest area wins!"
 	goal = "Paint the most deck!"
-	controls = "MOUSE_MOVE"
+	controls = "KEYS"
 	duration = 30.0
 
 
