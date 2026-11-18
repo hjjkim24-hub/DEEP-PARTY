@@ -252,7 +252,7 @@ const KO := {
 	"The kraken's chest is spitting out treasure! Move your pawn with the mouse to grab it. Coin 1, pearl 2, gem 5. Ink clouds slow you down!": "크라켄의 보물상자가 보물을 뿜어내요! 마우스로 말을 움직여 주우세요. 동전 1점, 진주 2점, 보석 5점. 먹물 구름 속에선 느려져요!",
 	"Most treasure wins!": "보물을 가장 많이 모으면 승리!",
 	"CHEST SHUFFLE": "보물상자 섞기",
-	"Watch the golden pearl! The kraken's tentacles shuffle the chests - then click the chest with the pearl. 3 rounds, each one faster!": "황금 진주를 잘 보세요! 크라켄 촉수가 상자를 섞으면, 진주가 든 상자를 클릭! 3라운드, 갈수록 빨라져요!",
+	"Watch the golden pearl! The kraken's tentacles shuffle the chests - then click the chest with the pearl. 5 rounds, each one faster!": "황금 진주를 잘 보세요! 크라켄 촉수가 상자를 섞으면, 진주가 든 상자를 클릭! 5라운드, 갈수록 빨라져요!",
 	"Move the mouse - your pawn walks to it": "마우스를 움직이면 말이 따라 걸어가요",
 	"OUT!": "탈락!",
 	"OUT": "탈락",

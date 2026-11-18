@@ -183,19 +183,21 @@ func _alive() -> Array:
 
 ## 공격: 바다에서 촉수가 솟아 뗏목 위로 길게 쾅 눕음 (붉은 띠 = 눕는 자리). 시간이 지날수록 자주 · 여러 개 · 경고는 짧게
 func _attack() -> void:
-	var f := clampf(_elapsed / duration, 0.0, 1.0)
-	var count := 1 if f < 0.3 else (2 if f < 0.75 else 3)
-	var warn := lerpf(1.4, 0.95, f)
-	_next_attack = lerpf(1.7, 1.05, f) + rng.randf_range(-0.15, 0.15)
+	var f := pressure()
+	# 처음엔 하나씩 느긋하게 → 끝으로 갈수록 한꺼번에 · 짧은 경고 · 쉴 틈 없이
+	var count := 1 if f < 0.2 else (2 if f < 0.45 else (3 if f < 0.7 else (4 if f < 0.9 else 5)))
+	var warn := lerpf(1.45, 0.62, f)
+	_next_attack = lerpf(1.8, 0.62, f) + rng.randf_range(-0.12, 0.12)
 	var alive := _alive()
 	if alive.is_empty():
 		return
 	var used: Array = []
 	for k in count:
 		var target: Vector3
-		if rng.randf() < 0.8:
+		if rng.randf() < lerpf(0.75, 0.95, f):
 			var w: Dictionary = alive[(rng.randi() + k) % alive.size()]
-			target = (w["pos"] as Vector3) + (w["vel"] as Vector3) * 0.3 + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5))
+			# 뒤로 갈수록 가는 쪽을 미리 읽고 노림
+			target = (w["pos"] as Vector3) + (w["vel"] as Vector3) * lerpf(0.2, 0.55, f) + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5))
 		else:
 			var a := rng.randf() * TAU
 			target = Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.0, RAFT_R - 1.4)
@@ -211,7 +213,12 @@ func _attack() -> void:
 			if ok:
 				break
 		used.append(ang)
-		_add_stripe(target, Vector3(sin(ang), 0, cos(ang)), warn + k * 0.12)
+		_add_stripe(target, Vector3(sin(ang), 0, cos(ang)), warn + k * 0.1)
+		# 후반: 피한 자리에 곧바로 한 번 더 (연타)
+		if f > 0.6 and rng.randf() < lerpf(0.0, 0.45, (f - 0.6) / 0.4):
+			var ang2 := ang + rng.randf_range(0.8, 1.4) * (1.0 if rng.randf() < 0.5 else -1.0)
+			if cos(ang2) < -0.25:
+				_add_stripe(target, Vector3(sin(ang2), 0, cos(ang2)), warn + 0.5 + k * 0.1)
 
 
 ## 촉수 하나: 뿌리 = 과녁에서 out 쪽 바다. 눕는 띠는 뿌리에서 0.23L ~ 0.68L (셰이더 자세로 계산한 값)
@@ -232,12 +239,15 @@ func _add_stripe(target: Vector3, out: Vector3, warn: float) -> void:
 	a0 = _clip_to_raft(a0, a1)
 	a1 = _clip_to_raft(a1, a0)
 	var mid := (a0 + a1) * 0.5
+	# 뗏목에 닿지 않는 띠는 버림
+	if Vector2(mid.x, mid.z).length() > RAFT_R - 0.5 or a0.distance_to(a1) < 1.0:
+		return
 	var full := Vector3(STRIPE_W * 0.5 + 0.1, 1.0, a0.distance_to(a1) * 0.5 + 0.2)
 	var mark := danger_ring(Vector3(mid.x, 0, mid.z), 1.0, full, atan2(dir.x, dir.z), _raft)
 	var ring := {"a": Vector3(a0.x, 0, a0.z), "b": Vector3(a1.x, 0, a1.z), "t_hit": _elapsed + warn, "mark": mark}
 	_rings.append(ring)
 	sfx("tick", 60)
-	_swing(ring, Vector3(root.x, 0, root.z), dir, length, warn)
+	slam_tentacle(Vector3(root.x, 0, root.z), dir, length, warn, 0.0, -0.4)
 
 
 func _clip_to_raft(p: Vector3, toward: Vector3) -> Vector3:
@@ -250,41 +260,6 @@ func _clip_to_raft(p: Vector3, toward: Vector3) -> Vector3:
 		if Vector2(q.x, q.z).length() <= r:
 			return q
 	return p
-
-
-func _swing(ring: Dictionary, root: Vector3, dir: Vector3, length: float, warn: float) -> void:
-	# 눕는 부분이 갑판 위 0.55 m 에 오게 뿌리 높이를 맞춤 (중심선 높이 ≈ 0.25L)
-	root.y = 0.55 - 0.25 * length
-	var tn := tentacle(length, 0.78, dir)
-	var node: Node3D = tn["root"]
-	var m: ShaderMaterial = tn["mat"]
-	m.set_shader_parameter("tip", 0.22)
-	m.set_shader_parameter("hook_at", 0.2)
-	m.set_shader_parameter("pattern_scale", 1.6 / 0.78)
-	var straight := [0.0, 0.0, 0.0, 0.0, 0.15]
-	var raised := [-0.25, 0.9, 0.0, -0.5, 0.25]
-	var wound := [-0.6, 1.5, 0.0, -0.9, 0.1]
-	var slammed := [0.5, 0.0, 1.2, 1.0, 0.0]
-	pose_tentacle(m, straight, straight, 0.0)
-	node.position = root + Vector3(0, -length, 0)
-	var rise_t := minf(0.55, warn * 0.45)
-	var wind_t := maxf(0.1, minf(0.4, warn - rise_t - 0.22))
-	var t := create_tween()
-	t.tween_property(node, "position:y", root.y, rise_t).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
-	t.parallel().tween_method(func(f: float) -> void:
-		pose_tentacle(m, straight, raised, smoothstep(0.35, 1.0, f))
-		m.set_shader_parameter("glow", f * 0.6), 0.0, 1.0, rise_t)
-	t.tween_method(func(f: float) -> void: pose_tentacle(m, raised, wound, f), 0.0, 1.0, wind_t).set_trans(Tween.TRANS_SINE)
-	t.tween_interval(maxf(0.0, warn - rise_t - wind_t - 0.22))
-	t.tween_method(func(f: float) -> void: pose_tentacle(m, wound, slammed, f * f), 0.0, 1.0, 0.22)
-	t.tween_interval(0.6)
-	t.tween_method(func(f: float) -> void:
-		pose_tentacle(m, slammed, raised, f)
-		m.set_shader_parameter("glow", 0.6 * (1.0 - f)), 0.0, 1.0, 0.35)
-	t.tween_property(node, "position:y", root.y - length, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	t.tween_callback(node.queue_free)
-	splash(Vector3(root.x, -0.4, root.z), 30, 1.2)
-	sfx("kraken_rise", 120)
 
 
 func _hit_ring(ring: Dictionary) -> void:

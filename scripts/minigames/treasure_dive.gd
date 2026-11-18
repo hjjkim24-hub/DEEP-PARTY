@@ -18,6 +18,9 @@ var _items: Array = []     ## {node, pos, kind, flying, from, to, t, fly}
 var _inks: Array = []      ## {node, pos, vel, r, life}
 var _burst_t := 1.2
 var _ink_t := 6.0
+var _slam_t := 99.0
+var _stripes: Array = []   ## 후반 촉수 내려치기 {a, b, t_hit, mark}
+var _stun := {}            ## slot → 남은 기절 시간
 var _elapsed := 0.0
 var _ai := {}
 var _lid: Node3D
@@ -199,15 +202,37 @@ func _tick(delta: float) -> void:
 	if _burst_t <= 0.0:
 		_burst()
 		_burst_t = rng.randf_range(2.6, 3.6)
+	var pr := pressure()
 	_ink_t -= delta
-	if _ink_t <= 0.0 and _elapsed > 5.0:
+	if _ink_t <= 0.0 and _elapsed > lerpf(5.0, 1.0, heat):
 		_spawn_ink()
-		_ink_t = rng.randf_range(4.0, 6.0)
+		_ink_t = lerpf(5.5, 1.3, pr) * rng.randf_range(0.8, 1.2)
+	# 후반: 크라켄 촉수가 모래를 뚫고 나와 말을 노리고 내려침 (맞으면 기절 + 보물을 흘림)
+	if pr > 0.4:
+		_slam_t = minf(_slam_t, 1.0)
+		_slam_t -= delta
+		if _slam_t <= 0.0:
+			_slam()
+			_slam_t = lerpf(2.4, 0.75, (pr - 0.4) / 0.6) * rng.randf_range(0.85, 1.15)
+	for st in _stripes.duplicate():
+		if _elapsed >= float(st["t_hit"]):
+			_stripes.erase(st)
+			_slam_hit(st)
+	for s in _stun.keys():
+		_stun[s] = float(_stun[s]) - delta
+		var w: Dictionary = walkers[s]
+		if float(_stun[s]) > 0.0:
+			w["target"] = w["pos"]
+			(w["node"] as Node3D).rotation.z = sin(_t3 * 20.0) * 0.25
+		else:
+			_stun.erase(s)
 	for m: ShaderMaterial in _arm_mats:
 		m.set_shader_parameter("wtime", _t3)
 	_update_items(delta)
 	_update_inks(delta)
 	_think(delta)
+	for s in _stun:
+		walkers[s]["target"] = walkers[s]["pos"]
 	for w in walkers.values():
 		w["slow"] = 0.15 if _in_ink(w["pos"], 0.0) else w["slow"]
 	step_walkers(delta)
@@ -307,6 +332,61 @@ func _collect() -> void:
 				break
 
 
+# ── 후반 촉수 ───────────────────────────────────────────────
+func _slam() -> void:
+	var alive := walkers.values()
+	if alive.is_empty():
+		return
+	var w: Dictionary = alive[rng.randi() % alive.size()]
+	var pr := pressure()
+	var target: Vector3 = (w["pos"] as Vector3) + (w["vel"] as Vector3) * lerpf(0.2, 0.5, pr)
+	var a := rng.randf_range(1.85, 4.43)
+	var out := Vector3(sin(a), 0, cos(a))
+	var length := 8.0
+	var root := target + out * (length * 0.42)
+	var dir := -out
+	var a0 := root + dir * length * 0.2
+	var a1 := root + dir * length * 0.7
+	var warn := lerpf(1.2, 0.7, pr)
+	var mid := (a0 + a1) * 0.5
+	var full := Vector3(0.85, 1.0, a0.distance_to(a1) * 0.5 + 0.2)
+	var mark := danger_ring(Vector3(mid.x, 0.02, mid.z), 1.0, full, atan2(dir.x, dir.z))
+	_stripes.append({"a": Vector3(a0.x, 0, a0.z), "b": Vector3(a1.x, 0, a1.z), "t_hit": _elapsed + warn, "mark": mark})
+	slam_tentacle(Vector3(root.x, 0, root.z), dir, length, warn, 0.0)
+	sfx("tick", 60)
+
+
+func _slam_hit(st: Dictionary) -> void:
+	sfx("kraken_slam", 90)
+	shake(0.4)
+	var mark: MeshInstance3D = st["mark"]
+	var tw := create_tween()
+	tw.tween_interval(0.4)
+	tw.tween_property(mark, "transparency", 1.0, 0.25)
+	tw.tween_callback(mark.queue_free)
+	for s in walkers:
+		var w: Dictionary = walkers[s]
+		var pos: Vector3 = w["pos"]
+		var q := Vector3(pos.x, 0, pos.z)
+		var cl := Geometry3D.get_closest_point_to_segment(q, st["a"], st["b"])
+		if q.distance_to(cl) <= 0.95:
+			_stun[s] = 1.1
+			var lost := mini(int(scores[s]), 3)
+			scores[s] = int(scores[s]) - lost
+			w["push"] = (q - cl).normalized() * 6.0 if q.distance_to(cl) > 0.05 else Vector3(1, 0, 0) * 6.0
+			sfx("thud")
+			if lost > 0:
+				float_at(pos + Vector3(0, 2.0, 0), "-%d" % lost, Color(1.0, 0.45, 0.4), 44)
+				# 잃은 보물은 둘레에 흩어짐 (다시 주울 수 있음)
+				for k in lost:
+					var a := rng.randf() * TAU
+					var to := pos + Vector3(cos(a), 0, sin(a)) * rng.randf_range(1.2, 2.4)
+					var flat := Vector2(to.x, to.z)
+					if flat.length() > ARENA_R - 0.5:
+						flat = flat.normalized() * (ARENA_R - 0.5)
+					_spawn_item("coin", pos + Vector3(0, 0.6, 0), Vector3(flat.x, 0.12, flat.y), 0.6)
+
+
 # ── 먹물 ─────────────────────────────────────────────────────
 func _spawn_ink() -> void:
 	var a := rng.randf() * TAU
@@ -340,7 +420,12 @@ func _spawn_ink() -> void:
 	p.color_ramp = g
 	p.position = start + Vector3(0, 0.6, 0)
 	world3.add_child(p)
-	_inks.append({"node": p, "pos": start, "vel": vel, "r": 1.7, "life": 9.0})
+	var pr := pressure()
+	vel *= lerpf(1.0, 1.9, pr)
+	var rad := lerpf(1.6, 2.5, pr)
+	p.emission_sphere_radius = rad * 0.7
+	p.amount = int(lerpf(26, 40, pr))
+	_inks.append({"node": p, "pos": start, "vel": vel, "r": rad, "life": 10.0})
 	sfx("bubbles", 200)
 
 
@@ -387,6 +472,10 @@ func _think(delta: float) -> void:
 			var v := float(KINDS[it["kind"]]["pts"]) / (d + 1.5)
 			if _in_ink(to, 0.3):
 				v *= 0.4
+			for st in _stripes:
+				var cl := Geometry3D.get_closest_point_to_segment(Vector3(to.x, 0, to.z), st["a"], st["b"])
+				if Vector3(to.x, 0, to.z).distance_to(cl) < 1.3:
+					v *= lerpf(0.6, 0.05, sk / 2.0)
 			# 다른 말이 더 가까우면 덜 끌림
 			for o in walkers.values():
 				if o != w and (o["pos"] as Vector3).distance_to(to) < d * 0.6:

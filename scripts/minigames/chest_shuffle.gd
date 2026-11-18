@@ -2,11 +2,12 @@ extends "res://scripts/minigames/minigame_3d.gd"
 ## 보물상자 셔플 (마우스): 황금 진주가 상자 하나에 들어가면, 크라켄 촉수가 상자들을 휙휙 섞어요.
 ## 섞기가 끝나면 진주가 든 상자를 클릭! 맞히면 1점. 3판 (판마다 더 빠르고 많이). 동점이면 함께 순위.
 
-const ROUNDS := 3
-const PICK_TIME := 5.0
-const CHESTS_BY_ROUND := [3, 4, 4]
-const SWAPS_BY_ROUND := [6, 8, 11]
-const SWAP_TIME_BY_ROUND := [0.55, 0.42, 0.32]
+const ROUNDS := 5
+## 판마다: 상자 수 · 섞는 횟수 · 한 번 섞는 시간 · 고를 시간 (마지막 판은 진짜 어렵게)
+const CHESTS_BY_ROUND := [3, 3, 4, 4, 5]
+const SWAPS_BY_ROUND := [5, 7, 9, 12, 16]
+const SWAP_TIME_BY_ROUND := [0.6, 0.48, 0.38, 0.29, 0.21]
+const PICK_TIME_BY_ROUND := [5.0, 4.5, 4.0, 3.5, 3.0]
 
 var _chests: Array = []      ## {node, lid, slot(위치 번호)}
 var _slots: Array = []       ## 위치 번호 → Vector3
@@ -24,7 +25,7 @@ var _hover := -1
 
 func _init() -> void:
 	title = "CHEST SHUFFLE"
-	how_to = "Watch the golden pearl! The kraken's tentacles shuffle the chests - then click the chest with the pearl. 3 rounds, each one faster!"
+	how_to = "Watch the golden pearl! The kraken's tentacles shuffle the chests - then click the chest with the pearl. 5 rounds, each one faster!"
 	goal = "Most correct picks wins!"
 	controls = "MOUSE"
 	duration = 999.0
@@ -164,15 +165,24 @@ func _play_round() -> void:
 	await get_tree().create_timer(0.4, false).timeout
 	# 2) 섞기: 두 상자가 위아래로 호를 그리며 자리 바꿈
 	_phase = "shuffle"
-	var swaps: int = SWAPS_BY_ROUND[_round]
-	var st: float = SWAP_TIME_BY_ROUND[_round]
+	# 보드 후반이면 처음부터 조금 더 빠르고 많이
+	var swaps: int = int(SWAPS_BY_ROUND[_round] * (1.0 + heat * 0.3))
+	var st: float = SWAP_TIME_BY_ROUND[_round] * (1.0 - heat * 0.15)
 	for k in swaps:
 		var a := rng.randi() % n
 		var b := (a + 1 + rng.randi() % (n - 1)) % n
+		# 4판째부터: 두 쌍이 동시에 자리 바꿈 (눈을 두 군데 써야 함)
+		if _round >= 3 and n >= 4 and rng.randf() < 0.55:
+			var rest := []
+			for i in n:
+				if i != a and i != b:
+					rest.append(i)
+			rest.shuffle()
+			_swap(rest[0], rest[1], st)
 		await _swap(a, b, st)
 	# 3) 고르기
 	_phase = "pick"
-	_pick_left = PICK_TIME
+	_pick_left = PICK_TIME_BY_ROUND[_round]
 	sfx("toast")
 	while _pick_left > 0.0 and _picks.size() < players.size():
 		await get_tree().process_frame
@@ -303,7 +313,7 @@ func _cpu_picks(_delta: float) -> void:
 		var s := int(p["slot"])
 		if is_human(p) or _picks.has(s):
 			continue
-		if PICK_TIME - _pick_left > 0.6 + float(s) * 0.35:
+		if float(PICK_TIME_BY_ROUND[_round]) - _pick_left > 0.6 + float(s) * 0.3:
 			_choose(s, int(_track[s]))
 
 

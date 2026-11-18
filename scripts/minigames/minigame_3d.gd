@@ -616,6 +616,46 @@ func kraken_head(pos: Vector3, scl: float, yaw: float = 0.0, tilt: float = -0.35
 	return root
 
 
+## 촉수 내려치기 한 번: root(바닥 높이의 뿌리 자리)에서 솟아 → 뒤로 젖혔다가 → dir 쪽으로 쾅 눕고 → 들어감.
+## 눕는 부분은 뿌리에서 0.23L ~ 0.68L, 바닥 위 0.55 m (셰이더 자세로 계산한 값). warn 초 뒤에 쾅.
+## water_y 가 있으면 뿌리에 물보라, 없으면(물속 모래) 모래 먼지
+func slam_tentacle(root: Vector3, dir: Vector3, length: float, warn: float, floor_y: float, water_y: float = NAN) -> void:
+	root.y = floor_y + 0.55 - 0.25 * length
+	var tn := tentacle(length, 0.78, dir)
+	var node: Node3D = tn["root"]
+	var m: ShaderMaterial = tn["mat"]
+	m.set_shader_parameter("tip", 0.22)
+	m.set_shader_parameter("hook_at", 0.2)
+	m.set_shader_parameter("pattern_scale", 1.6 / 0.78)
+	var straight := [0.0, 0.0, 0.0, 0.0, 0.15]
+	var raised := [-0.25, 0.9, 0.0, -0.5, 0.25]
+	var wound := [-0.6, 1.5, 0.0, -0.9, 0.1]
+	var slammed := [0.5, 0.0, 1.2, 1.0, 0.0]
+	pose_tentacle(m, straight, straight, 0.0)
+	node.position = root + Vector3(0, -length, 0)
+	var rise_t := minf(0.55, warn * 0.45)
+	var wind_t := maxf(0.08, minf(0.4, warn - rise_t - 0.2))
+	var t := create_tween()
+	t.tween_property(node, "position:y", root.y, rise_t).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	t.parallel().tween_method(func(f: float) -> void:
+		pose_tentacle(m, straight, raised, smoothstep(0.35, 1.0, f))
+		m.set_shader_parameter("glow", f * 0.6), 0.0, 1.0, rise_t)
+	t.tween_method(func(f: float) -> void: pose_tentacle(m, raised, wound, f), 0.0, 1.0, wind_t).set_trans(Tween.TRANS_SINE)
+	t.tween_interval(maxf(0.0, warn - rise_t - wind_t - 0.2))
+	t.tween_method(func(f: float) -> void: pose_tentacle(m, wound, slammed, f * f), 0.0, 1.0, 0.2)
+	t.tween_interval(0.55)
+	t.tween_method(func(f: float) -> void:
+		pose_tentacle(m, slammed, raised, f)
+		m.set_shader_parameter("glow", 0.6 * (1.0 - f)), 0.0, 1.0, 0.35)
+	t.tween_property(node, "position:y", root.y - length, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.tween_callback(node.queue_free)
+	if is_nan(water_y):
+		debris(Vector3(root.x, floor_y + 0.1, root.z), Color(0.8, 0.72, 0.55), 16)
+	else:
+		splash(Vector3(root.x, water_y, root.z), 30, 1.2)
+	sfx("kraken_rise", 120)
+
+
 ## 점수 등 떠오르는 글씨를 3D 위치 위에
 func float_at(p3: Vector3, text: String, col: Color, size_: int = 40) -> void:
 	float_text(to_arena(p3), text, col, size_)

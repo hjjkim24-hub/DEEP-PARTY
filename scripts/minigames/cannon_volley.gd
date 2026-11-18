@@ -189,8 +189,7 @@ func _tick(delta: float) -> void:
 	_spawn -= delta
 	if _spawn <= 0.0:
 		_spawn_target()
-		var f := _elapsed / duration
-		_spawn = lerpf(0.8, 0.42, f) * rng.randf_range(0.8, 1.2)
+		_spawn = lerpf(0.85, 0.28, pressure()) * rng.randf_range(0.8, 1.2)
 	for s in _cannons:
 		_cannons[s]["reload"] = maxf(0.0, float(_cannons[s]["reload"]) - delta)
 	_update_targets(delta)
@@ -201,8 +200,9 @@ func _tick(delta: float) -> void:
 
 # ── 촉수 ─────────────────────────────────────────────────────
 func _spawn_target() -> void:
+	var p := pressure()
 	var alive := _targets.filter(func(t: Dictionary) -> bool: return t["alive"])
-	if alive.size() >= 7:
+	if alive.size() >= int(lerpf(5.0, 10.0, p)):
 		return
 	var pos := Vector3.ZERO
 	for tries in 10:
@@ -213,7 +213,7 @@ func _spawn_target() -> void:
 				ok = false
 		if ok:
 			break
-	var gold := rng.randf() < 0.14
+	var gold := rng.randf() < lerpf(0.16, 0.08, p)
 	var length := rng.randf_range(6.0, 8.5)
 	var dir := Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized()
 	var tn := tentacle(length, 0.85, dir)
@@ -227,7 +227,9 @@ func _spawn_target() -> void:
 		m.set_shader_parameter("vein_col", Color(1.0, 0.95, 0.6))
 	node.position = pos + Vector3(0, -length, 0)
 	var t := {"id": _next_id, "pos": pos, "gold": gold, "alive": true, "tn": tn, "node": node, "len": length,
-		"up_until": _elapsed + lerpf(2.8, 1.9, _elapsed / duration), "phase": rng.randf() * TAU, "rise": 0.0}
+		"up_until": _elapsed + lerpf(2.9, 0.95, p) * rng.randf_range(0.85, 1.15), "phase": rng.randf() * TAU, "rise": 0.0,
+		# 후반엔 옆으로 헤엄치며 움직임 (포탄이 날아가는 동안 비켜 감 → 앞을 내다보고 쏴야 함)
+		"vel": Vector3(rng.randf_range(-1.0, 1.0), 0, rng.randf_range(-0.3, 0.3)).normalized() * (0.0 if p < 0.35 else lerpf(0.0, 4.2, (p - 0.35) / 0.65))}
 	_next_id += 1
 	_targets.append(t)
 	splash(pos + Vector3(0, 0.3, 0), 30, 1.1)
@@ -252,6 +254,14 @@ func _update_targets(delta: float) -> void:
 				node.queue_free()
 				_targets.erase(t)
 				continue
+		if t["alive"]:
+			var nv: Vector3 = t["vel"]
+			var np: Vector3 = (t["pos"] as Vector3) + nv * delta
+			if absf(np.x) > 16.0:
+				t["vel"] = Vector3(-nv.x, 0, nv.z)
+			t["pos"] = np
+			node.position.x = np.x
+			node.position.z = np.z
 		var r: float = t["rise"]
 		var e := 1.0 - pow(1.0 - clampf(r, 0.0, 1.0), 3.0)
 		node.position.y = SEA_Y - length * (1.0 - e) - 0.4
@@ -370,7 +380,9 @@ func _land(b: Dictionary) -> void:
 	var at: Vector3 = b["to"]
 	var s: int = b["slot"]
 	for t in _targets:
-		if int(t["id"]) == int(b["target"]) and t["alive"]:
+		# 포탄이 떨어진 자리에 아직 그 촉수가 있어야 명중 (움직이는 촉수는 비켜 갈 수 있음)
+		var near := Vector2(at.x - (t["pos"] as Vector3).x, at.z - (t["pos"] as Vector3).z).length() < 1.5
+		if t["alive"] and near and (int(t["id"]) == int(b["target"]) or int(b["target"]) == -1):
 			t["alive"] = false
 			var pts := 3 if t["gold"] else 1
 			scores[s] = int(scores[s]) + pts
@@ -542,7 +554,9 @@ func _think(delta: float) -> void:
 		if rng.randf() < lerpf(0.35, 0.1, sk / 2.0):
 			_fire_at(s, _aim_point(pick) + Vector3(rng.randf_range(-2.5, 2.5), 0, rng.randf_range(-2.0, 2.0)), -1)
 		else:
-			_fire(s, pick)
+			# 움직이는 촉수는 실력만큼 앞을 내다보고 쏨
+			var lead: float = (_aim_point(pick).distance_to(c["pos"]) / BALL_SPEED) * lerpf(0.3, 0.95, sk / 2.0)
+			_fire_at(s, _aim_point(pick) + (pick["vel"] as Vector3) * lead, int(pick["id"]))
 
 
 func _score_text(p: Dictionary) -> String:

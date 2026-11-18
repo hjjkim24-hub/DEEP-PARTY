@@ -1499,6 +1499,8 @@ func _play_minigame(id: String) -> Array:
 	# 게임
 	var mg := Minigames.create(id, _rng)
 	mg.setup(_pawns, auto, hint_cb)
+	if has_method("_round_limit"):
+		mg.heat = clampf(float(_round - 1) / maxf(float(call("_round_limit")) - 1.0, 1.0), 0.0, 1.0)
 	if GameState.debug_autoplay and mg.duration < 100.0:
 		mg.duration *= 0.4   # 자동 점검은 짧게
 	layer.add_child(mg)
