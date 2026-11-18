@@ -45,10 +45,9 @@ func _ready() -> void:
 	m.clearcoat_enabled = true
 	m.clearcoat = 0.45
 	m.clearcoat_roughness = 0.25
-	m.subsurf_scatter_enabled = true
-	m.subsurf_scatter_strength = 0.25
+	# (속살 비침 SSS 는 화면 전체 후처리라 주사위가 뜰 때마다 렉 → 끔. 대신 가장자리 빛으로 상아 느낌)
 	m.rim_enabled = true
-	m.rim = 0.2
+	m.rim = 0.3
 	m.rim_tint = 0.6
 	m.emission_enabled = true
 	m.emission = Color(0.14, 0.11, 0.07)   # 물빛에 묻혀도 상아색이 살아 있게

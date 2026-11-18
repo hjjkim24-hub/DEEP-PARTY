@@ -20,6 +20,7 @@ extends Node3D
 ##   junction 갈림길, start 시작 광장
 ## 칸 배치는 아래 ROUTES 의 "tiles" 에서 길마다 순서대로 정해요.
 
+const StaticBatcher := preload("res://scripts/world3d/static_batcher.gd")
 const FloorShader := preload("res://shaders/sea_floor.gdshader")
 const SandAlbedo := preload("res://textures/seabed/sand_albedo.png")
 const SandNormal := preload("res://textures/seabed/sand_normal.png")
@@ -176,6 +177,17 @@ func _ready() -> void:
 	_sea_life()
 	if map_id == "sunken_island":
 		_build_ship()
+	# 움직이지 않는 장식은 합쳐서 그리기 호출 줄이기 (렉 원인 1순위)
+	_light_budget(self)
+	if OS.get_environment("NO_BATCH") != "":
+		return
+	var t0 := Time.get_ticks_msec()
+	var r := StaticBatcher.batch(self, [self, ship] if ship else [self])
+	print("BATCH island ", r, " ", Time.get_ticks_msec() - t0, "ms")
+	if ship:
+		t0 = Time.get_ticks_msec()
+		r = StaticBatcher.batch(ship, [self, ship])
+		print("BATCH ship ", r, " ", Time.get_ticks_msec() - t0, "ms")
 
 
 # ── 칸 배치 ──────────────────────────────────────────────────
@@ -572,6 +584,17 @@ func _prism(w: float, h: float, ln: float) -> ArrayMesh:
 	return st.commit()
 
 
+## 작은 등불들이 물속 안개(볼류메트릭)까지 비추면 매 프레임 계산이 크게 늘어서, 해 · 달 말고는 안개를 안 비추게
+static func _light_budget(root: Node) -> void:
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var nd: Node = stack.pop_back()
+		for c in nd.get_children():
+			stack.append(c)
+		if nd is OmniLight3D or nd is SpotLight3D:
+			(nd as Light3D).light_volumetric_fog_energy = 0.0
+
+
 func _mi(mesh: Mesh, mat: Material, pos: Vector3, basis_: Basis = Basis(), parent: Node = null) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
@@ -642,7 +665,7 @@ func _environment() -> void:
 	sun.rotation_degrees = Vector3(-58, -32, 0)
 	sun.light_energy = 1.0
 	sun.light_color = Color(1.0, 0.96, 0.86)
-	sun.light_angular_distance = 1.5
+	sun.light_angular_distance = 0.0   # (PCSS 부드러운 그림자는 무거움 → shadow_blur 로)
 	sun.shadow_enabled = true
 	sun.light_volumetric_fog_energy = 0.8
 	sun.shadow_blur = 1.4

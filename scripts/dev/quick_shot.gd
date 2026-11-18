@@ -185,6 +185,46 @@ func _run() -> void:
 	GameState.players[1] = {"kind": "cpu", "level": 1, "color": 2}
 	GameState.players[2] = {"kind": "cpu", "level": 1, "color": 5}
 	get_tree().change_scene_to_file("res://scenes/board.tscn")
+	# perf: 프레임마다 걸린 시간을 재서 튀는 프레임과 그때 무슨 일이 있었는지 출력
+	if "perf" in _want:
+		Engine.physics_ticks_per_second = 60
+		Engine.max_physics_steps_per_frame = 8
+		var gp: Node = null
+		while gp == null or not ("world" in gp) or gp.world == null:
+			await get_tree().process_frame
+			gp = get_tree().current_scene
+		var last := Time.get_ticks_usec()
+		var t0 := last
+		var dts: Array = []
+		var spikes: Array = []
+		var dc_sum := 0.0
+		var obj_sum := 0.0
+		var proc_sum := 0.0
+		var proc_max := 0.0
+		var n := 0
+		while Time.get_ticks_usec() - t0 < 150 * 1000000:
+			await get_tree().process_frame
+			var now := Time.get_ticks_usec()
+			var dt := (now - last) / 1000.0
+			last = now
+			dts.append(dt)
+			var dc := Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+			dc_sum += dc
+			obj_sum += Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)
+			proc_sum += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+			proc_max = maxf(proc_max, Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0)
+			n += 1
+			var dice_vis: bool = gp._dice.visible if "_dice" in gp and gp._dice else false
+			spikes.append([dt, (now - t0) / 1000000.0, String(gp.shot_hint), dice_vis, dc, gp._awaiting_roll if "_awaiting_roll" in gp else false])
+		var sorted := dts.duplicate()
+		sorted.sort()
+		var med: float = sorted[sorted.size() / 2]
+		print("PERF frames=", n, " median_ms=", med, " p95=", sorted[int(sorted.size() * 0.95)], " max=", sorted[-1], " avg_drawcalls=", dc_sum / n, " avg_objects=", obj_sum / n, " process_ms avg=", proc_sum / n, " max=", proc_max)
+		spikes.sort_custom(func(a1: Array, b1: Array) -> bool: return a1[0] > b1[0])
+		for k in mini(40, spikes.size()):
+			print("PERF spike ms=%.0f t=%.1f hint=%s dice=%s dc=%d" % [spikes[k][0], spikes[k][1], spikes[k][2], spikes[k][3], spikes[k][4]])
+		get_tree().quit(0)
+		return
 	# wake: 크라켄이 깨어나는 장면을 일정 간격으로 촬영
 	if "wake" in _want:
 		var g0: Node = null
@@ -563,6 +603,49 @@ func _run() -> void:
 		for sp in gc.world.spaces:
 			kinds[String(sp["kind"])] = int(kinds.get(String(sp["kind"]), 0)) + 1
 		print("SPACES total=", gc.world.spaces.size(), " ", kinds)
+		await get_tree().create_timer(3.0).timeout
+		# 그려지는 물체 세기: 부모 이름별 · 그림자 여부 · 보이는 것만
+		var by := {}
+		var tot := [0, 0, 0, 0]
+		var stack: Array = [get_tree().current_scene]
+		while not stack.is_empty():
+			var nd: Node = stack.pop_back()
+			for c in nd.get_children():
+				stack.append(c)
+			if nd is GeometryInstance3D and (nd as Node3D).is_visible_in_tree():
+				var gi := nd as GeometryInstance3D
+				var key := String(gi.get_parent().name) + "/" + gi.get_class()
+				var inst := 1
+				if gi is MultiMeshInstance3D and (gi as MultiMeshInstance3D).multimesh:
+					inst = (gi as MultiMeshInstance3D).multimesh.instance_count
+				var surf := 1
+				if gi is MeshInstance3D and (gi as MeshInstance3D).mesh:
+					surf = (gi as MeshInstance3D).mesh.get_surface_count()
+				var e: Array = by.get(key, [0, 0, 0])
+				e[0] += 1
+				e[1] += surf
+				e[2] += 1 if gi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF else 0
+				by[key] = e
+				tot[0] += 1
+				tot[1] += surf
+				tot[2] += e[2] - (e[2] - (1 if gi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF else 0))
+				tot[3] += 1 if gi.visibility_range_end > 0.0 else 0
+		print("GEOM nodes=", tot[0], " surfaces=", tot[1], " shadowcasters=", tot[2], " with_range=", tot[3])
+		var keys := by.keys()
+		keys.sort_custom(func(a1: String, b1: String) -> bool: return by[a1][1] > by[b1][1])
+		for k in mini(45, keys.size()):
+			print("GEOM ", keys[k], " n=", by[keys[k]][0], " surf=", by[keys[k]][1], " shadow=", by[keys[k]][2])
+		var lights := 0
+		var shl := 0
+		stack = [get_tree().current_scene]
+		while not stack.is_empty():
+			var nd: Node = stack.pop_back()
+			for c in nd.get_children():
+				stack.append(c)
+			if nd is Light3D and (nd as Node3D).is_visible_in_tree():
+				lights += 1
+				shl += 1 if (nd as Light3D).shadow_enabled else 0
+		print("LIGHTS ", lights, " shadowed=", shl)
 		get_tree().quit(0)
 		return
 	# 크라켄이 다 솟아오를 때까지

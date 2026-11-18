@@ -16,7 +16,12 @@ varying vec3 lp;
 varying vec3 ln;
 varying vec3 wpos;
 varying vec3 wn;
-varying float oid;      // 물체마다 다른 값 (널마다 색이 조금씩 다르게)
+varying float oid;
+// 합쳐 그리기(StaticBatcher)용: 물체마다의 로컬 좌표 · 로컬 법선 · 회전을 꼭짓점 CUSTOM 에 담아 옴
+uniform bool batched = false;
+varying vec3 bx;
+varying vec3 by;
+varying vec3 bz;      // 물체마다 다른 값 (널마다 색이 조금씩 다르게)
 
 float hash1(float n) { return fract(sin(n * 91.3458) * 47453.5453); }
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -44,11 +49,23 @@ float caustic(vec2 p, float t) {
 }
 
 void vertex() {
-	lp = VERTEX;
-	ln = NORMAL;
+	if (batched) {
+		lp = CUSTOM0.xyz;
+		oid = CUSTOM0.w;
+		bx = CUSTOM1.xyz;
+		by = CUSTOM2.xyz;
+		bz = CUSTOM3.xyz;
+		ln = vec3(CUSTOM1.w, CUSTOM2.w, CUSTOM3.w);
+	} else {
+		lp = VERTEX;
+		ln = NORMAL;
+		bx = MODEL_MATRIX[0].xyz;
+		by = MODEL_MATRIX[1].xyz;
+		bz = MODEL_MATRIX[2].xyz;
+		oid = fract(sin(dot(MODEL_MATRIX[3].xyz, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+	}
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	wn = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
-	oid = fract(sin(dot(MODEL_MATRIX[3].xyz, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
 }
 
 void fragment() {
@@ -244,7 +261,7 @@ void fragment() {
 	AO = 1.0 - groove * 0.5;
 	AO_LIGHT_AFFECT = 0.5;
 	vec3 n_local = normalize(nl + (bump - nl * dot(bump, nl)) * 0.7);
-	NORMAL = normalize((VIEW_MATRIX * (MODEL_MATRIX * vec4(n_local, 0.0))).xyz);
+	NORMAL = normalize((VIEW_MATRIX * vec4(mat3(bx, by, bz) * n_local, 0.0)).xyz);
 	if (kind == 7) {
 		RIM = 0.5;
 		RIM_TINT = 0.8;
