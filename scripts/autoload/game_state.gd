@@ -64,6 +64,31 @@ var debug_auto_minigames := false   ## 미니게임에서 내 몫도 자동으�
 var players: Array[Dictionary] = [{}, {}, {}, {}]
 
 
+## 이 PC가 조작하는 자리 (오프라인·방장 = 0, 온라인 손님 = 방장이 정해 준 자리)
+var my_slot := 0
+## 온라인으로 들어오기 전 내 말 꾸미기 (손님일 때 방장에게 보내고, 나가면 되돌림)
+var my_profile := {}
+
+
+## 내 말 꾸미기 (색 + 아이템)만 꺼냄
+func profile(slot: int) -> Dictionary:
+	var p: Dictionary = players[slot]
+	var out := {"color": int(p.get("color", 0))}
+	for c in COSMETIC_CATEGORIES:
+		if p.has(c):
+			out[c] = String(p[c])
+	return out
+
+
+## 네트워크로 받은 자리 정보 정리 (JSON 숫자는 실수라서 정수로)
+static func clean_slot(d: Dictionary) -> Dictionary:
+	var out := d.duplicate()
+	for k in ["color", "level", "peer"]:
+		if out.has(k):
+			out[k] = int(out[k])
+	return out
+
+
 func reset_lobby() -> void:
 	# 내 색과 꾸미기는 방을 새로 만들어도 그대로
 	var me := {"kind": "host", "color": 0}
@@ -71,6 +96,7 @@ func reset_lobby() -> void:
 		me = players[0].duplicate()
 		me["kind"] = "host"
 	players = [me, {}, {}, {}]
+	my_slot = 0
 
 
 func equip(slot: int, category: String, item_id: String) -> void:

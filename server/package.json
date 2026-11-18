@@ -1,0 +1,10 @@
+{
+  "name": "deep-party-relay",
+  "version": "1.0.0",
+  "description": "DEEP PARTY room-code relay server (no dependencies)",
+  "main": "relay.js",
+  "scripts": { "start": "node relay.js" },
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED",
+  "private": true
+}

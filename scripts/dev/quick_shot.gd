@@ -167,6 +167,60 @@ func _wait_idle(m: Node, page: String, extra: float = 2.0) -> void:
 
 func _run() -> void:
 	await get_tree().create_timer(1.0, true, false, true).timeout
+	# nethost / netjoin: 방 코드 온라인 점검 (로컬 중계 서버 + 창 두 개). 코드는 /tmp/dp_room.txt 로 넘김
+	if "nethost" in _want or "netjoin" in _want:
+		var host := "nethost" in _want
+		Settings.language = "ko"
+		Settings.apply_language()
+		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+		while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
+			await get_tree().process_frame
+		var m: Node = get_tree().current_scene
+		await _wait_idle(m, "main", 5.0)
+		if host:
+			if FileAccess.file_exists("/tmp/dp_room.txt"):
+				DirAccess.remove_absolute("/tmp/dp_room.txt")
+			m._on_menu_pressed("collection", m._main_buttons[2])
+			await _wait_idle(m, "lobby")
+			m._lobby_add_cpu(3)
+			m._lobby_invite()
+			while Net.code == "":
+				await get_tree().process_frame
+			var f := FileAccess.open("/tmp/dp_room.txt", FileAccess.WRITE)
+			f.store_string(Net.code)
+			f.close()
+			await get_tree().create_timer(1.0).timeout
+			await _shot("net_host_01_room")
+			while Net.peers.size() == 0:
+				await get_tree().process_frame
+			await get_tree().create_timer(4.0).timeout
+			await _shot("net_host_02_friend")
+			await get_tree().create_timer(6.0).timeout
+			await _shot("net_host_03_friend_custom")
+		else:
+			while not FileAccess.file_exists("/tmp/dp_room.txt"):
+				await get_tree().create_timer(0.3).timeout
+			await get_tree().create_timer(0.5).timeout
+			var code := FileAccess.get_file_as_string("/tmp/dp_room.txt").strip_edges()
+			m._open_join_page()
+			await _wait_idle(m, "join")
+			m._join_edit.text = code
+			await _shot("net_join_01_code")
+			m._on_join_pressed()
+			while m._current != "lobby":
+				await get_tree().process_frame
+			await get_tree().create_timer(2.0).timeout
+			await _shot("net_join_02_lobby")
+			m._lobby_customize()
+			await _wait_idle(m, "customize")
+			m._on_swatch_pressed(9)
+			m._on_item_pressed("hat", "crown")
+			await get_tree().create_timer(1.0).timeout
+			m._go_back()
+			await get_tree().create_timer(4.0).timeout
+			await _shot("net_join_03_custom")
+		get_tree().quit(0)
+		return
 	# mghall: 메인 MINIGAMES → 로비 → 미니게임 모음 (3×3) → 소개 → 게임 → 결과 → 로비로 돌아오기
 	if "mghall" in _want:
 		Settings.language = "ko"

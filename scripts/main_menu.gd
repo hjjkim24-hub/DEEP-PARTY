@@ -92,6 +92,7 @@ const MENU_ITEMS := [
 	{"id": "play", "text": "PLAY"},
 	{"id": "tutorial", "text": "TUTORIAL"},
 	{"id": "collection", "text": "MINIGAMES"},
+	{"id": "join", "text": "JOIN GAME"},
 	{"id": "settings", "text": "SETTINGS"},
 	{"id": "quit", "text": "QUIT"},
 ]
@@ -132,6 +133,11 @@ var _lobby_mode_label: Label
 var _lobby_slots: HBoxContainer
 var _lobby_start: Button
 var _lobby_hint: Label
+var _lobby_invite_btn: Button
+var _joined_as_guest := false
+var _join_edit: LineEdit
+var _join_status: Label
+var _join_btn: Button
 var _cz_pawn
 var _cz_color_name: Label
 var _cz_swatches: Array[Button] = []
@@ -178,6 +184,7 @@ func _ready() -> void:
 	_pages["lobby"] = _build_lobby_page(ui)
 	_pages["customize"] = _build_customize_page(ui)
 	_pages["board"] = _build_board_page(ui)
+	_pages["join"] = _build_join_page(ui)
 	_build_footer(ui)
 	_build_toast(ui)
 
@@ -191,6 +198,8 @@ func _ready() -> void:
 	_pages["lobby"].hide()
 	_pages["customize"].hide()
 	_pages["board"].hide()
+	_pages["join"].hide()
+	_connect_net()
 	_play_intro()
 
 
@@ -386,6 +395,7 @@ func _build_lobby_page(parent: Control) -> Control:
 	back.set_meta("sfx", "back")
 	bottom.add_child(back)
 	var invite := _make_glass_button("INVITE FRIEND", Vector2(250, 66), 20)
+	_lobby_invite_btn = invite
 	invite.pressed.connect(_lobby_invite)
 	invite.set_meta("tut", "invite")
 	bottom.add_child(invite)
@@ -497,8 +507,15 @@ func _refresh_lobby() -> void:
 			team_gap.custom_minimum_size = Vector2(24, 0)
 			_lobby_slots.add_child(team_gap)
 		_lobby_slots.add_child(_make_slot(i, p, cpu_no, team))
-	_lobby_start.disabled = not GameState.can_start()
-	if GameState.can_start():
+	_lobby_start.disabled = not GameState.can_start() or Net.is_guest()
+	_lobby_invite_btn.visible = not Net.is_guest()
+	_lobby_invite_btn.disabled = false
+	_lobby_invite_btn.text = (tr("ROOM CODE  %s") % Net.code) if Net.is_host() and Net.code != "" else tr("INVITE FRIEND")
+	if Net.is_host():
+		_net_send_lobby()
+	if Net.is_guest():
+		_lobby_hint.text = "Waiting for the host to start…"
+	elif GameState.can_start():
 		_lobby_hint.text = "Ready to start!"
 	elif team:
 		_lobby_hint.text = "2 VS 2 needs all four seats filled."
@@ -571,14 +588,33 @@ func _make_slot(i: int, p: Dictionary, cpu_no: int, team: bool) -> PanelContaine
 	v.add_child(push)
 
 	# 아래: 버튼
-	match kind:
-		"host":
-			name_l.text = "You"
-			sub_l.text = "Host"
-			var cz := _make_slot_button("CUSTOMIZE")
-			cz.set_meta("tut", "customize")
-			cz.pressed.connect(_lobby_customize)
-			v.add_child(cz)
+	var mine := i == GameState.my_slot
+	var guest := Net.is_guest()
+	# 손님 화면에서는 CPU · 빈자리를 바꿀 수 없음 (보기만)
+	var view_kind := kind
+	if guest and kind == "cpu":
+		view_kind = "cpu_view"
+	elif guest and kind == "":
+		view_kind = "empty_view"
+	match view_kind:
+		"host", "friend":
+			if mine:
+				name_l.text = "You"
+			elif kind == "host":
+				name_l.text = "Host"
+			else:
+				name_l.text = tr("Player %d") % (i + 1)
+				name_l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+			sub_l.text = "Host" if kind == "host" else "Online"
+			if mine:
+				var cz := _make_slot_button("CUSTOMIZE")
+				cz.set_meta("tut", "customize")
+				cz.pressed.connect(_lobby_customize)
+				v.add_child(cz)
+		"cpu_view":
+			name_l.text = tr("CPU %d") % cpu_no
+			name_l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+			sub_l.text = tr(["Easy", "Normal", "Hard"][clampi(int(p.get("level", 1)), 0, 2)])
 		"cpu":
 			name_l.text = tr("CPU %d") % cpu_no
 			name_l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
@@ -595,10 +631,10 @@ func _make_slot(i: int, p: Dictionary, cpu_no: int, team: bool) -> PanelContaine
 			rm.set_meta("tut", "remove_%d" % i)
 			rm.set_meta("sfx", "remove")
 			v.add_child(rm)
-		"friend":
-			name_l.text = str(p.get("name", "Friend"))
-			name_l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-			sub_l.text = "Steam"
+		"empty_view":
+			name_l.text = "Empty slot"
+			name_l.add_theme_color_override("font_color", Color(PEARL, 0.45))
+			sub_l.text = "Waiting for players"
 		_:
 			name_l.text = "Empty slot"
 			name_l.add_theme_color_override("font_color", Color(PEARL, 0.45))
@@ -646,8 +682,17 @@ func _lobby_set_level(i: int, lvl: int) -> void:
 	GameState.players[i]["level"] = lvl
 
 
+## 친구 초대 = 방 코드 만들기. 이미 방이 있으면 코드를 복사
 func _lobby_invite() -> void:
-	_toast(tr("Friend invites will work once Steam is connected."))
+	if Net.is_host() and Net.code != "":
+		DisplayServer.clipboard_set(Net.code)
+		_toast(tr("Room code copied: %s") % Net.code)
+		return
+	if Net.is_online():
+		return
+	_lobby_invite_btn.text = tr("CREATING ROOM…")
+	_lobby_invite_btn.disabled = true
+	Net.host_room()
 
 
 func _on_lobby_start() -> void:
@@ -656,8 +701,16 @@ func _on_lobby_start() -> void:
 	if not GameState.can_start():
 		Audio.play("back")
 		return
+	if Net.is_guest():
+		return
+	if Net.is_online() and not _mg_lobby:
+		Audio.play("back")
+		_toast(tr("Online board games are coming soon. Try MINIGAMES online!"))
+		return
 	Audio.play("click")
 	if _mg_lobby:
+		if Net.is_host():
+			Net.broadcast({"k": "go_hall"})
 		_start_minigame_hall()
 		return
 	_open_board_select()
@@ -1288,9 +1341,10 @@ func _select_cz_tab(i: int) -> void:
 
 
 func _refresh_customize() -> void:
-	var mine := int(GameState.players[0].get("color", 0))
+	var me := GameState.my_slot
+	var mine := int(GameState.players[me].get("color", 0))
 	var my_col: Color = GameState.PALETTE[mine]
-	var my_look := GameState.look(0)
+	var my_look := GameState.look(me)
 	# 색
 	for ci in _cz_swatches.size():
 		var sw := _cz_swatches[ci]
@@ -1302,7 +1356,7 @@ func _refresh_customize() -> void:
 		sw.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	# 아이템
 	for cat in _cz_tiles:
-		var cur := GameState.equipped(0, cat)
+		var cur := GameState.equipped(me, cat)
 		_cz_remove[cat].disabled = cur == ""
 		for tile in _cz_tiles[cat]:
 			var item_id: String = tile.get_meta("item")
@@ -1323,23 +1377,26 @@ func _refresh_customize() -> void:
 
 
 func _on_swatch_pressed(ci: int) -> void:
-	GameState.players[0]["color"] = ci  # 다른 사람과 같은 색이어도 괜찮아요
+	GameState.players[GameState.my_slot]["color"] = ci  # 다른 사람과 같은 색이어도 괜찮아요
 	_refresh_customize()
+	_net_profile_changed()
 	_bg.burst_bubbles(_cz_swatches[ci].get_global_rect().get_center(), 8)
 
 
 func _on_item_pressed(cat: String, item_id: String) -> void:
 	Audio.play("equip")
-	GameState.equip(0, cat, item_id)
+	GameState.equip(GameState.my_slot, cat, item_id)
 	_refresh_customize()
+	_net_profile_changed()
 	_bg.burst_bubbles(get_global_mouse_position(), 8)
 
 
 func _on_item_remove(cat: String) -> void:
-	if String(GameState.equipped(0, cat)) != "":
+	if String(GameState.equipped(GameState.my_slot, cat)) != "":
 		Audio.play("unequip")
-	GameState.unequip(0, cat)
+	GameState.unequip(GameState.my_slot, cat)
 	_refresh_customize()
+	_net_profile_changed()
 
 
 func _build_settings_page(parent: Control) -> Control:
@@ -2044,7 +2101,13 @@ func _go_back() -> void:
 	if _current == "settings":
 		Settings.save_settings()
 	if _current == "lobby":
-		_show_page("main" if _mg_lobby else "mode")
+		if Net.is_online():
+			_net_leave_room()
+		_show_page("main" if (_mg_lobby or _joined_as_guest) else "mode")
+		_joined_as_guest = false
+	elif _current == "join":
+		Net.leave()
+		_show_page("main")
 	elif _current == "customize":
 		_refresh_lobby()
 		_show_page("lobby")
@@ -2085,6 +2148,8 @@ func _on_menu_pressed(id: String, b: Button) -> void:
 			_start_tutorial()
 		"collection":
 			_open_mg_lobby()
+		"join":
+			_open_join_page()
 		"settings":
 			_show_page("settings")
 		"quit":
@@ -2171,3 +2236,236 @@ func _toast(msg: String) -> void:
 	_toast_tween.tween_interval(2.4)
 	_toast_tween.tween_property(_toast_panel, "modulate:a", 0.0, 0.4)
 	_toast_tween.tween_callback(_toast_panel.hide)
+
+
+
+# =============================================================== 온라인 (방 코드)
+## 방장: 로비의 "친구 초대" → 방 코드. 친구: 메인화면 "방 참가" → 코드 입력 → 방장 로비의 빈자리로.
+## 로비 상태(자리 · 색 · 꾸미기 · CPU)는 방장이 정하고 모두에게 보냄. 손님은 자기 말 꾸미기만 바꿀 수 있음.
+
+func _connect_net() -> void:
+	Net.hosted.connect(_on_net_hosted)
+	Net.joined.connect(_on_net_joined)
+	Net.peer_joined.connect(_on_net_peer_joined)
+	Net.peer_left.connect(_on_net_peer_left)
+	Net.message.connect(_on_net_message)
+	Net.failed.connect(_on_net_failed)
+	Net.room_closed.connect(_on_net_lost.bind("The host closed the room."))
+	Net.disconnected.connect(_on_net_lost.bind("Lost connection to the server."))
+
+
+func _build_join_page(parent: Control) -> Control:
+	var col := _make_left_page(parent, "JoinPage", 22)
+	var header := _header("JOIN GAME", 54)
+	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	col.add_child(header)
+	col.add_child(_caption("Enter the room code your friend gave you."))
+	_join_edit = LineEdit.new()
+	_join_edit.custom_minimum_size = Vector2(440, 96)
+	_join_edit.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_join_edit.max_length = 5
+	_join_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_join_edit.placeholder_text = "ABCDE"
+	_join_edit.add_theme_font_override("font", _spaced_font)
+	_join_edit.add_theme_font_size_override("font_size", 52)
+	_join_edit.add_theme_color_override("font_color", PEARL)
+	_join_edit.add_theme_color_override("font_placeholder_color", Color(PEARL, 0.25))
+	_join_edit.add_theme_constant_override("minimum_character_width", 5)
+	_join_edit.add_theme_stylebox_override("normal", _glass_box(GLASS, GLASS_BORDER, 1))
+	_join_edit.add_theme_stylebox_override("focus", _glass_box(GLASS_HOVER, Color(AQUA, 0.8), 2))
+	_join_edit.text_changed.connect(func(t: String) -> void:
+		var up := t.to_upper()
+		if up != t:
+			var c := _join_edit.caret_column
+			_join_edit.text = up
+			_join_edit.caret_column = c)
+	_join_edit.text_submitted.connect(func(_t: String) -> void: _on_join_pressed())
+	col.add_child(_join_edit)
+	_join_status = Label.new()
+	_join_status.add_theme_font_size_override("font_size", 20)
+	_join_status.add_theme_color_override("font_color", TEXT_DIM)
+	_join_status.custom_minimum_size = Vector2(COLUMN_WIDTH, 30)
+	_join_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(_join_status)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	col.add_child(row)
+	var back := _make_glass_button("BACK", Vector2(190, 66), 22)
+	back.set_meta("sfx", "back")
+	back.pressed.connect(_go_back)
+	row.add_child(back)
+	_join_btn = _make_primary_button("JOIN", Vector2(240, 66))
+	_join_btn.pressed.connect(_on_join_pressed)
+	row.add_child(_join_btn)
+	return col.get_parent().get_parent() as Control
+
+
+func _open_join_page() -> void:
+	_join_edit.text = ""
+	_join_status.text = ""
+	_join_btn.disabled = false
+	_show_page("join")
+	_join_edit.grab_focus.call_deferred()
+
+
+func _on_join_pressed() -> void:
+	var code := _join_edit.text.strip_edges().to_upper()
+	if code.length() < 5:
+		Audio.play("back")
+		_join_status.text = tr("Room codes have 5 letters.")
+		return
+	Audio.play("click")
+	_join_status.text = tr("Connecting…")
+	_join_btn.disabled = true
+	GameState.my_profile = GameState.profile(0)
+	Net.join_room(code)
+
+
+func _on_net_hosted(code: String) -> void:
+	DisplayServer.clipboard_set(code)
+	_toast(tr("Room %s is open! The code is copied — send it to your friends.") % code)
+	_refresh_lobby()
+
+
+func _on_net_joined(_code: String, _id: int) -> void:
+	_join_status.text = tr("Joined! Waiting for the host…")
+	# 내 말 꾸미기를 방장에게 (자리는 방장이 정해서 로비 정보로 알려 줌)
+	Net.to_host({"k": "hello", "profile": GameState.my_profile})
+
+
+func _on_net_failed(reason: String) -> void:
+	var msg: String = {
+		"no_room": "No room with that code. Check the letters and try again.",
+		"full": "That room is full.",
+	}.get(reason, "Can't reach the server. Check your internet connection.")
+	if _current == "join":
+		_join_status.text = tr(msg)
+		_join_btn.disabled = false
+	else:
+		_toast(tr(msg))
+		if _lobby_invite_btn:
+			_refresh_lobby()
+
+
+## 방장: 친구가 들어오면 빈자리에
+func _on_net_peer_joined(id: int, _pname: String) -> void:
+	var slot := -1
+	for i in GameState.MAX_PLAYERS:
+		if GameState.players[i].is_empty():
+			slot = i
+			break
+	if slot < 0:
+		Net.send_to(id, {"k": "full"})
+		return
+	GameState.players[slot] = {"kind": "friend", "peer": id, "color": GameState.first_free_color()}
+	Audio.play("add")
+	_toast(tr("A friend joined as P%d!") % (slot + 1))
+	_refresh_lobby()
+
+
+func _on_net_peer_left(id: int) -> void:
+	if not Net.is_host():
+		return
+	for i in GameState.MAX_PLAYERS:
+		if int(GameState.players[i].get("peer", -1)) == id:
+			GameState.players[i] = {}
+			_toast(tr("P%d left the room.") % (i + 1))
+	_refresh_lobby()
+
+
+func _on_net_message(from: int, d: Dictionary) -> void:
+	var k := String(d.get("k", ""))
+	if Net.is_host():
+		match k:
+			"hello", "profile":
+				for i in GameState.MAX_PLAYERS:
+					var p: Dictionary = GameState.players[i]
+					if int(p.get("peer", -1)) == from:
+						var prof: Dictionary = GameState.clean_slot(d.get("profile", {}))
+						var np := {"kind": "friend", "peer": from, "color": int(prof.get("color", p.get("color", 0)))}
+						for c in GameState.COSMETIC_CATEGORIES:
+							if prof.has(c):
+								np[c] = String(prof[c])
+						GameState.players[i] = np
+				_refresh_lobby()
+				if _current == "customize":
+					_refresh_customize()
+		return
+	match k:
+		"lobby":
+			_apply_lobby(d)
+		"full":
+			Net.leave()
+			_on_net_failed("full")
+		"go_hall":
+			_start_minigame_hall()
+
+
+## 방장 → 모두: 지금 로비 상태
+func _net_send_lobby() -> void:
+	Net.broadcast({"k": "lobby", "mode": GameState.selected_mode, "mg": _mg_lobby, "players": GameState.players})
+
+
+## 손님: 방장이 보낸 로비 상태를 그대로
+func _apply_lobby(d: Dictionary) -> void:
+	var ps: Array = d.get("players", [])
+	for i in GameState.MAX_PLAYERS:
+		GameState.players[i] = GameState.clean_slot(ps[i]) if i < ps.size() and typeof(ps[i]) == TYPE_DICTIONARY else {}
+		if int(GameState.players[i].get("peer", -1)) == Net.my_id and GameState.players[i].get("kind", "") == "friend":
+			GameState.my_slot = i
+	GameState.set_mode(int(d.get("mode", 0)))
+	_mg_lobby = bool(d.get("mg", false))
+	_lobby_mode_label.text = "MINIGAMES" if _mg_lobby else GameState.get_mode_name()
+	if _current == "customize":
+		_refresh_customize()
+	else:
+		_refresh_lobby()
+	if _current == "join":
+		_joined_as_guest = true
+		_show_page("lobby")
+
+
+## 내 말을 바꿨을 때: 방장은 모두에게, 손님은 방장에게
+func _net_profile_changed() -> void:
+	if Net.is_host():
+		_net_send_lobby()
+	elif Net.is_guest():
+		Net.to_host({"k": "profile", "profile": GameState.profile(GameState.my_slot)})
+
+
+## 방에서 나감 (뒤로). 손님은 내 원래 말로 돌아가고, 방장은 친구 자리를 비움
+func _net_leave_room() -> void:
+	var was_guest := Net.is_guest()
+	Net.leave()
+	if was_guest:
+		_restore_offline()
+	else:
+		for i in GameState.MAX_PLAYERS:
+			if GameState.players[i].get("kind", "") == "friend":
+				GameState.players[i] = {}
+		_refresh_lobby()
+
+
+func _restore_offline() -> void:
+	var me := {"kind": "host", "color": 0}
+	if not GameState.my_profile.is_empty():
+		me.merge(GameState.my_profile, true)
+		me["kind"] = "host"
+	GameState.players = [me, {}, {}, {}]
+	GameState.my_slot = 0
+
+
+## 방이 닫히거나 연결이 끊김
+func _on_net_lost(msg: String) -> void:
+	_toast(tr(msg))
+	if _joined_as_guest or _current == "join" or GameState.my_slot != 0:
+		_joined_as_guest = false
+		_restore_offline()
+		if _current != "main":
+			_show_page("main")
+	else:
+		for i in GameState.MAX_PLAYERS:
+			if GameState.players[i].get("kind", "") == "friend":
+				GameState.players[i] = {}
+		if _lobby_invite_btn:
+			_refresh_lobby()

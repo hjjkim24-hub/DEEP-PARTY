@@ -20,6 +20,7 @@ GameState="*res://scripts/autoload/game_state.gd"
 Localization="*res://scripts/autoload/localization.gd"
 Settings="*res://scripts/autoload/settings.gd"
 Audio="*res://scripts/autoload/audio.gd"
+Net="*res://scripts/autoload/net.gd"
 
 [display]
 
