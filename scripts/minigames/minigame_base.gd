@@ -69,10 +69,7 @@ func _ready() -> void:
 	th.default_font_size = 24
 	th.set_color("font_color", "Label", PEARL)
 	theme = th
-	var bg := BackgroundScene.instantiate()
-	if "show_seabed" in bg:
-		bg.show_seabed = false
-	add_child(bg)
+	_make_stage()
 	arena = Control.new()
 	arena.size = ARENA
 	arena.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -85,6 +82,14 @@ func _ready() -> void:
 	_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_overlay)
+
+
+## 배경 (3D 미니게임은 덮어써서 3D 무대를 깔아요)
+func _make_stage() -> void:
+	var bg := BackgroundScene.instantiate()
+	if "show_seabed" in bg:
+		bg.show_seabed = false
+	add_child(bg)
 
 
 func _fit_arena() -> void:

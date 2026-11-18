@@ -242,9 +242,9 @@ func _build() -> void:
 	var ch := HBoxContainer.new()
 	ch.add_theme_constant_override("separation", 22)
 	cv.add_child(ch)
-	if _info.controls == "MOUSE":
+	if _info.controls == "MOUSE" or _info.controls == "MOUSE_MOVE":
 		ch.add_child(_mouse_icon())
-		var t := _ink("Click with the left mouse button", 26)
+		var t := _ink("Click with the left mouse button" if _info.controls == "MOUSE" else "Move the mouse - your pawn walks to it", 26)
 		t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		t.custom_minimum_size = Vector2(400, 0)

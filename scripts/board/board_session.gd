@@ -1479,6 +1479,8 @@ func _play_minigame(id: String) -> Array:
 	layer.add_child(black)
 	Audio.stop_music(0.5)
 	await _fade_black(black, 1.0, 0.5)
+	# 미니게임 동안 보드 세상은 그리지 않음 (미니게임은 자기 3D 무대가 따로 있어서 겹쳐 그리면 무거움)
+	world.visible = false
 	await get_tree().create_timer(0.7, false).timeout
 	# 소개 화면
 	var intro := MinigameIntro.new()
@@ -1509,6 +1511,7 @@ func _play_minigame(id: String) -> Array:
 	Audio.stop_music(0.4)
 	await _fade_black(black, 1.0, 0.4)
 	mg.queue_free()
+	world.visible = true
 	await get_tree().create_timer(0.4, false).timeout
 	Audio.play_music(0.0, "ship" if world.on_ship else "board")
 	await _fade_black(black, 0.0, 0.4)

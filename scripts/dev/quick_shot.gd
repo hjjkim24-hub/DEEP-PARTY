@@ -22,6 +22,41 @@ func _ready() -> void:
 	_run()
 
 
+func _mg_shot(id: String, intro_only: bool) -> void:
+	var Reg := load("res://scripts/minigames/registry.gd")
+	var cols := [Color("ff7a6b"), Color("6bd4ff"), Color("ffd36b"), Color("9dff6b")]
+	var ps: Array = []
+	for i in 4:
+		ps.append({"slot": i, "name": "You" if i == 0 else "CPU %d" % i, "cpu": i != 0, "color": cols[i], "look": {}})
+		GameState.players[i] = {"kind": "human" if i == 0 else "cpu", "level": 1, "color": i}
+	var layer := CanvasLayer.new()
+	get_tree().root.add_child(layer)
+	var rr := RandomNumberGenerator.new()
+	if intro_only:
+		var Intro := load("res://scripts/minigames/minigame_intro.gd")
+		var it: Control = Intro.new()
+		it.setup(id, ps, true, Callable())
+		layer.add_child(it)
+		await get_tree().create_timer(4.0).timeout
+		await _shot("mgi_" + id + "_a")
+		await get_tree().create_timer(4.0).timeout
+		await _shot("mgi_" + id + "_b")
+		return
+	var mg: Control = Reg.create(id, rr)
+	mg.setup(ps, true, Callable())
+	layer.add_child(mg)
+	var t0 := Time.get_ticks_msec()
+	mg.run()
+	var k := 0
+	while is_instance_valid(mg) and Time.get_ticks_msec() - t0 < 60000:
+		await get_tree().create_timer(3.2).timeout
+		await _shot("mg_%s_%02d" % [id, k])
+		k += 1
+		if not mg.playing and k > 3:
+			break
+	print("MG ranking: ", mg._ranking().map(func(p: Dictionary) -> String: return p["name"]))
+
+
 ## 게임이 shot_hint 를 차례로 내보낼 때마다 한 장씩
 func _catch(g: Node, hints: Array, prefix: String) -> void:
 	var got := {}
@@ -103,6 +138,12 @@ func _run() -> void:
 		await _menus("ko")
 		get_tree().quit(0)
 		return
+	# mg:<id> — 미니게임 하나만 바로 (모두 자동), 일정 간격으로 촬영. mgintro:<id> 는 소개 화면
+	for wv in _want:
+		if wv.begins_with("mg:") or wv.begins_with("mgintro:"):
+			await _mg_shot(wv.split(":")[1], wv.begins_with("mgintro:"))
+			get_tree().quit(0)
+			return
 	# tutboard: 튜토리얼 보드만 처음부터 끝까지 자동으로 (단계마다 한 장)
 	if "tutboard" in _want:
 		GameState.tutorial_active = true
