@@ -167,6 +167,49 @@ func _wait_idle(m: Node, page: String, extra: float = 2.0) -> void:
 
 func _run() -> void:
 	await get_tree().create_timer(1.0, true, false, true).timeout
+	# mghall: 메인 MINIGAMES → 로비 → 미니게임 모음 (3×3) → 소개 → 게임 → 결과 → 로비로 돌아오기
+	if "mghall" in _want:
+		Settings.language = "ko"
+		Settings.apply_language()
+		GameState.debug_auto_minigames = true
+		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+		while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
+			await get_tree().process_frame
+		var m: Node = get_tree().current_scene
+		await _wait_idle(m, "main", 5.0)
+		m._on_menu_pressed("collection", m._main_buttons[2])
+		await _wait_idle(m, "lobby")
+		m._lobby_add_cpu(1)
+		m._lobby_add_cpu(2)
+		await get_tree().create_timer(1.0).timeout
+		await _shot("hall_01_lobby")
+		m._on_lobby_start()
+		while get_tree().current_scene == null or get_tree().current_scene.name != "MinigameHall":
+			await get_tree().process_frame
+		var h: Node = get_tree().current_scene
+		await get_tree().create_timer(2.0).timeout
+		await _shot("hall_02_grid")
+		h._play("powder_keg")
+		await get_tree().create_timer(3.5).timeout
+		await _shot("hall_03_intro")
+		while h._current == null or not (h._current.get_script() as Script).resource_path.ends_with("powder_keg.gd"):
+			await get_tree().process_frame
+		await get_tree().create_timer(6.0).timeout
+		await _shot("hall_04_game")
+		var t0 := Time.get_ticks_msec()
+		while h._current == null or h._current.get_script() != null and Time.get_ticks_msec() - t0 < 200000:
+			await get_tree().process_frame
+		await get_tree().create_timer(1.5).timeout
+		await _shot("hall_05_results")
+		h._back_to_picker()
+		await get_tree().create_timer(1.5).timeout
+		h._back_to_lobby()
+		while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
+			await get_tree().process_frame
+		await get_tree().create_timer(2.0).timeout
+		await _shot("hall_06_back_lobby")
+		get_tree().quit(0)
+		return
 	if "credits" in _want:
 		for lang in ["ko", "en"]:
 			Settings.language = lang

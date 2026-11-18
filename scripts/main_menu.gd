@@ -450,11 +450,36 @@ func _style_accent(b: Button, centered: bool) -> void:
 
 
 func _open_lobby(mode: int) -> void:
+	_mg_lobby = false
 	GameState.set_mode(mode)
 	GameState.reset_lobby()
 	_lobby_mode_label.text = GameState.get_mode_name(mode)
 	_refresh_lobby()
 	_show_page("lobby")
+
+
+## 메인화면 MINIGAMES → 같은 로비(친구 초대 · CPU · 꾸미기) → START 하면 미니게임 모음으로.
+## keep = 미니게임 모음에서 돌아올 때 (자리 그대로)
+var _mg_lobby := false
+
+
+func _open_mg_lobby(keep: bool = false) -> void:
+	_mg_lobby = true
+	GameState.set_mode(GameState.Mode.FREE_FOR_ALL)
+	if not keep:
+		GameState.reset_lobby()
+	_lobby_mode_label.text = "MINIGAMES"
+	_refresh_lobby()
+	_show_page("lobby")
+
+
+func _start_minigame_hall() -> void:
+	_busy = true
+	Audio.stop_music(0.5)
+	var t := create_tween()
+	t.tween_property(_fade, "color:a", 1.0, 0.4)
+	await t.finished
+	get_tree().change_scene_to_file("res://scenes/minigame_hall.tscn")
 
 
 func _refresh_lobby() -> void:
@@ -632,6 +657,9 @@ func _on_lobby_start() -> void:
 		Audio.play("back")
 		return
 	Audio.play("click")
+	if _mg_lobby:
+		_start_minigame_hall()
+		return
 	_open_board_select()
 
 
@@ -1957,6 +1985,14 @@ func _play_intro() -> void:
 	if not is_inside_tree():
 		return
 	Audio.play_music(0.0, "menu")
+	if GameState.return_to == "mg_lobby":
+		# 미니게임 모음에서 돌아옴 → 같은 사람들이 있는 로비를 바로
+		GameState.return_to = ""
+		_busy = false
+		_logo.play_intro()
+		_open_mg_lobby(true)
+		create_tween().tween_property(_fade, "color:a", 0.0, 0.5)
+		return
 	create_tween().tween_property(_fade, "color:a", 0.0, 0.9)
 	_logo.play_intro()
 	for i in _main_buttons.size():
@@ -2008,7 +2044,7 @@ func _go_back() -> void:
 	if _current == "settings":
 		Settings.save_settings()
 	if _current == "lobby":
-		_show_page("mode")
+		_show_page("main" if _mg_lobby else "mode")
 	elif _current == "customize":
 		_refresh_lobby()
 		_show_page("lobby")
@@ -2048,7 +2084,7 @@ func _on_menu_pressed(id: String, b: Button) -> void:
 		"tutorial":
 			_start_tutorial()
 		"collection":
-			_toast(tr("Minigames will show up here once they're made!"))
+			_open_mg_lobby()
 		"settings":
 			_show_page("settings")
 		"quit":

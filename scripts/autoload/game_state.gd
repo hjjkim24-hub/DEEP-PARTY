@@ -45,6 +45,9 @@ var selected_mode: int = Mode.FREE_FOR_ALL
 ## 보드 고르기에서 고른 보드 id (예: "sunken_island")
 var selected_board: String = "sunken_island"
 
+## 다른 화면에서 메인화면으로 돌아올 때 바로 열 화면 ("mg_lobby" = 미니게임 로비). 메인화면이 읽고 비움
+var return_to := ""
+
 ## 튜토리얼 진행 중인지 (메인화면 TUTORIAL → 튜토리얼 보드 끝까지)
 var tutorial_active := false
 
