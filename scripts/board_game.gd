@@ -11,6 +11,7 @@ const BOARD_TITLES := {"sunken_island": "SUNKEN ISLAND"}
 
 var rig_kraken := ""          ## 다음 크라켄 행동 ("" = 무작위)
 var hold_loop := false        ## 개발용: 크라켄 등장 뒤 게임을 진행하지 않음 (장면 촬영용)
+var _kraken_awake := false   ## 처음 KRAKEN_WAKE_ROUND 라운드 동안은 잠들어 있음
 var _attack_cd := Rules.KRAKEN_ATTACK_EVERY   ## 크라켄 차례까지 남은 라운드 (이번 라운드 포함)
 var _attacks := 0             ## 지금까지 크라켄 차례 수 (공격이 점점 거세짐)
 var _strike_due := {}         ## 칸 → 이 라운드가 끝날 때 내려침
@@ -37,11 +38,16 @@ func board_title() -> String:
 
 func _after_intro() -> void:
 	_round_label.visible = true
-	await _kraken_wakes()
 	if hold_loop:
 		return
 	if GameState.debug_showcase:
+		await _kraken_wakes()
+		_kraken_awake = true
 		await _debug_showcase()
+	else:
+		# 크라켄은 아직 섬 밑에서 잠들어 있음 → 주사위를 두 번 굴린 뒤 깨어남
+		_move_camera(world.overview, world.overview_zoom, 1.0)
+		await _banner(tr("SOMETHING SLEEPS BELOW..."), tr("The kraken wakes after %d rolls. Grab coins while you can!") % Rules.KRAKEN_WAKE_ROUND, 1.8)
 	await _game_loop()
 
 
@@ -83,6 +89,9 @@ func _update_round_label() -> void:
 	if world.on_ship:
 		var left := mini(_ship_until - _round + 1, Rules.SHIP_ROUNDS)
 		t += "\n" + (tr("Kraken's ship: back to the island after this round") if left <= 1 else tr("Kraken's ship: %d rounds left") % left)
+	elif not _kraken_awake:
+		var w := Rules.KRAKEN_WAKE_ROUND - _round + 1
+		t += "\n" + (tr("The kraken wakes: end of this round") if w <= 1 else tr("The kraken wakes: in %d rounds") % w)
 	else:
 		t += "\n" + (tr("Kraken's turn: end of this round") if _attack_cd <= 1 else tr("Kraken's turn: in %d rounds") % _attack_cd)
 	if _surge_until >= _round:
@@ -146,9 +155,37 @@ func _kraken_wakes() -> void:
 	await _banner(tr("EVERY 2 ROUNDS..."), tr("...the kraken takes its turn. Stay alert!"), 1.4)
 
 
+## 깨어나기 전 라운드 끝: 땅이 우르르 · 북쪽 골짜기에서 거품
+func _kraken_stirs() -> void:
+	if world.kraken_root == null:
+		return
+	_follow = null
+	var lair := world.kraken_root.position
+	_move_camera(Vector3(lair.x, 2.0, -world.half_d + 4.0), 4.0, 1.0)
+	await get_tree().create_timer(1.0, false).timeout
+	Audio.play("kraken_rumble")
+	_shake_camera(0.18, 1.4)
+	for k in 3:
+		world.bubbles_at(Vector3(lair.x + (k - 1) * 3.0, 0.3, -world.half_d + 3.0), 16, 0.7, true)
+	await _banner(tr("THE ISLAND TREMBLES..."), tr("Something huge is waking up."), 1.4)
+	_move_camera(world.overview, world.overview_zoom, 1.0)
+	await get_tree().create_timer(0.6, false).timeout
+
+
 ## 라운드 끝: 때가 된 칸 내려치기 → 효과 풀기 → 부하들이 칸 고르기 → (2 라운드마다) 크라켄 차례
 func _kraken_phase(r: int) -> void:
 	_highlight_chip({})
+	# 잠든 동안: 섬이 점점 흔들리다가, 때가 되면 깨어나서 곧바로 첫 차례
+	if not _kraken_awake and not world.on_ship:
+		if r < Rules.KRAKEN_WAKE_ROUND:
+			await _kraken_stirs()
+			return
+		await _kraken_wakes()
+		_kraken_awake = true
+		_attack_cd = Rules.KRAKEN_ATTACK_EVERY
+		_update_round_label()
+		await _kraken_turn(r)
+		return
 	# 크라켄의 배 위: 공격 없음. 때가 되면 섬으로 돌아가고, 그때부터 다음 크라켄 차례를 다시 셈
 	if world.on_ship:
 		if r >= _ship_until:

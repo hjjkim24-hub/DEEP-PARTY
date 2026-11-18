@@ -45,6 +45,8 @@ const HEARTS_MAX := 3
 ##   ship   : 모두의 발밑에 포탈이 열려 하늘을 나는 '크라켄의 배'로 2 라운드 (배에선 크라켄 공격 없음).
 ##            섬으로 돌아온 뒤부터 다음 크라켄 차례까지 다시 셈
 const KRAKEN_ATTACK_EVERY := 2
+## 처음 몇 라운드는 크라켄이 잠들어 있음: 모두 주사위를 이만큼 굴린 뒤(그 라운드 끝) 깨어나 바로 첫 차례
+const KRAKEN_WAKE_ROUND := 2
 const KRAKEN_ACTIONS := ["barrage", "spines", "surge", "ship"]
 const SHIP_ROUNDS := 2              ## ship: 배 위에서 보내는 라운드 수
 const KRAKEN_CHEST_WIN := 0.5       ## 크라켄의 보물상자 룰렛: 보물상자가 나올 확률
