@@ -126,7 +126,7 @@ func _tick(delta: float) -> void:
 		if not w["out"]:
 			(w["node"] as Node3D).visible = float(_inv[s]) <= 0.0 or fmod(float(_inv[s]), 0.16) > 0.07
 	_next_attack -= delta
-	if _next_attack <= 0.0:
+	if _next_attack <= 0.0 and not is_client():
 		_attack()
 	for ring in _rings.duplicate():
 		if _elapsed >= float(ring["t_hit"]) and not ring.get("done", false):
@@ -201,9 +201,15 @@ func _add_stripe(target: Vector3, out: Vector3, warn: float) -> void:
 	var a1v := tp + dd * minf(rng.randf_range(1.2, 3.2), t_far)
 	var a0 := Vector3(a0v.x, 0, a0v.y)
 	var a1 := Vector3(a1v.x, 0, a1v.y)
-	var span := a0.distance_to(a1)
-	if span < 2.0:
+	if a0.distance_to(a1) < 2.0:
 		return
+	net_call("_stripe_do", [a0, a1, warn])
+
+
+## 정해진 직사각형으로 촉수 하나 (방장이 정하고 모두 같은 자리에)
+func _stripe_do(a0: Vector3, a1: Vector3, warn: float) -> void:
+	var dir := (a1 - a0).normalized()
+	var span := a0.distance_to(a1)
 	var length := span / 0.68
 	var root := a0 - dir * length * 0.12
 	var mark := rect_mark(a0, a1, STRIPE_W, _raft)
@@ -240,6 +246,8 @@ func _hit_ring(ring: Dictionary) -> void:
 	tw.tween_property(mark, "transparency", 1.0, 0.3)
 	tw.tween_callback(mark.queue_free)
 	tw.tween_callback(func() -> void: _rings.erase(ring))
+	if is_client():
+		return
 	for s in walkers:
 		var w: Dictionary = walkers[s]
 		if w["out"] or float(_inv[s]) > 0.0:
@@ -248,7 +256,10 @@ func _hit_ring(ring: Dictionary) -> void:
 		# 붉은 직사각형 안에 (말 몸 반지름만큼 걸쳐도) 있으면 맞음
 		if in_rect(pos, a, b, STRIPE_W, 0.25):
 			var cl := Geometry3D.get_closest_point_to_segment(Vector3(pos.x, 0, pos.z), a, b)
-			_hurt(int(s), Vector3(pos.x, 0, pos.z) - cl)
+			var away := Vector3(pos.x, 0, pos.z) - cl
+			if away.length() <= 0.05:
+				away = Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
+			net_call("_hurt", [int(s), away])
 
 
 func _hurt(s: int, away: Vector3) -> void:
@@ -256,11 +267,13 @@ func _hurt(s: int, away: Vector3) -> void:
 	_hearts[s] = int(_hearts[s]) - 1
 	scores[s] = float(_hearts[s])
 	_inv[s] = 1.3
-	var dir := away.normalized() if away.length() > 0.05 else Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized()
+	var dir := away.normalized() if away.length() > 0.05 else Vector3(1, 0, 0)
+	if net == "host":
+		net_push(s, dir * 7.0, 0.5)
 	w["push"] = dir * 7.0
 	w["slow"] = 0.5
 	sfx("thud")
-	if is_human(w["p"]):
+	if is_local(w["p"]):
 		shake(0.8)
 	float_at((w["pos"] as Vector3) + Vector3(0, 2.0, 0), "-1", Color(1.0, 0.45, 0.4), 44)
 	if int(_hearts[s]) <= 0:

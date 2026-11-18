@@ -154,9 +154,12 @@ func _gui_input(e: InputEvent) -> void:
 	var mb := e as InputEventMouseButton
 	if mb == null or not mb.pressed:
 		return
-	for p in players:
-		if is_human(p):
-			_pull(int(p["slot"]))
+	net_input("pull")
+
+
+func _net_input(slot: int, action: String, _args: Array) -> void:
+	if action == "pull" and playing:
+		_pull(slot)
 
 
 func _pull(s: int) -> void:
@@ -166,20 +169,25 @@ func _pull(s: int) -> void:
 	L["p"] = float(L["p"]) + PULL
 	L["pulse"] = 1.0
 	if float(L["p"]) >= 1.0:
-		_win(s)
+		net_call("_win", [s])
 
 
 func _tick(delta: float) -> void:
 	_elapsed += delta
 	_t3 += delta
+	if is_client():
+		# 손님: 당김 정도는 방장이 보낸 값, 여기선 보여주기만
+		if _yank_warn >= 0.0:
+			_yank_warn -= delta
+		_place_all(delta)
+		return
 	var pr := pressure()
 	# 촉수 힘: 갈수록 세짐 (마지막엔 연타로도 버티기 버거움)
 	var force := lerpf(0.04, 0.12, pr)
 	# 잡아채기: 촉수가 번쩍 빛나며 움찔하는 예고 → 0.5초 뒤 확 끌어감
 	_yank_t -= delta
 	if _yank_t <= 0.0 and _yank_warn < 0.0:
-		_yank_warn = 0.55
-		sfx("kraken_rise", 200)
+		net_call("_yank_start")
 	if _yank_warn >= 0.0:
 		_yank_warn -= delta
 		if _yank_warn < 0.0:
@@ -187,8 +195,7 @@ func _tick(delta: float) -> void:
 				var L: Dictionary = _lanes[s]
 				if not L["done"] and not L["out"]:
 					L["p"] = maxf(float(L["p"]) - lerpf(0.05, 0.09, pr), -0.8)
-			sfx("kraken_slam", 200)
-			shake(0.35)
+			net_call("_yank_fx")
 			_yank_t = lerpf(6.0, 3.5, pr) * rng.randf_range(0.8, 1.2)
 	for s in _lanes:
 		var L: Dictionary = _lanes[s]
@@ -209,15 +216,46 @@ func _tick(delta: float) -> void:
 			L["p"] = -1.0
 			L["edge"] = float(L.get("edge", 0.0)) + delta
 			if _elapsed > 4.0 and float(L["edge"]) >= 1.2:
-				_drag_out(s)
+				net_call("_drag_out", [s])
 		else:
 			L["edge"] = 0.0
 		scores[s] = float(L["p"])
 	_place_all(delta)
 
 
+func _yank_start() -> void:
+	_yank_warn = 0.55
+	sfx("kraken_rise", 200)
+
+
+func _yank_fx() -> void:
+	sfx("kraken_slam", 200)
+	shake(0.35)
+
+
+## 온라인: 줄마다 당김 정도 (방장 → 손님)
+func _net_state() -> Dictionary:
+	var lp := {}
+	for s in _lanes:
+		lp[s] = float(_lanes[s]["p"])
+	return {"lp": lp, "el": _elapsed}
+
+
+func _net_apply(st: Dictionary) -> void:
+	var lp: Dictionary = st.get("lp", {})
+	for s in lp:
+		if _lanes.has(int(s)):
+			var L: Dictionary = _lanes[int(s)]
+			if float(lp[s]) > float(L["p"]) + 0.004:
+				L["pulse"] = 1.0
+			L["p"] = float(lp[s])
+	_elapsed = float(st.get("el", _elapsed))
+
+
 func _win(s: int) -> void:
 	var L: Dictionary = _lanes[s]
+	if L["done"]:
+		return
 	L["done"] = true
 	L["time"] = _elapsed
 	L["p"] = 1.0
@@ -239,6 +277,8 @@ func _win(s: int) -> void:
 
 func _drag_out(s: int) -> void:
 	var L: Dictionary = _lanes[s]
+	if L["out"]:
+		return
 	L["out"] = true
 	L["time"] = _elapsed
 	var pawn: Node3D = L["pawn"]

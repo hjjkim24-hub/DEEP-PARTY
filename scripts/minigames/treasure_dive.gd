@@ -189,16 +189,16 @@ func _tick(delta: float) -> void:
 	_elapsed += delta
 	_t3 += delta
 	_burst_t -= delta
-	if _burst_t <= 0.0:
+	if _burst_t <= 0.0 and not is_client():
 		_burst()
 		_burst_t = rng.randf_range(2.6, 3.6)
 	var pr := pressure()
 	_ink_t -= delta
-	if _ink_t <= 0.0 and _elapsed > lerpf(5.0, 1.0, heat):
+	if _ink_t <= 0.0 and _elapsed > lerpf(5.0, 1.0, heat) and not is_client():
 		_spawn_ink()
 		_ink_t = lerpf(5.5, 1.3, pr) * rng.randf_range(0.8, 1.2)
 	# 후반: 크라켄 촉수가 모래를 뚫고 나와 말을 노리고 내려침 (맞으면 기절 + 보물을 흘림)
-	if pr > 0.4:
+	if pr > 0.4 and not is_client():
 		_slam_t = minf(_slam_t, 1.0)
 		_slam_t -= delta
 		if _slam_t <= 0.0:
@@ -208,6 +208,8 @@ func _tick(delta: float) -> void:
 		if _elapsed >= float(st["t_hit"]):
 			_stripes.erase(st)
 			_slam_hit(st)
+			if not is_client():
+				_slam_judge(st)
 	for s in _stun.keys():
 		_stun[s] = float(_stun[s]) - delta
 		var w: Dictionary = walkers[s]
@@ -226,11 +228,28 @@ func _tick(delta: float) -> void:
 	for w in walkers.values():
 		w["slow"] = 0.15 if _in_ink(w["pos"], 0.0) else w["slow"]
 	step_walkers(delta)
-	_collect()
+	if not is_client():
+		_collect()
 
 
-## 상자가 들썩 → 뚜껑이 열리며 보물이 사방으로
+## 상자가 들썩 → 뚜껑이 열리며 보물이 사방으로 (무엇이 어디로 갈지는 방장이 정함)
+var _next_item := 0
+
+
 func _burst() -> void:
+	var list := []
+	var n := rng.randi_range(6, 9)
+	for k in n:
+		var roll := rng.randf()
+		var kind := "gem" if roll < 0.08 else ("pearl" if roll < 0.35 else "coin")
+		var a := rng.randf() * TAU
+		var d := rng.randf_range(2.0, ARENA_R - 0.6)
+		list.append([_next_item, kind, Vector3(cos(a) * d, 0.12, sin(a) * d), rng.randf_range(0.7, 1.1) + k * 0.03])
+		_next_item += 1
+	net_call("_burst_do", [list])
+
+
+func _burst_do(list: Array) -> void:
 	var tw := create_tween()
 	tw.tween_property(_lid, "rotation:x", -1.35, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.tween_interval(0.5)
@@ -239,14 +258,8 @@ func _burst() -> void:
 	j.tween_property(_chest, "position:y", 0.25, 0.1)
 	j.tween_property(_chest, "position:y", 0.0, 0.25).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
 	sfx("box_burst", 100)
-	var n := rng.randi_range(6, 9)
-	for k in n:
-		var roll := rng.randf()
-		var kind := "gem" if roll < 0.08 else ("pearl" if roll < 0.35 else "coin")
-		var a := rng.randf() * TAU
-		var d := rng.randf_range(2.0, ARENA_R - 0.6)
-		var to := Vector3(cos(a) * d, 0.12, sin(a) * d)
-		_spawn_item(kind, Vector3(0, 1.2, 0), to, rng.randf_range(0.7, 1.1) + k * 0.03)
+	for it in list:
+		_spawn_item(int(it[0]), String(it[1]), Vector3(0, 1.2, 0), it[2], float(it[3]))
 	var bub := CPUParticles3D.new()
 	bub.one_shot = true
 	bub.amount = 30
@@ -272,12 +285,12 @@ func _burst() -> void:
 	bub.finished.connect(bub.queue_free)
 
 
-func _spawn_item(kind: String, from: Vector3, to: Vector3, fly: float) -> void:
+func _spawn_item(id: int, kind: String, from: Vector3, to: Vector3, fly: float) -> void:
 	var mi := MeshInstance3D.new()
 	mi.mesh = _meshes[kind]
 	world3.add_child(mi)
 	mi.position = from
-	_items.append({"node": mi, "pos": to, "kind": kind, "flying": true, "from": from, "to": to, "t": 0.0, "fly": fly, "spin": rng.randf() * TAU})
+	_items.append({"id": id, "node": mi, "pos": to, "kind": kind, "flying": true, "from": from, "to": to, "t": 0.0, "fly": fly, "spin": randf() * TAU})
 
 
 func _update_items(delta: float) -> void:
@@ -308,18 +321,27 @@ func _collect() -> void:
 			var d: Vector3 = (w["pos"] as Vector3) - (it["to"] as Vector3)
 			d.y = 0.0
 			if d.length() < PICK_R:
-				var pts: int = KINDS[it["kind"]]["pts"]
-				scores[s] = int(scores[s]) + pts
-				_items.erase(it)
-				var n: Node3D = it["node"]
-				var tw := create_tween()
-				tw.tween_property(n, "position:y", 1.6, 0.25)
-				tw.parallel().tween_property(n, "scale", Vector3.ONE * 0.01, 0.25)
-				tw.tween_callback(n.queue_free)
-				sfx("coins" if it["kind"] == "coin" else "add", 50)
-				var col: Color = KINDS[it["kind"]]["col"]
-				float_at((it["to"] as Vector3) + Vector3(0, 1.5, 0), "+%d" % pts, col.lightened(0.2), 36 if pts < 5 else 52)
+				net_call("_collect_do", [int(it["id"]), int(s)])
 				break
+
+
+## 보물 줍기 (방장 판정 → 모두)
+func _collect_do(id: int, s: int) -> void:
+	for it in _items.duplicate():
+		if int(it["id"]) == id:
+			var pts: int = KINDS[it["kind"]]["pts"]
+			if not is_client():
+				scores[s] = int(scores[s]) + pts
+			_items.erase(it)
+			var n: Node3D = it["node"]
+			var tw := create_tween()
+			tw.tween_property(n, "position:y", 1.6, 0.25)
+			tw.parallel().tween_property(n, "scale", Vector3.ONE * 0.01, 0.25)
+			tw.tween_callback(n.queue_free)
+			sfx("coins" if it["kind"] == "coin" else "add", 50)
+			var col: Color = KINDS[it["kind"]]["col"]
+			float_at((it["to"] as Vector3) + Vector3(0, 1.5, 0), "+%d" % pts, col.lightened(0.2), 36 if pts < 5 else 52)
+			break
 
 
 # ── 후반 촉수 ───────────────────────────────────────────────
@@ -340,6 +362,10 @@ func _slam() -> void:
 	a0.y = 0.0
 	a1.y = 0.0
 	var warn := lerpf(1.2, 0.7, pr)
+	net_call("_slam_do", [root, dir, length, a0, a1, warn])
+
+
+func _slam_do(root: Vector3, dir: Vector3, length: float, a0: Vector3, a1: Vector3, warn: float) -> void:
 	var mark := rect_mark(a0, a1, 1.6, null, 0.03)
 	_stripes.append({"a": a0, "b": a1, "t_hit": _elapsed + warn, "mark": mark})
 	slam_tentacle(Vector3(root.x, 0, root.z), dir, length, warn, 0.0)
@@ -354,27 +380,46 @@ func _slam_hit(st: Dictionary) -> void:
 	tw.tween_interval(0.4)
 	tw.tween_property(mark, "transparency", 1.0, 0.25)
 	tw.tween_callback(mark.queue_free)
+
+
+## 방장: 내려친 자리에 있던 사람 → 기절 + 보물 흘림
+func _slam_judge(st: Dictionary) -> void:
 	for s in walkers:
 		var w: Dictionary = walkers[s]
 		var pos: Vector3 = w["pos"]
 		var q := Vector3(pos.x, 0, pos.z)
 		var cl := Geometry3D.get_closest_point_to_segment(q, st["a"], st["b"])
 		if in_rect(pos, st["a"], st["b"], 1.6, 0.25):
-			_stun[s] = 1.1
 			var lost := mini(int(scores[s]), 3)
-			scores[s] = int(scores[s]) - lost
-			w["push"] = (q - cl).normalized() * 6.0 if q.distance_to(cl) > 0.05 else Vector3(1, 0, 0) * 6.0
-			sfx("thud")
-			if lost > 0:
-				float_at(pos + Vector3(0, 2.0, 0), "-%d" % lost, Color(1.0, 0.45, 0.4), 44)
-				# 잃은 보물은 둘레에 흩어짐 (다시 주울 수 있음)
-				for k in lost:
-					var a := rng.randf() * TAU
-					var to := pos + Vector3(cos(a), 0, sin(a)) * rng.randf_range(1.2, 2.4)
-					var flat := Vector2(to.x, to.z)
-					if flat.length() > ARENA_R - 0.5:
-						flat = flat.normalized() * (ARENA_R - 0.5)
-					_spawn_item("coin", pos + Vector3(0, 0.6, 0), Vector3(flat.x, 0.12, flat.y), 0.6)
+			var push := (q - cl).normalized() * 6.0 if q.distance_to(cl) > 0.05 else Vector3(1, 0, 0) * 6.0
+			var drops := []
+			for k in lost:
+				var a := rng.randf() * TAU
+				var to := pos + Vector3(cos(a), 0, sin(a)) * rng.randf_range(1.2, 2.4)
+				var flat := Vector2(to.x, to.z)
+				if flat.length() > ARENA_R - 0.5:
+					flat = flat.normalized() * (ARENA_R - 0.5)
+				drops.append([_next_item, Vector3(flat.x, 0.12, flat.y)])
+				_next_item += 1
+			net_call("_stunned", [int(s), pos, push, lost, drops])
+
+
+func _stunned(s: int, pos: Vector3, push: Vector3, lost: int, drops: Array) -> void:
+	var w: Dictionary = walkers[s]
+	_stun[s] = 1.1
+	if not is_client():
+		scores[s] = int(scores[s]) - lost
+	if net == "host":
+		net_push(s, push)
+	w["push"] = push
+	sfx("thud")
+	if is_local(w["p"]):
+		shake(0.4)
+	if lost > 0:
+		float_at(pos + Vector3(0, 2.0, 0), "-%d" % lost, Color(1.0, 0.45, 0.4), 44)
+		# 잃은 보물은 둘레에 흩어짐 (다시 주울 수 있음)
+		for dr in drops:
+			_spawn_item(int(dr[0]), "coin", pos + Vector3(0, 0.6, 0), dr[1], 0.6)
 
 
 # ── 먹물 ─────────────────────────────────────────────────────
@@ -382,6 +427,11 @@ func _spawn_ink() -> void:
 	var a := rng.randf() * TAU
 	var start := Vector3(cos(a), 0, sin(a)) * (ARENA_R + 1.0)
 	var vel := (-start).normalized().rotated(Vector3.UP, rng.randf_range(-0.5, 0.5)) * rng.randf_range(1.0, 1.6)
+	var pr := pressure()
+	net_call("_ink_do", [start, vel * lerpf(1.0, 1.9, pr), lerpf(1.6, 2.5, pr), int(lerpf(26, 40, pr))])
+
+
+func _ink_do(start: Vector3, vel: Vector3, rad: float, amount: int) -> void:
 	var p := CPUParticles3D.new()
 	p.amount = 26
 	p.lifetime = 2.2
@@ -411,11 +461,8 @@ func _spawn_ink() -> void:
 	p.position = start + Vector3(0, 0.6, 0)
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	world3.add_child(p)
-	var pr := pressure()
-	vel *= lerpf(1.0, 1.9, pr)
-	var rad := lerpf(1.6, 2.5, pr)
 	p.emission_sphere_radius = rad * 0.7
-	p.amount = int(lerpf(26, 40, pr))
+	p.amount = amount
 	_inks.append({"node": p, "pos": start, "vel": vel, "r": rad, "life": 10.0})
 	sfx("bubbles", 200)
 

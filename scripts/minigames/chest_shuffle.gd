@@ -122,7 +122,8 @@ func _setup_game() -> void:
 
 
 func _start_game() -> void:
-	_run_rounds()
+	if not is_client():
+		_run_rounds()
 
 
 func _run_rounds() -> void:
@@ -138,32 +139,17 @@ func _is_done() -> bool:
 
 func _play_round() -> void:
 	var n: int = CHESTS_BY_ROUND[_round]
-	_layout(n)
-	_picks.clear()
-	for m in _pick_marks:
-		(m as Node3D).queue_free()
-	_pick_marks.clear()
+	net_call("_cs_round", [_round, n])
 	await _big_text_safe(tr("ROUND %d") % (_round + 1))
 	# 1) 진주가 상자 하나로 쏙
-	_phase = "show"
-	_pearl_in = rng.randi() % n
-	var c: Dictionary = _chests[_pearl_in]
-	await _open(c, true)
-	_pearl.visible = true
-	var at: Vector3 = (c["node"] as Node3D).position
-	_pearl.position = at + Vector3(0, 2.6, 0)
-	var t := create_tween()
-	t.tween_property(_pearl, "position", at + Vector3(0, 0.55, 0), 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	await t.finished
-	sfx("coins")
-	await get_tree().create_timer(0.35, false).timeout
-	_pearl.visible = false
-	await _open(c, false)
+	var idx := rng.randi() % n
+	net_tell("_cs_show", [idx])
+	await _cs_show(idx)
 	for p in players:
 		_track[int(p["slot"])] = _pearl_in
 	await get_tree().create_timer(0.4, false).timeout
 	# 2) 섞기: 두 상자가 위아래로 호를 그리며 자리 바꿈
-	_phase = "shuffle"
+	net_call("_set_phase", ["shuffle"])
 	# 보드 후반이면 처음부터 조금 더 빠르고 많이
 	var swaps: int = int(SWAPS_BY_ROUND[_round] * (1.0 + heat * 0.3))
 	var st: float = SWAP_TIME_BY_ROUND[_round] * (1.0 - heat * 0.15)
@@ -177,12 +163,13 @@ func _play_round() -> void:
 				if i != a and i != b:
 					rest.append(i)
 			rest.shuffle()
+			net_tell("_swap_set", [[[rest[0], rest[1]], [a, b]], st])
 			_swap(rest[0], rest[1], st)
+		else:
+			net_tell("_swap_set", [[[a, b]], st])
 		await _swap(a, b, st)
 	# 3) 고르기
-	_phase = "pick"
-	_pick_left = PICK_TIME_BY_ROUND[_round]
-	sfx("toast")
+	net_call("_cs_pick", [float(PICK_TIME_BY_ROUND[_round])])
 	while _pick_left > 0.0 and _picks.size() < players.size():
 		await get_tree().process_frame
 	# 안 고른 사람은 무작위
@@ -191,7 +178,76 @@ func _play_round() -> void:
 			_choose(int(p["slot"]), rng.randi() % n)
 	await get_tree().create_timer(0.4, false).timeout
 	# 4) 공개
+	net_tell("_cs_reveal", [_pearl_in])
+	await _cs_reveal(_pearl_in)
+
+
+## 판 시작 (모두 같게)
+func _cs_round(r: int, n: int) -> void:
+	_round = r
+	_layout(n)
+	_picks.clear()
+	for m in _pick_marks:
+		(m as Node3D).queue_free()
+	_pick_marks.clear()
+	if is_client():
+		_big_text_safe(tr("ROUND %d") % (_round + 1))
+
+
+func _set_phase(ph: String) -> void:
+	_phase = ph
+
+
+## 손님: 섞기 신호가 몰려 와도 한 번씩 차례로 (동시에 바꾸는 두 쌍은 같이)
+var _swap_q: Array = []
+var _swapping := false
+
+
+func _swap_set(pairs: Array, st: float) -> void:
+	_swap_q.append([pairs, st])
+	if _swapping:
+		return
+	_swapping = true
+	while not _swap_q.is_empty():
+		var job: Array = _swap_q.pop_front()
+		var ps: Array = job[0]
+		# 밀린 게 많으면 조금 빨리 따라잡기
+		var t := float(job[1]) * (0.6 if _swap_q.size() > 1 else 1.0)
+		for k in ps.size() - 1:
+			_swap(int(ps[k][0]), int(ps[k][1]), t)
+		var last: Array = ps[ps.size() - 1]
+		await _swap(int(last[0]), int(last[1]), t)
+	_swapping = false
+
+
+func _cs_pick(t: float) -> void:
+	_phase = "pick"
+	_pick_left = t
+	sfx("toast")
+
+
+## 진주가 상자 idx 로 들어가는 장면
+func _cs_show(idx: int) -> void:
+	_phase = "show"
+	_pearl_in = idx
+	var c: Dictionary = _chests[_pearl_in]
+	await _open(c, true)
+	_pearl.visible = true
+	var at: Vector3 = (c["node"] as Node3D).position
+	_pearl.position = at + Vector3(0, 2.6, 0)
+	var t := create_tween()
+	t.tween_property(_pearl, "position", at + Vector3(0, 0.55, 0), 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	await t.finished
+	sfx("coins")
+	await get_tree().create_timer(0.35, false).timeout
+	_pearl.visible = false
+	await _open(c, false)
+
+
+## 공개: 진주 상자가 열리고 맞힌 사람 +1 (점수는 방장 것이 기준)
+func _cs_reveal(idx: int) -> void:
 	_phase = "reveal"
+	_pearl_in = idx
 	var win: Dictionary = _chests[_pearl_in]
 	await _open(win, true)
 	_pearl.visible = true
@@ -201,8 +257,9 @@ func _play_round() -> void:
 	sfx("start")
 	for p in players:
 		var s := int(p["slot"])
-		if int(_picks[s]) == _chests.find(win):
-			scores[s] = int(scores[s]) + 1
+		if int(_picks.get(s, -1)) == _chests.find(win):
+			if not is_client():
+				scores[s] = int(scores[s]) + 1
 			float_at((win["node"] as Node3D).position + Vector3(0, 2.4, 0), "+1", Color(p["color"]).lightened(0.3), 46)
 	await get_tree().create_timer(1.6, false).timeout
 	_pearl.visible = false
@@ -303,7 +360,8 @@ func _tick(delta: float) -> void:
 		m.set_shader_parameter("wave", 0.6 if _phase == "shuffle" else 0.2)
 	if _phase == "pick":
 		_pick_left -= delta
-		_cpu_picks(delta)
+		if not is_client():
+			_cpu_picks(delta)
 		_hover_chest()
 
 
@@ -345,15 +403,27 @@ func _gui_input(e: InputEvent) -> void:
 	var mb := e as InputEventMouseButton
 	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
 		return
-	for p in players:
-		if is_human(p) and not _picks.has(int(p["slot"])):
-			var i := _chest_under_mouse()
-			if i >= 0:
-				_choose(int(p["slot"]), i)
+	if _picks.has(local_slot()):
+		return
+	var i := _chest_under_mouse()
+	if i >= 0:
+		net_input("pick", [i])
+
+
+func _net_input(slot: int, action: String, args: Array) -> void:
+	if action == "pick" and _phase == "pick" and args.size() > 0:
+		_choose(slot, int(args[0]))
+
+
+## 고름 (방장이 받아서 모두에게)
+func _choose(s: int, i: int) -> void:
+	if _picks.has(s) or i < 0 or i >= _chests.size():
+		return
+	net_call("_choose_do", [s, i])
 
 
 ## 고름: 상자 위에 그 사람 색 구슬이 하나씩 쌓임
-func _choose(s: int, i: int) -> void:
+func _choose_do(s: int, i: int) -> void:
 	if _picks.has(s):
 		return
 	_picks[s] = i

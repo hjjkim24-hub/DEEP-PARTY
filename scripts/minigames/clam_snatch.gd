@@ -220,14 +220,15 @@ func _tick(delta: float) -> void:
 	_t3 += delta
 	var pr := pressure()
 	_spawn -= delta
-	if _spawn <= 0.0:
+	if _spawn <= 0.0 and not is_client():
 		_open_one(pr)
 		_spawn = lerpf(0.75, 0.3, pr) * rng.randf_range(0.8, 1.2)
-	for c in _clams:
+	for k in _clams.size():
+		var c: Dictionary = _clams[k]
 		if c["state"] == "open":
 			c["t"] = float(c["t"]) + delta
-			if float(c["t"]) >= float(c["open_for"]):
-				_close(c, "")
+			if float(c["t"]) >= float(c["open_for"]) and not is_client():
+				net_call("_close_idx", [k])
 		if c["item"] and is_instance_valid(c["item"]):
 			(c["item"] as Node3D).rotation.y += delta * 2.0
 	for s in _stun:
@@ -242,11 +243,22 @@ func _open_one(pr: float) -> void:
 	var c: Dictionary = closed[rng.randi() % closed.size()]
 	var roll := rng.randf()
 	var crab_p := lerpf(0.15, 0.4, pr)
-	c["kind"] = "crab" if roll < crab_p else ("gold" if roll < crab_p + 0.12 else "pearl")
+	var kind := "crab" if roll < crab_p else ("gold" if roll < crab_p + 0.12 else "pearl")
+	net_call("_open_do", [_clams.find(c), kind, lerpf(1.6, 0.75, pr) * rng.randf_range(0.85, 1.15)])
+
+
+## 조개 하나가 열림 (방장이 정한 대로 모두 같게)
+func _open_do(idx: int, kind: String, open_for: float) -> void:
+	var c: Dictionary = _clams[idx]
+	if c["state"] != "closed":
+		if c["item"] and is_instance_valid(c["item"]):
+			(c["item"] as Node3D).queue_free()
+		c["item"] = null
+	c["kind"] = kind
 	c["state"] = "open"
 	c["t"] = 0.0
 	c["seq"] = int(c.get("seq", 0)) + 1
-	c["open_for"] = lerpf(1.6, 0.75, pr) * rng.randf_range(0.85, 1.15)
+	c["open_for"] = open_for
 	var lid: Node3D = c["lid"]
 	create_tween().tween_property(lid, "rotation:x", -0.85, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	var root: Node3D = c["root"]
@@ -354,21 +366,43 @@ func _crab() -> Node3D:
 
 func _close(c: Dictionary, _why: String) -> void:
 	c["state"] = "closing"
+	var seq := int(c.get("seq", 0))
 	var lid: Node3D = c["lid"]
 	var t := create_tween()
 	t.tween_property(lid, "rotation:x", 0.0, 0.1)
 	t.tween_callback(func() -> void:
+		if int(c.get("seq", 0)) != seq:
+			return   # 그새 다시 열렸음 (온라인에서 신호가 겹칠 때)
 		if c["item"] and is_instance_valid(c["item"]):
 			(c["item"] as Node3D).queue_free()
 		c["item"] = null
 		c["state"] = "closed")
 
 
+func _close_idx(k: int) -> void:
+	var c: Dictionary = _clams[k]
+	if c["state"] == "open":
+		_close(c, "")
+
+
+## 누름 (방장 PC 가 판정 → 모두에게 결과)
 func _click(s: int, idx: int) -> void:
-	if float(_stun[s]) > 0.0 or idx < 0:
+	if float(_stun[s]) > 0.0 or idx < 0 or idx >= _clams.size():
 		return
 	var c: Dictionary = _clams[idx]
 	if c["state"] != "open":
+		return
+	net_call("_take_do", [s, idx])
+
+
+func _net_input(slot: int, action: String, args: Array) -> void:
+	if action == "click" and playing and args.size() > 0:
+		_click(slot, int(args[0]))
+
+
+func _take_do(s: int, idx: int) -> void:
+	var c: Dictionary = _clams[idx]
+	if c["state"] != "open" or not (c["item"] and is_instance_valid(c["item"])):
 		return
 	var p := player_by_slot(s)
 	var at: Vector3 = (c["pos"] as Vector3) + Vector3(0, 1.4, 0)
@@ -377,7 +411,7 @@ func _click(s: int, idx: int) -> void:
 		_stun[s] = 0.8
 		sfx("remove")
 		float_at(at, "-2", Color(1.0, 0.4, 0.35), 46)
-		if is_human(p):
+		if is_local(p):
 			shake(0.35)
 		var item: Node3D = c["item"]
 		var tw := create_tween()
@@ -418,9 +452,9 @@ func _gui_input(e: InputEvent) -> void:
 	var mb := e as InputEventMouseButton
 	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
 		return
-	for p in players:
-		if is_human(p):
-			_click(int(p["slot"]), _clam_under_mouse())
+	var k := _clam_under_mouse()
+	if k >= 0:
+		net_input("click", [k])
 
 
 ## CPU: 반응 시간 뒤 클릭 (실력이 높을수록 빠르고, 게는 잘 알아봄)

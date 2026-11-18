@@ -90,6 +90,7 @@ func _make_stage() -> void:
 
 func _process(delta: float) -> void:
 	super._process(delta)
+	_net_send_me(delta)
 	if cam == null:
 		return
 	var tt := Time.get_ticks_msec() / 1000.0
@@ -405,7 +406,7 @@ func add_walker(p: Dictionary, pos: Vector3, speed: float = 5.0) -> Dictionary:
 ## 사람: WASD / 방향키로 이동 (카메라가 보는 쪽이 위). 자동 점검 · 미리보기면 ai 가 정한 target
 func human_target(w: Dictionary) -> void:
 	var p: Dictionary = w["p"]
-	if is_human(p) and playing:
+	if is_local(p) and playing:
 		var d := key_dir()
 		var pos: Vector3 = w["pos"]
 		w["target"] = pos + d * 2.0 if d != Vector3.ZERO else pos
@@ -437,6 +438,10 @@ func step_walkers(delta: float) -> void:
 	var list := walkers.values()
 	for w in list:
 		if w["out"]:
+			continue
+		# 온라인: 다른 PC 가 움직이는 말은 받은 자리로 부드럽게 따라감 (걷는 모습은 그대로)
+		if w.has("net_pos"):
+			_step_puppet(w, delta)
 			continue
 		human_target(w)
 		var pos: Vector3 = w["pos"]
@@ -475,6 +480,103 @@ func step_walkers(delta: float) -> void:
 		var hop := absf(sin(float(w["bob"]))) * clampf(spd / 4.0, 0.0, 1.0) * 0.22
 		n.position = pos + Vector3(0, hop, 0)
 		n.rotation = Vector3(clampf(spd * 0.04, 0.0, 0.25), float(w["face"]), sin(float(w["bob"])) * 0.06 * clampf(spd / 4.0, 0.0, 1.0))
+
+
+func _step_puppet(w: Dictionary, delta: float) -> void:
+	var pos: Vector3 = w["pos"]
+	var goal: Vector3 = w["net_pos"]
+	goal.y = walk_y
+	var np := pos.lerp(goal, clampf(delta * 12.0, 0.0, 1.0))
+	if pos.distance_to(goal) > 4.0:
+		np = goal   # 너무 멀면 순간이동 (밀려남 · 부활 등)
+	var vel := (np - pos) / maxf(delta, 0.001)
+	vel.y = 0.0
+	w["pos"] = np
+	w["vel"] = vel
+	w["face"] = lerp_angle(float(w["face"]), float(w.get("net_face", w["face"])), clampf(delta * 12.0, 0.0, 1.0))
+	var spd := vel.length()
+	w["bob"] = float(w["bob"]) + delta * (6.0 + spd * 2.2)
+	var hop := absf(sin(float(w["bob"]))) * clampf(spd / 4.0, 0.0, 1.0) * 0.22
+	var n: Node3D = w["node"]
+	n.position = np + Vector3(0, hop, 0)
+	n.rotation = Vector3(clampf(spd * 0.04, 0.0, 0.25), float(w["face"]), sin(float(w["bob"])) * 0.06 * clampf(spd / 4.0, 0.0, 1.0))
+
+
+## 온라인: 걷는 말 상태 (방장 → 손님). 손님 자기 말은 손님 PC 가 움직이고 방장에게 알려 줌
+func _net_state_common() -> Dictionary:
+	if walkers.is_empty():
+		return {}
+	var ws := {}
+	for s in walkers:
+		var w: Dictionary = walkers[s]
+		ws[s] = [w["pos"], float(w["face"]), bool(w["out"])]
+	return {"w": ws}
+
+
+func _net_apply_common(st: Dictionary) -> void:
+	var ws: Dictionary = st.get("w", {})
+	for s in ws:
+		var w: Dictionary = walkers.get(int(s), {})
+		if w.is_empty():
+			continue
+		var v: Array = ws[s]
+		if int(s) == net_me and not bool(v[2]):
+			continue
+		w["net_pos"] = v[0]
+		w["net_face"] = v[1]
+		if bool(v[2]) and not bool(w["out"]):
+			w["out"] = true
+
+
+## 손님: 내 말 자리를 방장에게 (초당 15번)
+var _me_acc := 0.0
+
+
+func _net_send_me(delta: float) -> void:
+	if net != "client" or not playing:
+		return
+	_me_acc += delta
+	if _me_acc < NET_DT:
+		return
+	_me_acc = 0.0
+	var w: Dictionary = walkers.get(net_me, {})
+	if w.is_empty() or w["out"]:
+		return
+	Net.to_host({"k": "mg_me", "p": [w["pos"].x, w["pos"].z, float(w["face"])]})
+
+
+## 방장: 손님 말 자리 받기
+func _on_net_msg(from: int, d: Dictionary) -> void:
+	if String(d.get("k", "")) == "mg_me" and net == "host":
+		var slot := _peer_slot(from)
+		var w: Dictionary = walkers.get(slot, {})
+		var a: Array = d.get("p", [])
+		if not w.is_empty() and a.size() >= 3 and not w["out"]:
+			w["net_pos"] = Vector3(float(a[0]), walk_y, float(a[1]))
+			w["net_face"] = float(a[2])
+		return
+	super._on_net_msg(from, d)
+
+
+## 방장 → 손님 한 명: 네 말을 이만큼 밀어 (맞아서 튕겨 남 등)
+func net_push(slot: int, push: Vector3, slow: float = 0.0) -> void:
+	var w: Dictionary = walkers.get(slot, {})
+	if w.is_empty():
+		return
+	if net == "host" and slot != net_me:
+		Net.broadcast({"k": "mg_e", "m": "_push_me", "v": Marshalls.variant_to_base64([slot, push, slow])})
+	else:
+		w["push"] = push
+		w["slow"] = maxf(float(w["slow"]), slow)
+
+
+func _push_me(slot: int, push: Vector3, slow: float) -> void:
+	if slot != net_me:
+		return
+	var w: Dictionary = walkers.get(slot, {})
+	if not w.is_empty():
+		w["push"] = push
+		w["slow"] = maxf(float(w["slow"]), slow)
 
 
 # ── 효과 ─────────────────────────────────────────────────────

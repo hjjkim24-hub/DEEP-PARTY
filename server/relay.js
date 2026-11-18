@@ -142,6 +142,7 @@ function handle(sock, text) {
     case "msg": {
       const room = rooms.get(sock.room);
       if (!room) return;
+      if (process.env.RELAY_DEBUG) { stats[sock.pid] = (stats[sock.pid] || 0) + 1; }
       const out = { t: "msg", from: sock.pid, d: m.d };
       if (typeof m.to === "number" && m.to >= 0) {
         const s = room.peers.get(m.to);
@@ -156,6 +157,9 @@ function handle(sock, text) {
       break;
   }
 }
+
+const stats = {};
+if (process.env.RELAY_DEBUG) setInterval(() => { if (Object.keys(stats).length) log("msgs " + JSON.stringify(stats)); }, 5000);
 
 function log(s) { console.log(new Date().toISOString(), s); }
 

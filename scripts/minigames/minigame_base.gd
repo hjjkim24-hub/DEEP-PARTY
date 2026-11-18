@@ -52,8 +52,149 @@ func setup(p_players: Array, auto: bool, hint: Callable = Callable()) -> void:
 		scores[int(p["slot"])] = 0.0
 
 
+## 사람이 하는 자리인지 (CPU 생각을 돌리지 않을 자리).
+## 온라인 손님 PC 에서는 모두 true → 손님 PC 는 CPU 를 직접 움직이지 않고 방장이 보낸 대로 보여줌
 func is_human(p: Dictionary) -> bool:
+	if net == "client":
+		return true
 	return not bool(p["cpu"]) and not auto_human
+
+
+## 이 PC 의 키보드 · 마우스로 조작하는 자리인지
+func is_local(p: Dictionary) -> bool:
+	if bool(p["cpu"]) or auto_human:
+		return false
+	return net == "" or int(p["slot"]) == net_me
+
+
+## 이 PC 사람의 자리 (오프라인이면 첫 번째 사람)
+func local_slot() -> int:
+	if net != "":
+		return net_me
+	for p in players:
+		if not bool(p["cpu"]):
+			return int(p["slot"])
+	return -1
+
+
+# ── 온라인 (방장이 게임을 진행하고, 손님은 조작을 보내고 결과를 받아 보여줌) ─────────
+## net: "" 오프라인 · "host" 방장 · "client" 손님
+var net := ""
+var net_me := 0
+var net_seed := 0
+var _net_acc := 0.0
+var _net_done := false
+var _net_rank: Array = []
+const NET_DT := 1.0 / 15.0
+
+
+func net_setup(mode: String, me: int) -> void:
+	net = mode
+	net_me = me
+	if mode != "":
+		Net.message.connect(_on_net_msg)
+
+
+func is_client() -> bool:
+	return net == "client"
+
+
+## 방장(또는 혼자)만 정하고, 모두가 같은 걸 실행 (적 생성 · 맞음 · 점수 등)
+func net_call(method: String, args: Array = []) -> void:
+	if net == "client":
+		return
+	callv(method, args)
+	if net == "host":
+		Net.broadcast({"k": "mg_e", "m": method, "v": Marshalls.variant_to_base64(args)})
+
+
+## 방장: 손님들에게만 알림 (방장 쪽은 직접 await 하며 실행할 때)
+func net_tell(method: String, args: Array = []) -> void:
+	if net == "host":
+		Net.broadcast({"k": "mg_e", "m": method, "v": Marshalls.variant_to_base64(args)})
+
+
+## 내 조작 → 방장 (혼자 · 방장이면 바로)
+func net_input(action: String, args: Array = []) -> void:
+	if net == "client":
+		Net.to_host({"k": "mg_i", "a": action, "v": Marshalls.variant_to_base64(args)})
+	else:
+		_net_input(local_slot(), action, args)
+
+
+## 게임마다: 조작 처리 (방장 PC 에서 그 자리 사람의 조작으로)
+func _net_input(_slot: int, _action: String, _args: Array) -> void:
+	pass
+
+
+## 게임마다: 방장이 손님에게 보낼 상태 / 손님이 받은 상태 적용
+func _net_state() -> Dictionary:
+	return {}
+
+
+func _net_apply(_s: Dictionary) -> void:
+	pass
+
+
+## 3D 공통(걷는 말 등)이 덧붙이는 상태
+func _net_state_common() -> Dictionary:
+	return {}
+
+
+func _net_apply_common(_s: Dictionary) -> void:
+	pass
+
+
+func _peer_slot(peer: int) -> int:
+	for p in players:
+		if int(GameState.players[int(p["slot"])].get("peer", -999)) == peer:
+			return int(p["slot"])
+	return -1
+
+
+var _dbg_n := 0
+
+
+func _on_net_msg(from: int, d: Dictionary) -> void:
+	if OS.get_environment("NET_DEBUG") != "" and _dbg_n < 40:
+		_dbg_n += 1
+		print("NETDBG ", net, " got ", d.get("k"), " ", d.get("m", ""), " inside=", is_inside_tree())
+	if not is_inside_tree():
+		return
+	match String(d.get("k", "")):
+		"mg_e":
+			if net == "client":
+				var m := String(d.get("m", ""))
+				var args = Marshalls.base64_to_variant(String(d.get("v", "")))
+				if has_method(m) and typeof(args) == TYPE_ARRAY:
+					callv(m, args)
+		"mg_s":
+			if net == "client":
+				var st = Marshalls.base64_to_variant(String(d.get("v", "")))
+				if typeof(st) == TYPE_DICTIONARY:
+					time_left = float(st.get("tl", time_left))
+					var sc: Dictionary = st.get("sc", {})
+					for k in sc:
+						scores[int(k)] = sc[k]
+					_net_apply_common(st)
+					_net_apply(st)
+		"mg_i":
+			if net == "host":
+				var slot := _peer_slot(from)
+				var args = Marshalls.base64_to_variant(String(d.get("v", "")))
+				if slot >= 0 and typeof(args) == TYPE_ARRAY:
+					_net_input(slot, String(d.get("a", "")), args)
+		"mg_end":
+			if net == "client":
+				_net_rank = d.get("r", [])
+				_net_done = true
+
+
+func _net_send_state() -> void:
+	var st := {"tl": time_left, "sc": scores}
+	st.merge(_net_state_common(), true)
+	st.merge(_net_state(), true)
+	Net.broadcast({"k": "mg_s", "v": Marshalls.variant_to_base64(st)})
 
 
 func hint(name_: String) -> void:
@@ -63,6 +204,8 @@ func hint(name_: String) -> void:
 
 func _ready() -> void:
 	rng.randomize()
+	if net_seed != 0:
+		rng.seed = net_seed   # 온라인: 모두 같은 무대 (조개 색 등)
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	var th := Theme.new()
@@ -128,12 +271,25 @@ func run() -> Array:
 	time_left = duration
 	playing = true
 	_start_game()
-	while not _is_done():
-		await get_tree().process_frame
+	var r: Array
+	if net == "client":
+		while not _net_done:
+			await get_tree().process_frame
+		r = []
+		for sl in _net_rank:
+			var p := player_by_slot(int(sl))
+			if not p.is_empty():
+				r.append(p)
+	else:
+		while not _is_done():
+			await get_tree().process_frame
+		r = _ranking()
+		if net == "host":
+			_net_send_state()
+			Net.broadcast({"k": "mg_end", "r": r.map(func(p: Dictionary) -> int: return int(p["slot"]))})
 	playing = false
 	sfx("start")
 	await _big_text("FINISH!", 1.2)
-	var r := _ranking()
 	finished.emit(r)
 	return r
 
@@ -142,6 +298,11 @@ func _process(delta: float) -> void:
 	if playing:
 		time_left = maxf(0.0, time_left - delta)
 		_tick(delta)
+		if net == "host":
+			_net_acc += delta
+			if _net_acc >= NET_DT:
+				_net_acc = 0.0
+				_net_send_state()
 	if _timer_label:
 		_timer_label.text = str(ceili(time_left)) if show_timer and (playing or time_left > 0.0) else ""
 	for p in players:
@@ -191,7 +352,7 @@ func _build_hud() -> void:
 	for p in players:
 		var chip := PanelContainer.new()
 		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		chip.add_theme_stylebox_override("panel", _glass(Color(0.02, 0.15, 0.14, 0.75), Color(p["color"], 0.8) if is_human(p) else Color(AQUA, 0.2), 2 if is_human(p) else 1, 26))
+		chip.add_theme_stylebox_override("panel", _glass(Color(0.02, 0.15, 0.14, 0.75), Color(p["color"], 0.8) if is_local(p) else Color(AQUA, 0.2), 2 if is_local(p) else 1, 26))
 		var h := HBoxContainer.new()
 		h.add_theme_constant_override("separation", 10)
 		chip.add_child(h)

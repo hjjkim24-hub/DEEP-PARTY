@@ -48,7 +48,32 @@ func setup(id: String, p_players: Array, auto: bool, hint: Callable = Callable()
 
 
 func _is_human(p: Dictionary) -> bool:
+	if net != "":
+		return int(p["slot"]) == net_me and not auto_human
 	return not bool(p["cpu"]) and not auto_human
+
+
+## 온라인: "" · "host" · "client". 준비 도장은 방장이 모아서 모두에게 알려 줌
+var net := ""
+var net_me := 0
+
+
+func net_setup(mode: String, me: int) -> void:
+	net = mode
+	net_me = me
+	if mode != "":
+		Net.message.connect(_on_net_msg)
+
+
+func _on_net_msg(from: int, d: Dictionary) -> void:
+	if not is_inside_tree() or String(d.get("k", "")) != "ready":
+		return
+	if net == "host":
+		for p in players:
+			if int(GameState.players[int(p["slot"])].get("peer", -999)) == from:
+				_set_ready(int(p["slot"]))
+	elif net == "client":
+		_set_ready(int(d.get("s", -1)))
 
 
 func _ready() -> void:
@@ -376,6 +401,10 @@ func _set_ready(slot: int) -> void:
 	if _ready_state.get(slot, true):
 		return
 	_ready_state[slot] = true
+	if net == "host":
+		Net.broadcast({"k": "ready", "s": slot})
+	elif net == "client" and slot == net_me:
+		Net.to_host({"k": "ready"})
 	var c: Dictionary = _cards[slot]
 	var st: Label = c["status"]
 	st.text = "Aye, ready!"
@@ -409,7 +438,9 @@ func run() -> void:
 	if _hint_cb.is_valid():
 		_hint_cb.call("52_mg_%s_intro_screen" % game_id)
 	for p in players:
-		if not _is_human(p):
+		# CPU 는 잠시 뒤 알아서 준비 (온라인 손님 PC 에서는 방장이 알려 줌)
+		var auto_me := auto_human and not bool(p["cpu"]) and (net == "" or int(p["slot"]) == net_me)
+		if (bool(p["cpu"]) and net != "client") or auto_me:
 			_cpu_ready_later(int(p["slot"]), _rng.randf_range(0.6, 3.2))
 	while not _all_ready():
 		await get_tree().process_frame

@@ -2042,11 +2042,16 @@ func _play_intro() -> void:
 	if not is_inside_tree():
 		return
 	Audio.play_music(0.0, "menu")
+	if GameState.return_to.begins_with("toast:"):
+		var msg := GameState.return_to.substr(6)
+		GameState.return_to = ""
+		get_tree().create_timer(1.2).timeout.connect(func() -> void: _toast(tr(msg)))
 	if GameState.return_to == "mg_lobby":
-		# 미니게임 모음에서 돌아옴 → 같은 사람들이 있는 로비를 바로
+		# 미니게임 모음에서 돌아옴 → 같은 사람들이 있는 로비를 바로 (온라인 방은 그대로)
 		GameState.return_to = ""
 		_busy = false
 		_logo.play_intro()
+		_joined_as_guest = Net.is_guest()
 		_open_mg_lobby(true)
 		create_tween().tween_property(_fade, "color:a", 0.0, 0.5)
 		return

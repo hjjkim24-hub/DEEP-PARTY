@@ -268,7 +268,7 @@ func _tick(delta: float) -> void:
 		w["last_paint"] = pp
 	var pr := pressure()
 	_blob_t -= delta
-	if _blob_t <= 0.0 and pr > 0.15:
+	if _blob_t <= 0.0 and pr > 0.15 and not is_client():
 		_spit()
 		_blob_t = lerpf(4.0, 1.4, pr) * rng.randf_range(0.8, 1.2)
 	for b in _blobs.duplicate():
@@ -279,12 +279,14 @@ func _tick(delta: float) -> void:
 		if f >= 1.0:
 			_blobs.erase(b)
 			node.queue_free()
-			_splat(b["to"], float(b["r"]))
+			if not is_client():
+				_splat(b["to"], float(b["r"]))
 	if _dirty:
 		_tex.update(_img)
 		_dirty = false
-		for s in _count:
-			scores[s] = int(_count[s])
+		if not is_client():
+			for s in _count:
+				scores[s] = int(_count[s])
 
 
 func _cell(p: Vector3) -> Vector2i:
@@ -349,8 +351,11 @@ func _spit() -> void:
 		if not cells.is_empty():
 			var i: int = cells[rng.randi() % cells.size()]
 			to = Vector3((i % GRID + 0.5) / GRID * HALF * 2.0 - HALF, 0, (i / GRID + 0.5) / GRID * HALF * 2.0 - HALF)
-	var r := lerpf(1.3, 2.6, pr)
-	var fly := lerpf(1.3, 0.9, pr)
+	net_call("_spit_do", [to, lerpf(1.3, 2.6, pr), lerpf(1.3, 0.9, pr)])
+
+
+## 먹물 덩이 하나 (방장이 정한 자리로 모두 같게)
+func _spit_do(to: Vector3, r: float, fly: float) -> void:
 	var ring := danger_ring(to, r)
 	get_tree().create_timer(fly).timeout.connect(ring.queue_free)
 	var m := MeshInstance3D.new()
@@ -370,18 +375,24 @@ func _spit() -> void:
 
 
 func _splat(at: Vector3, r: float) -> void:
-	sfx("splash", 60)
-	shake(0.25)
-	# 철퍽: 들쭉날쭉한 큰 얼룩 + 사방으로 튄 작은 방울과 꼬리
+	# 철퍽: 들쭉날쭉한 큰 얼룩 + 사방으로 튄 작은 방울과 꼬리 (모양은 방장이 정함)
 	var wob := []
 	for k in 4:
 		wob.append(Vector3(rng.randf_range(0.04, 0.13), float(rng.randi_range(3, 9)), rng.randf() * TAU))
-	_paint_at(at, r * 0.85, -1, wob)
+	var drops := []
 	for k in rng.randi_range(7, 12):
 		var a := rng.randf() * TAU
-		var d := r * rng.randf_range(0.9, 1.7)
-		var dr := r * rng.randf_range(0.08, 0.22)
-		var q := at + Vector3(cos(a), 0, sin(a)) * d
+		drops.append([at + Vector3(cos(a), 0, sin(a)) * r * rng.randf_range(0.9, 1.7), r * rng.randf_range(0.08, 0.22)])
+	net_call("_splat_do", [at, r, wob, drops])
+
+
+func _splat_do(at: Vector3, r: float, wob: Array, drops: Array) -> void:
+	sfx("splash", 60)
+	shake(0.25)
+	_paint_at(at, r * 0.85, -1, wob)
+	for dp in drops:
+		var q: Vector3 = dp[0]
+		var dr := float(dp[1])
 		_paint_at(q, dr, -1)
 		# 방울 쪽으로 가늘어지는 꼬리
 		for t in 3:
@@ -447,6 +458,44 @@ func _think(delta: float) -> void:
 					best = c
 			a["goal"] = best
 		w["target"] = a["goal"]
+
+
+## 온라인: 칠한 칸 전체를 가끔 (방장 → 손님, 조금씩 어긋난 걸 맞춤)
+var _grid_acc := 0.0
+
+
+func _net_state() -> Dictionary:
+	_grid_acc += NET_DT
+	if _grid_acc < 1.5:
+		return {}
+	_grid_acc = 0.0
+	var b := PackedByteArray()
+	b.resize(_owner.size())
+	for i in _owner.size():
+		b[i] = _owner[i] + 1
+	return {"grid": b.compress(FileAccess.COMPRESSION_DEFLATE)}
+
+
+func _net_apply(st: Dictionary) -> void:
+	if not st.has("grid"):
+		return
+	var b: PackedByteArray = (st["grid"] as PackedByteArray).decompress(GRID * GRID, FileAccess.COMPRESSION_DEFLATE)
+	if b.size() != GRID * GRID:
+		return
+	for i in b.size():
+		var o := int(b[i]) - 1
+		if o == _owner[i]:
+			continue
+		_owner[i] = o
+		var x := i % GRID
+		var y := i / GRID
+		if o >= 0:
+			var col: Color = _cols[o]
+			var k := 0.82 + 0.18 * fposmod(sin(float(x) * 12.9898 + float(y) * 78.233) * 43758.5453, 1.0)
+			_img.set_pixel(x, y, Color(col.r * k, col.g * k, col.b * k, 0.93))
+		else:
+			_img.set_pixel(x, y, Color(0.05, 0.04, 0.07, 0.75))   # 칠했던 칸이 비었으면 먹물에 지워진 것
+	_dirty = true
 
 
 func _score_text(p: Dictionary) -> String:

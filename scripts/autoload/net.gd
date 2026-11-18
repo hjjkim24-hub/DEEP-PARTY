@@ -18,7 +18,7 @@ signal failed(reason: String)
 signal room_closed
 signal disconnected
 
-const SERVER_URL := "ws://127.0.0.1:8787"
+const SERVER_URL := "wss://deep-party.onrender.com"
 const CONNECT_TIMEOUT := 9.0
 
 var role := ""          ## "" 오프라인, "host" 방장, "guest" 손님

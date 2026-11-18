@@ -194,7 +194,7 @@ func _tick(delta: float) -> void:
 	_elapsed += delta
 	_t3 += delta
 	_spawn -= delta
-	if _spawn <= 0.0:
+	if _spawn <= 0.0 and not is_client():
 		_spawn_target()
 		_spawn = lerpf(0.85, 0.28, pressure()) * rng.randf_range(0.8, 1.2)
 	for s in _cannons:
@@ -223,6 +223,16 @@ func _spawn_target() -> void:
 	var gold := rng.randf() < lerpf(0.16, 0.08, p)
 	var length := rng.randf_range(6.0, 8.5)
 	var dir := Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized()
+	var up := lerpf(2.9, 0.95, p) * rng.randf_range(0.85, 1.15)
+	var phase := rng.randf() * TAU
+	# 후반엔 옆으로 헤엄치며 움직임 (포탄이 날아가는 동안 비켜 감 → 앞을 내다보고 쏴야 함)
+	var vel := Vector3(rng.randf_range(-1.0, 1.0), 0, rng.randf_range(-0.3, 0.3)).normalized() * (0.0 if p < 0.35 else lerpf(0.0, 4.2, (p - 0.35) / 0.65))
+	net_call("_target_do", [_next_id, pos, gold, length, dir, up, phase, vel])
+	_next_id += 1
+
+
+## 촉수 하나 솟음 (방장이 정한 대로 모두 같게)
+func _target_do(id: int, pos: Vector3, gold: bool, length: float, dir: Vector3, up: float, phase: float, vel: Vector3) -> void:
 	var tn := tentacle(length, 0.85, dir)
 	var node: Node3D = tn["root"]
 	var m: ShaderMaterial = tn["mat"]
@@ -248,11 +258,8 @@ func _spawn_target() -> void:
 	foam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	foam.position = pos + Vector3(0, 0.12, 0)
 	world3.add_child(foam)
-	var t := {"foam": foam, "id": _next_id, "pos": pos, "gold": gold, "alive": true, "tn": tn, "node": node, "len": length,
-		"up_until": _elapsed + lerpf(2.9, 0.95, p) * rng.randf_range(0.85, 1.15), "phase": rng.randf() * TAU, "rise": 0.0,
-		# 후반엔 옆으로 헤엄치며 움직임 (포탄이 날아가는 동안 비켜 감 → 앞을 내다보고 쏴야 함)
-		"vel": Vector3(rng.randf_range(-1.0, 1.0), 0, rng.randf_range(-0.3, 0.3)).normalized() * (0.0 if p < 0.35 else lerpf(0.0, 4.2, (p - 0.35) / 0.65))}
-	_next_id += 1
+	var t := {"foam": foam, "id": id, "pos": pos, "gold": gold, "alive": true, "tn": tn, "node": node, "len": length,
+		"up_until": _elapsed + up, "phase": phase, "rise": 0.0, "vel": vel}
 	_targets.append(t)
 	splash(pos + Vector3(0, 0.3, 0), 30, 1.1)
 	sfx("splash", 120)
@@ -313,7 +320,7 @@ func _aim_point(t: Dictionary) -> Vector3:
 # ── 사람: 클릭하면 마우스 가까운 촉수로 ──────────────────────
 func _human(_delta: float) -> void:
 	for p in players:
-		if not is_human(p):
+		if not is_local(p):
 			continue
 		var g := mouse_ground(SEA_Y)
 		_cursor.visible = g != Vector3.INF and playing
@@ -328,15 +335,25 @@ func _gui_input(e: InputEvent) -> void:
 	var mb := e as InputEventMouseButton
 	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
 		return
-	for p in players:
-		if is_human(p):
-			var best := _pick_under_mouse()
-			if not best.is_empty():
-				_fire(int(p["slot"]), best)
-			else:
-				var g := mouse_ground(SEA_Y)
-				if g != Vector3.INF:
-					_fire_at(int(p["slot"]), g, -1)
+	var best := _pick_under_mouse()
+	if not best.is_empty():
+		net_input("fire", [int(best["id"]), _aim_point(best)])
+	else:
+		var g := mouse_ground(SEA_Y)
+		if g != Vector3.INF:
+			net_input("fire", [-1, g])
+
+
+## 방장: 그 자리 사람이 쏨 (촉수를 골랐으면 방장 PC 의 그 촉수 자리로)
+func _net_input(slot: int, action: String, args: Array) -> void:
+	if action != "fire" or not playing or args.size() < 2:
+		return
+	var id := int(args[0])
+	for t in _targets:
+		if int(t["id"]) == id and t["alive"]:
+			_fire(slot, t)
+			return
+	_fire_at(slot, args[1], -1)
 
 
 func _pick_under_mouse() -> Dictionary:
@@ -364,6 +381,12 @@ func _fire_at(s: int, at: Vector3, target_id: int) -> void:
 	var c: Dictionary = _cannons[s]
 	if float(c["reload"]) > 0.0:
 		return
+	net_call("_fire_do", [s, at, target_id])
+
+
+## 포탄 발사 (모두 같게)
+func _fire_do(s: int, at: Vector3, target_id: int) -> void:
+	var c: Dictionary = _cannons[s]
 	c["reload"] = RELOAD
 	var from: Vector3 = c["pos"]
 	var d := at - from
@@ -389,7 +412,7 @@ func _fire_at(s: int, at: Vector3, target_id: int) -> void:
 	_smoke(muzzle)
 	_flash(muzzle)
 	sfx("cannon", 50)
-	if is_human(player_by_slot(s)):
+	if is_local(player_by_slot(s)):
 		shake(0.3)
 
 
@@ -405,7 +428,8 @@ func _update_balls(delta: float) -> void:
 		if f >= 1.0:
 			_balls.erase(b)
 			node.queue_free()
-			_land(b)
+			if not is_client():
+				_land(b)
 
 
 func _land(b: Dictionary) -> void:
@@ -415,18 +439,50 @@ func _land(b: Dictionary) -> void:
 		# 포탄이 떨어진 자리에 아직 그 촉수가 있어야 명중 (움직이는 촉수는 비켜 갈 수 있음)
 		var near := Vector2(at.x - (t["pos"] as Vector3).x, at.z - (t["pos"] as Vector3).z).length() < 1.5
 		if t["alive"] and near and (int(t["id"]) == int(b["target"]) or int(b["target"]) == -1):
-			t["alive"] = false
-			var pts := 3 if t["gold"] else 1
-			scores[s] = int(scores[s]) + pts
-			sfx("explode", 60)
-			_burst(at, t["gold"])
-			_flinch(t)
-			var p := player_by_slot(s)
-			float_at(at + Vector3(0, 1.2, 0), "+%d" % pts, GOLD if t["gold"] else Color(p["color"]).lightened(0.3), 48)
+			net_call("_hit_do", [s, int(t["id"]), at])
 			return
 	# 빗나감: 물기둥
+	net_call("_miss_do", [at])
+
+
+func _hit_do(s: int, id: int, at: Vector3) -> void:
+	for t in _targets:
+		if int(t["id"]) != id:
+			continue
+		t["alive"] = false
+		var pts := 3 if t["gold"] else 1
+		if not is_client():
+			scores[s] = int(scores[s]) + pts
+		sfx("explode", 60)
+		_burst(at, t["gold"])
+		_flinch(t)
+		var p := player_by_slot(s)
+		float_at(at + Vector3(0, 1.2, 0), "+%d" % pts, GOLD if t["gold"] else Color(p["color"]).lightened(0.3), 48)
+		return
+
+
+func _miss_do(at: Vector3) -> void:
 	splash(Vector3(at.x, SEA_Y + 0.2, at.z), 40, 1.5)
 	sfx("splash", 60)
+
+
+## 온라인: 촉수 자리 보정 (움직이는 촉수)
+func _net_state() -> Dictionary:
+	var tp := {}
+	for t in _targets:
+		if t["alive"]:
+			tp[int(t["id"])] = t["pos"]
+	return {"tp": tp}
+
+
+func _net_apply(st: Dictionary) -> void:
+	var tp: Dictionary = st.get("tp", {})
+	for t in _targets:
+		var id := int(t["id"])
+		if tp.has(id):
+			t["pos"] = (t["pos"] as Vector3).lerp(tp[id], 0.5)
+		elif t["alive"] and float(t["rise"]) >= 1.0:
+			t["alive"] = false
 
 
 ## 맞은 촉수: 확 젖혀지며 움찔 → 물속으로

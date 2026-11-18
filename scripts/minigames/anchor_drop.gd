@@ -184,7 +184,8 @@ func _setup_game() -> void:
 
 
 func _start_game() -> void:
-	_run()
+	if not is_client():
+		_run()
 
 
 func _run() -> void:
@@ -199,32 +200,22 @@ func _is_done() -> bool:
 
 
 func _play_round() -> void:
-	# 판마다: 과녁 위치 · 배 속도 · 물살 · 과녁 크기
+	# 판마다: 과녁 위치 · 배 속도 · 물살 · 과녁 크기 (방장이 정해서 모두에게)
 	var f := float(_round) / (ROUNDS - 1)
 	f = clampf(f + heat * 0.15, 0.0, 1.0)
-	_speed = lerpf(3.2, 7.5, f)
-	_current = lerpf(0.0, 2.4, f) * (1.0 if rng.randf() < 0.5 else -1.0)
-	_target_r = lerpf(1.2, 0.75, f)
-	_target_x = rng.randf_range(-4.0, 4.0)
-	_marker.position = Vector3(_target_x, 0, 0)
-	_marker.scale = Vector3.ONE * _target_r
-	await _big_text(tr("ROUND %d") % (_round + 1), 0.6)
-	if absf(_current) > 0.1:
-		float_at(Vector3(0, 4.0, 0), ("≫ " + tr("Current")) if _current > 0 else (tr("Current") + " ≪"), Color(0.6, 0.95, 1.0), 40)
+	var starts := {}
 	for s in _boats:
-		var b: Dictionary = _boats[s]
-		b["dropped"] = false
-		b["landed"] = false
-		b["brake"] = 0.0
-		b["dir"] = 1.0 if rng.randf() < 0.5 else -1.0
-		b["x"] = -11.0 * float(b["dir"]) - float(b["dir"]) * rng.randf_range(0.0, 4.5)
-		var an: Node3D = b["anchor"]
-		an.position = Vector3(0.2, SEA_Y - 0.3, float(b["z"]))
-		an.rotation = Vector3.ZERO
+		var dir := 1.0 if rng.randf() < 0.5 else -1.0
+		starts[s] = [dir, -11.0 * dir - dir * rng.randf_range(0.0, 4.5)]
+	net_call("_round_setup", [_round, lerpf(3.2, 7.5, f), lerpf(0.0, 2.4, f) * (1.0 if rng.randf() < 0.5 else -1.0),
+		lerpf(1.2, 0.75, f), rng.randf_range(-4.0, 4.0), starts])
+	await _big_text(tr("ROUND %d") % (_round + 1), 0.6)
+	for s in _boats:
 		var p := player_by_slot(s)
 		if not is_human(p):
-			_ai[s] = _cpu_plan(p, b)
+			_ai[s] = _cpu_plan(p, _boats[s])
 	_phase = "sail"
+	net_call("_set_phase", ["sail"])
 	var t := 0.0
 	while t < 27.0 / _speed + 1.8:
 		await get_tree().process_frame
@@ -234,10 +225,10 @@ func _play_round() -> void:
 	# 아직 안 떨어뜨린 사람은 끝에서 자동으로 (점수 거의 없음)
 	for s in _boats:
 		if not _boats[s]["dropped"]:
-			_drop(s)
+			net_call("_drop_at", [s, float(_boats[s]["x"])])
 	while not _all_landed():
 		await get_tree().process_frame
-	_phase = "score"
+	var res := {}
 	for s in _boats:
 		var b: Dictionary = _boats[s]
 		var d := absf(float(b["land_x"]) - _target_x) / _target_r
@@ -250,13 +241,60 @@ func _play_round() -> void:
 			pts = 2
 		elif d <= 1.0:
 			pts = 1
-		_total[s] = int(_total[s]) + pts
-		scores[s] = _total[s]
-		var an: Node3D = b["anchor"]
-		float_at(an.global_position + Vector3(0, 1.4, 0), "+%d" % pts if pts > 0 else "0",
-			GOLD if pts >= 5 else Color(player_by_slot(s)["color"]).lightened(0.3), 46 if pts >= 5 else 36)
-	sfx("start")
+		res[s] = [float(b["land_x"]), pts]
+	net_call("_score_do", [res])
 	await get_tree().create_timer(1.6, false).timeout
+
+
+## 판 시작 (모두 같게)
+func _round_setup(r: int, speed: float, current: float, target_r: float, target_x: float, starts: Dictionary) -> void:
+	_round = r
+	_speed = speed
+	_current = current
+	_target_r = target_r
+	_target_x = target_x
+	_marker.position = Vector3(_target_x, 0, 0)
+	_marker.scale = Vector3.ONE * _target_r
+	if is_client():
+		_big_text(tr("ROUND %d") % (_round + 1), 0.6)
+	if absf(_current) > 0.1:
+		float_at(Vector3(0, 4.0, 0), ("≫ " + tr("Current")) if _current > 0 else (tr("Current") + " ≪"), Color(0.6, 0.95, 1.0), 40)
+	for s in _boats:
+		var b: Dictionary = _boats[s]
+		var st: Array = starts.get(s, [1.0, -11.0])
+		b["dropped"] = false
+		b["landed"] = false
+		b["brake"] = 0.0
+		b["dir"] = float(st[0])
+		b["x"] = float(st[1])
+		b.erase("land_x")
+		(b["node"] as Node3D).position.x = b["x"]
+		var an: Node3D = b["anchor"]
+		an.position = Vector3(0.2, SEA_Y - 0.3, float(b["z"]))
+		an.rotation = Vector3.ZERO
+	_phase = "intro"
+
+
+func _set_phase(ph: String) -> void:
+	_phase = ph
+
+
+## 판 점수 (방장이 계산한 착지 자리 · 점수 그대로)
+func _score_do(res: Dictionary) -> void:
+	_phase = "score"
+	for s in res:
+		var b: Dictionary = _boats[int(s)]
+		var v: Array = res[s]
+		b["land_x"] = float(v[0])
+		b["landed"] = true
+		var pts := int(v[1])
+		_total[int(s)] = int(_total[int(s)]) + pts
+		scores[int(s)] = _total[int(s)]
+		var an: Node3D = b["anchor"]
+		an.global_position = Vector3(float(b["land_x"]), 0.05, float(b["z"]))
+		float_at(an.global_position + Vector3(0, 1.4, 0), "+%d" % pts if pts > 0 else "0",
+			GOLD if pts >= 5 else Color(player_by_slot(int(s))["color"]).lightened(0.3), 46 if pts >= 5 else 36)
+	sfx("start")
 
 
 func _all_landed() -> bool:
@@ -285,9 +323,21 @@ func _gui_input(e: InputEvent) -> void:
 	var mb := e as InputEventMouseButton
 	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
 		return
-	for p in players:
-		if is_human(p):
-			_drop(int(p["slot"]))
+	net_input("drop")
+
+
+func _net_input(slot: int, action: String, _args: Array) -> void:
+	if action == "drop" and _phase == "sail" and _boats.has(slot) and not _boats[slot]["dropped"]:
+		net_call("_drop_at", [slot, float(_boats[slot]["x"])])
+
+
+## 닻 내림 (방장 PC 의 배 자리 기준으로 모두 같게)
+func _drop_at(s: int, x: float) -> void:
+	var b: Dictionary = _boats[s]
+	if b["dropped"]:
+		return
+	b["x"] = x
+	_drop(s)
 
 
 func _drop(s: int) -> void:
@@ -325,7 +375,7 @@ func _tick(delta: float) -> void:
 			if not is_human(p) and _ai.has(s):
 				# 배가 계획한 자리 근처를 지날 때 떨어뜨림
 				if absf(float(b["x"]) + 0.2 - float(_ai[s]["x"])) < _speed * delta * 1.2 + 0.02:
-					_drop(s)
+					net_call("_drop_at", [s, float(b["x"])])
 		if b["dropped"] and not b.get("landed", false):
 			b["vy"] = float(b["vy"]) + 12.0 * delta
 			var y := an.position.y - float(b["vy"]) * delta
@@ -335,7 +385,8 @@ func _tick(delta: float) -> void:
 			if y <= 0.05:
 				y = 0.05
 				b["landed"] = true
-				b["land_x"] = float(b["ax"])
+				if not b.has("land_x") or not is_client():
+					b["land_x"] = float(b["ax"])
 				sfx("thud", 40)
 				var sand := CPUParticles3D.new()
 				sand.one_shot = true
@@ -386,6 +437,22 @@ func _tick(delta: float) -> void:
 				mmc.set_instance_transform(k, Transform3D(bas.scaled(Vector3(1.0, 1.0, 1.0)) * Basis().scaled(Vector3(1.0, 1.0, 1.7)), top + y * f))
 		else:
 			mmc.visible_instance_count = 0
+
+
+## 온라인: 배 자리 보정 (방장 → 손님)
+func _net_state() -> Dictionary:
+	var bx := {}
+	for s in _boats:
+		bx[s] = float(_boats[s]["x"])
+	return {"bx": bx}
+
+
+func _net_apply(st: Dictionary) -> void:
+	var bx: Dictionary = st.get("bx", {})
+	for s in bx:
+		var b: Dictionary = _boats.get(int(s), {})
+		if not b.is_empty() and not b["dropped"]:
+			b["x"] = lerpf(float(b["x"]), float(bx[s]), 0.5)
 
 
 func _ranking() -> Array:

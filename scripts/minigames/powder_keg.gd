@@ -123,12 +123,18 @@ func _alive() -> Array:
 
 
 func _new_round() -> void:
+	if is_client():
+		return
 	var alive := _alive()
 	if alive.size() <= 1:
 		return
-	_holder = alive[rng.randi() % alive.size()]
 	# 15 ~ 25초 사이 아무 때나 터짐 (아무도 모름)
-	_fuse_max = rng.randf_range(15.0, 25.0)
+	net_call("_round_do", [alive[rng.randi() % alive.size()], rng.randf_range(15.0, 25.0)])
+
+
+func _round_do(holder: int, fuse_max: float) -> void:
+	_holder = holder
+	_fuse_max = fuse_max
 	_fuse = _fuse_max
 	_no_pass = 0.8
 	_keg.visible = true
@@ -161,18 +167,18 @@ func _tick(delta: float) -> void:
 	_keg.scale = Vector3.ONE * (1.15 + sin(_t3 * 9.0) * 0.03)
 	if fmod(_t3, 0.5) < delta:
 		sfx("tick", 40)
-	# 넘기기: 닿으면
-	if _no_pass <= 0.0:
+	# 넘기기: 닿으면 (방장 PC 가 판정)
+	if _no_pass <= 0.0 and not is_client():
 		for s in _alive():
 			if s == _holder:
 				continue
 			var d: Vector3 = (walkers[s]["pos"] as Vector3) - (hw["pos"] as Vector3)
 			d.y = 0.0
 			if d.length() < PASS_R:
-				_pass(s)
+				net_call("_pass", [s])
 				break
-	if _fuse <= 0.0:
-		_boom()
+	if _fuse <= 0.0 and not is_client():
+		net_call("_boom")
 
 
 func _pass(to: int) -> void:
@@ -182,12 +188,14 @@ func _pass(to: int) -> void:
 	sfx("thud", 50)
 	var d: Vector3 = (walkers[to]["pos"] as Vector3) - (walkers[from]["pos"] as Vector3)
 	if d.length() > 0.01:
-		walkers[to]["push"] = d.normalized() * 3.0
+		net_push(to, d.normalized() * 3.0)
 	float_at((walkers[to]["pos"] as Vector3) + Vector3(0, 2.8, 0), "!", Color(1.0, 0.5, 0.3), 54)
 
 
 func _boom() -> void:
 	var s := _holder
+	if s < 0:
+		return
 	_holder = -1
 	var w: Dictionary = walkers[s]
 	var at: Vector3 = _keg.global_position
@@ -287,6 +295,19 @@ func _ranking() -> Array:
 	order.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return int(_out_at.get(int(a["slot"]), 99)) > int(_out_at.get(int(b["slot"]), 99)))
 	return order
+
+
+## 온라인: 누가 들고 있는지 (방장 → 손님, 혹시 놓친 신호 보정)
+func _net_state() -> Dictionary:
+	return {"h": _holder, "f": _fuse}
+
+
+func _net_apply(st: Dictionary) -> void:
+	var h := int(st.get("h", _holder))
+	if h >= 0 and _wait <= 0.0:
+		_holder = h
+		_keg.visible = true
+	_fuse = float(st.get("f", _fuse))
 
 
 func _score_text(p: Dictionary) -> String:

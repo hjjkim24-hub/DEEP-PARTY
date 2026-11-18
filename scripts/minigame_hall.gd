@@ -40,10 +40,21 @@ var _run_token := 0              ## 게임 도중 나가면 늘려서, 끝난 �
 var _current: Node               ## 지금 떠 있는 소개 화면이나 미니게임
 
 
+## 온라인: "" 혼자 · "host" 방장(게임을 고르고 진행) · "client" 손님(방장을 따라감)
+var _net := ""
+var _wait_label: Label
+var _seed := 0
+
+
 func _ready() -> void:
 	_rng.randomize()
 	_ids = Minigames.ids()
+	_net = "host" if Net.is_host() else ("client" if Net.is_guest() else "")
 	_players = _make_players()
+	if _net != "":
+		Net.message.connect(_on_net)
+		Net.room_closed.connect(_on_lost.bind("The host closed the room."))
+		Net.disconnected.connect(_on_lost.bind("Lost connection to the server."))
 	var th := Theme.new()
 	PirateFonts.style_theme(th)
 	th.default_font_size = 24
@@ -72,7 +83,7 @@ func _ready() -> void:
 	add_child(pl)
 	_pause = PauseMenu.new()
 	pl.add_child(_pause)
-	_pause.set_leave_text("ALL MINIGAMES")
+	_pause.set_leave_text("LEAVE ROOM" if _net == "client" else "ALL MINIGAMES")
 	_pause.leave_requested.connect(_abort_game)
 
 	var fl := CanvasLayer.new()
@@ -105,8 +116,12 @@ func _make_players() -> Array:
 				cpu_no += 1
 				pname = tr("CPU %d") % cpu_no
 				cpu = true
+			"host":
+				if slot != GameState.my_slot:
+					pname = "Host"
 			"friend":
-				pname = String(p.get("name", "Friend"))
+				if slot != GameState.my_slot:
+					pname = tr("Player %d") % (slot + 1)
 		list.append({"slot": slot, "name": pname, "cpu": cpu, "color": GameState.player_color(slot), "look": GameState.look(slot)})
 	if list.is_empty():
 		list.append({"slot": 0, "name": "You", "cpu": false, "color": GameState.PALETTE[0], "look": {}})
@@ -158,6 +173,11 @@ func _build_picker() -> void:
 	var center := CenterContainer.new()
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(center)
+	if _net == "client":
+		sub.text = "The host picks the minigame"
+		_wait_label = _outlined("Waiting for the host to pick a game…", 26, GOLD, 8)
+		_wait_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		col.add_child(_wait_label)
 	_grid = GridContainer.new()
 	_grid.columns = 3
 	_grid.add_theme_constant_override("h_separation", 34)
@@ -232,7 +252,12 @@ func _card(id: String) -> Button:
 		Audio.play("hover")
 		create_tween().tween_property(b, "scale", Vector2.ONE * 1.035, 0.12).set_trans(Tween.TRANS_SINE))
 	b.mouse_exited.connect(func() -> void: create_tween().tween_property(b, "scale", Vector2.ONE, 0.12))
-	b.pressed.connect(_play.bind(id))
+	if _net == "client":
+		b.disabled = true
+		b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_theme_stylebox_override("disabled", _glass(Color(0.02, 0.13, 0.13, 0.72), Color(PEARL, 0.22), 1, 16))
+	else:
+		b.pressed.connect(_play.bind(id))
 	return b
 
 
@@ -249,11 +274,14 @@ func _title_of(id: String) -> String:
 
 
 # ── 한 판: 소개 → 게임 → 결과 ────────────────────────────────
-func _play(id: String) -> void:
+func _play(id: String, seed_: int = 0) -> void:
 	if _busy:
 		return
 	_busy = true
 	_playing_id = id
+	_seed = seed_ if seed_ != 0 else randi() % 2000000000 + 1
+	if _net == "host":
+		Net.broadcast({"k": "hall_play", "id": id, "seed": _seed})
 	_run_token += 1
 	var token := _run_token
 	Audio.stop_music(0.4)
@@ -262,6 +290,7 @@ func _play(id: String) -> void:
 	# 소개 화면 (설명 · 조작 · 준비 버튼)
 	var intro := MinigameIntro.new()
 	intro.setup(id, _players, GameState.debug_auto_minigames, Callable())
+	intro.net_setup(_net, GameState.my_slot)
 	_layer.add_child(intro)
 	_current = intro
 	Audio.play_music(0.0, "mg_intro")
@@ -278,6 +307,8 @@ func _play(id: String) -> void:
 func _run_game(id: String, token: int) -> void:
 	var mg: Control = Minigames.create(id, _rng)
 	mg.setup(_players, GameState.debug_auto_minigames, Callable())
+	mg.net_seed = _seed
+	mg.net_setup(_net, GameState.my_slot)
 	_layer.add_child(mg)
 	_current = mg
 	Audio.play_music(0.0, id)
@@ -336,6 +367,12 @@ func _show_results(order: Array, token: int) -> void:
 	row.add_theme_constant_override("separation", 16)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(row)
+	if _net == "client":
+		var wl := _outlined("Waiting for the host…", 24, GOLD, 6)
+		wl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(wl)
+		_busy = false
+		return
 	var again := _glass_button("PLAY AGAIN", Vector2(250, 66), 22, true)
 	again.pressed.connect(func() -> void:
 		if token != _run_token:
@@ -376,10 +413,13 @@ func _result_row(rank: int, q: Dictionary) -> HBoxContainer:
 	return row
 
 
-func _replay(results: Control) -> void:
+func _replay(results: Control, seed_: int = 0) -> void:
 	if _busy:
 		return
 	_busy = true
+	_seed = seed_ if seed_ != 0 else randi() % 2000000000 + 1
+	if _net == "host":
+		Net.broadcast({"k": "hall_again", "seed": _seed})
 	_run_token += 1
 	var token := _run_token
 	Audio.stop_music(0.4)
@@ -389,6 +429,8 @@ func _replay(results: Control) -> void:
 
 
 func _back_to_picker() -> void:
+	if _net == "host":
+		Net.broadcast({"k": "hall_list"})
 	_run_token += 1
 	Audio.stop_music(0.3)
 	await _fade_to(1.0, 0.35)
@@ -401,18 +443,70 @@ func _back_to_picker() -> void:
 	await _fade_to(0.0, 0.4)
 
 
-## 게임 도중 ESC → [미니게임 목록]
+## 게임 도중 ESC → [미니게임 목록] (손님은 방에서 나감)
 func _abort_game() -> void:
+	if _net == "client":
+		Net.leave()
+		_leave_to_menu("")
+		return
 	_back_to_picker()
 
 
-func _back_to_lobby() -> void:
-	if _busy:
+func _back_to_lobby(forced: bool = false) -> void:
+	if _busy and not forced:
+		return
+	if _net == "host":
+		Net.broadcast({"k": "hall_lobby"})
+	elif _net == "client" and not forced:
+		# 손님이 뒤로 → 방에서 나감
+		Net.leave()
+		_leave_to_menu("")
 		return
 	_busy = true
 	Audio.stop_music(0.5)
 	await _fade_to(1.0, 0.4)
 	GameState.return_to = "mg_lobby"
+	get_tree().change_scene_to_file(MAIN_MENU)
+
+
+## 온라인: 방장이 보낸 진행 신호 (손님 PC)
+func _on_net(_from: int, d: Dictionary) -> void:
+	if _net != "client" or not is_inside_tree():
+		return
+	match String(d.get("k", "")):
+		"hall_play":
+			if not _busy:
+				_play(String(d.get("id", "")), int(d.get("seed", 1)))
+		"hall_again":
+			var res := _layer.get_children().filter(func(n: Node) -> bool: return n.get_script() == null)
+			if not res.is_empty():
+				_replay(res[0], int(d.get("seed", 1)))
+		"hall_list":
+			_back_to_picker()
+		"hall_lobby":
+			_back_to_lobby(true)
+
+
+func _on_lost(msg: String) -> void:
+	if _net == "client":
+		_leave_to_menu(msg)
+	else:
+		_net = ""
+
+
+## 손님이 방을 떠나 메인화면으로 (내 원래 말로)
+func _leave_to_menu(msg: String) -> void:
+	_run_token += 1
+	_busy = true
+	var me := {"kind": "host", "color": 0}
+	if not GameState.my_profile.is_empty():
+		me.merge(GameState.my_profile, true)
+		me["kind"] = "host"
+	GameState.players = [me, {}, {}, {}]
+	GameState.my_slot = 0
+	GameState.return_to = "toast:" + msg if msg != "" else ""
+	Audio.stop_music(0.4)
+	await _fade_to(1.0, 0.4)
 	get_tree().change_scene_to_file(MAIN_MENU)
 
 

@@ -104,11 +104,30 @@ func _catch(g: Node, hints: Array, prefix: String) -> void:
 
 
 func _shot(shot_name: String) -> void:
+	if DisplayServer.get_name() == "headless":
+		_digest(shot_name)
+		return
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	var path := _dir.path_join(shot_name + ".png")
 	img.save_png(path)
 	print("SHOT: ", path, " ", img.get_size())
+
+
+## 화면 없이 돌릴 때: 장면 대신 지금 상태를 글로 (온라인 점검에서 방장 · 손님 비교용)
+func _digest(tag: String) -> void:
+	var sc := get_tree().current_scene
+	var mg: Node = sc.get("_current") if sc and "_current" in sc else null
+	var line := "DIGEST %s fps=%d" % [tag, Engine.get_frames_per_second()]
+	if mg and "scores" in mg:
+		line += " t=%.1f scores=%s" % [float(mg.time_left), str(mg.scores)]
+		if "walkers" in mg:
+			var ws := []
+			for s in mg.walkers:
+				var p: Vector3 = mg.walkers[s]["pos"]
+				ws.append("%d:(%.1f,%.1f)%s" % [s, p.x, p.z, "X" if mg.walkers[s]["out"] else ""])
+			line += " w=" + " ".join(ws)
+	print(line)
 
 
 ## 메뉴 화면들 (메인 · 모드 · 로비 · 꾸미기 · 보드 선택 · 설정 · 튜토리얼 말풍선). lang = "en" / "ko"
@@ -167,6 +186,69 @@ func _wait_idle(m: Node, page: String, extra: float = 2.0) -> void:
 
 func _run() -> void:
 	await get_tree().create_timer(1.0, true, false, true).timeout
+	# nethallhost / nethalljoin: 온라인 미니게임 한 판 (MG_ID 환경변수). 둘 다 자동 진행, 장면마다 촬영
+	if "nethallhost" in _want or "nethalljoin" in _want:
+		var host := "nethallhost" in _want
+		var gid := OS.get_environment("MG_ID")
+		var room_file := "/tmp/dp_room_%s.txt" % gid
+		var tag := "h" if host else "c"
+		Settings.language = "ko"
+		Settings.apply_language()
+		GameState.debug_auto_minigames = true
+		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+		while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
+			await get_tree().process_frame
+		var m: Node = get_tree().current_scene
+		await _wait_idle(m, "main", 4.0)
+		if host:
+			if FileAccess.file_exists(room_file):
+				DirAccess.remove_absolute(room_file)
+			m._on_menu_pressed("collection", m._main_buttons[2])
+			await _wait_idle(m, "lobby")
+			m._lobby_add_cpu(2)
+			m._lobby_invite()
+			while Net.code == "":
+				await get_tree().process_frame
+			var f := FileAccess.open(room_file, FileAccess.WRITE)
+			f.store_string(Net.code)
+			f.close()
+			while Net.peers.size() == 0:
+				await get_tree().process_frame
+			await get_tree().create_timer(3.0).timeout
+			m._on_lobby_start()
+		else:
+			while not FileAccess.file_exists(room_file):
+				await get_tree().create_timer(0.3).timeout
+			await get_tree().create_timer(0.5).timeout
+			m._open_join_page()
+			await _wait_idle(m, "join")
+			m._join_edit.text = FileAccess.get_file_as_string(room_file).strip_edges()
+			m._on_join_pressed()
+		while get_tree().current_scene == null or get_tree().current_scene.name != "MinigameHall":
+			await get_tree().process_frame
+		var h: Node = get_tree().current_scene
+		await get_tree().create_timer(2.5).timeout
+		await _shot("nh_%s_%s_0grid" % [gid, tag])
+		if host:
+			h._play(gid)
+		while h._current == null or not (h._current.get_script() as Script).resource_path.ends_with("minigame_intro.gd"):
+			await get_tree().process_frame
+		await get_tree().create_timer(2.0).timeout
+		await _shot("nh_%s_%s_1intro" % [gid, tag])
+		while h._current == null or h._current.get_script() == null or (h._current.get_script() as Script).resource_path.ends_with("minigame_intro.gd"):
+			await get_tree().process_frame
+		var k := 0
+		var t0 := Time.get_ticks_msec()
+		while h._current != null and h._current.get_script() != null and Time.get_ticks_msec() - t0 < 240000:
+			await get_tree().create_timer(5.0).timeout
+			if h._current != null and h._current.get_script() != null:
+				await _shot("nh_%s_%s_2game_%02d" % [gid, tag, k])
+				k += 1
+		await get_tree().create_timer(1.5).timeout
+		await _shot("nh_%s_%s_3results" % [gid, tag])
+		await get_tree().create_timer(3.0).timeout
+		get_tree().quit(0)
+		return
 	# nethost / netjoin: 방 코드 온라인 점검 (로컬 중계 서버 + 창 두 개). 코드는 /tmp/dp_room.txt 로 넘김
 	if "nethost" in _want or "netjoin" in _want:
 		var host := "nethost" in _want
