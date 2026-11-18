@@ -23,6 +23,9 @@ const MUSIC := [
 	["Ink Splat", "먹물 땅따먹기", "Funky Energy Loop"],
 	["Clam Snatch", "조개 낚아채기", "Neptunian Princess"],
 ]
+## 제작사 (적힌 그대로 표기)
+const STUDIOS := ["MS solo", "JS Bros.Y Game studio"]
+
 ## 예비 곡 (지금은 쓰는 게임 없음)
 const MUSIC_EXTRA := "Going Bananas, Wakka Wakka, Gotta Keep On Movin, Funshine, Adventures of Flying Jack"
 
@@ -48,6 +51,7 @@ static func _credit_sections(ko: bool) -> Array:
 	for f in FONTS:
 		fonts.append("%s — %s" % [f[0], f[1]])
 	return [
+		[_t(ko, "Developed by", "제작"), STUDIOS.duplicate()],
 		[_t(ko, "Engine", "엔진"), [
 			"Godot Engine — MIT",
 			_t(ko, "Godot logo — Andrea Calabró, CC BY 4.0 (recolored)", "Godot 로고 — Andrea Calabró, CC BY 4.0 (색 변경)"),
