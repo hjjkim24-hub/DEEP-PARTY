@@ -21,11 +21,19 @@ They were mixed and edited with `tools/build_audio.py`.
 | ship_theme.ogg | Evil Incoming |
 | mg_intro.ogg | Busybody |
 | mg_a.ogg | Going Bananas |
-| mg_b.ogg | Hit n Smash |
 | mg_c.ogg | Wakka Wakka |
 | mg_d.ogg | Gotta Keep On Movin |
 | mg_e.ogg | Funshine |
 | mg_f.ogg | Adventures of Flying Jack |
 | results.ogg | Fanfare X |
+| mg_tentacle_dodge.ogg | Action Strike |
+| mg_cannon_volley.ogg | Heroic Adventure |
+| mg_treasure_dive.ogg | The Lagoon |
+| mg_chest_shuffle.ogg | Managing Mischief |
+| mg_tentacle_tug.ogg | Hit n Smash |
+| mg_powder_keg.ogg | Night Attack |
+| mg_anchor_drop.ogg | Windy Old Weather |
+| mg_ink_paint.ogg | Funky Energy Loop |
+| mg_clam_snatch.ogg | Neptunian Princess |
 
 The `wind.wav` ambience is synthesized by `tools/make_ship_sfx.py`.

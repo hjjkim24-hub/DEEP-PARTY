@@ -15,8 +15,9 @@ const TRACKS := {
 	"mg_intro": "res://audio/music/mg_intro.ogg",
 	"results": "res://audio/music/results.ogg",
 }
-## 미니게임 음악: 미니게임 id 마다 하나씩 (목록에 없으면 id 로 골고루 나눠 줌)
-const MG_TRACKS := ["mg_a", "mg_b", "mg_c", "mg_d", "mg_e", "mg_f"]
+## 미니게임 음악: 게임마다 고유한 곡 audio/music/mg_<id>.ogg (겹치지 않게).
+## 전용 곡이 없는 새 미니게임만 아래 예비 곡 중 하나를 id 로 골라 씀 (전용 곡들과 겹치지 않는 곡들)
+const MG_TRACKS := ["mg_a", "mg_c", "mg_d", "mg_e", "mg_f"]
 const SFX_DIR := "res://audio/sfx/"
 const SFX_NAMES := [
 	"hover", "click", "back", "toggle_on", "toggle_off", "tick", "tab", "color",
@@ -107,6 +108,8 @@ func play_music(fade_time: float = 0.0, track: String = "menu") -> void:
 	if _music_tween:
 		_music_tween.kill()
 	var path: String = TRACKS.get(track, "")
+	if path == "" and track != "" and ResourceLoader.exists("res://audio/music/mg_%s.ogg" % track):
+		path = "res://audio/music/mg_%s.ogg" % track
 	if path == "":
 		# 미니게임: id 로 골고루 (같은 미니게임은 늘 같은 곡)
 		var k: String = MG_TRACKS[absi(hash(track)) % MG_TRACKS.size()] if track != "" else "mg_a"

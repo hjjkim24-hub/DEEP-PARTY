@@ -229,13 +229,25 @@ def build_music() -> None:
         "ship_theme": "Evil Incoming",
         "mg_intro": "Busybody",
         "mg_a": "Going Bananas",
-        "mg_b": "Hit n Smash",
         "mg_c": "Wakka Wakka",
         "mg_d": "Gotta Keep On Movin",
         "mg_e": "Funshine",
         "mg_f": "Adventures of Flying Jack",
         "results": "Fanfare X",
+        # 미니게임마다 고유한 곡 (분위기에 맞춰)
+        "mg_tentacle_dodge": "Action Strike",
+        "mg_cannon_volley": "Heroic Adventure",
+        "mg_treasure_dive": "The Lagoon",
+        "mg_chest_shuffle": "Managing Mischief",
+        "mg_tentacle_tug": "Hit n Smash",
+        "mg_powder_keg": "Night Attack",
+        "mg_anchor_drop": "Windy Old Weather",
+        "mg_ink_paint": "Funky Energy Loop",
+        "mg_clam_snatch": "Neptunian Princess",
     }
+    only = os.environ.get("ONLY", "")
+    if only:
+        tracks = {k: v for k, v in tracks.items() if k.startswith(only)}
     for out, name in tracks.items():
         path = os.path.join(MUS_OUT, out + ".ogg")
         subprocess.run(["ffmpeg", "-v", "quiet", "-y", "-i", os.path.join(FP, name + ".mp3"),
