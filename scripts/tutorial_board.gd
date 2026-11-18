@@ -67,10 +67,10 @@ func _run_tutorial() -> void:
 	Audio.play("tick")
 	await _say({"text": "Every 2 rounds the kraken takes its turn. Red spaces get smashed by its tentacles at the end of the next round. Don't stop on them!",
 		"dim": false, "shot": "25_kraken_red"})
-	Audio.play("box_rumble")
+	Audio.play("kraken_rise")
 	world.tentacle_strike(ahead)
 	await world.tentacle_slammed
-	Audio.play("box_burst")
+	Audio.play("kraken_slam")
 	_shake_camera(0.55, 0.4)
 	await get_tree().create_timer(1.2, false).timeout
 	await _say({"text": "Ouch! Standing there costs you a heart. The kraken has other tricks too, like poison spines or dropping everyone onto its flying ship.",

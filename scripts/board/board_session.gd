@@ -683,10 +683,10 @@ func _play_turn(p: Dictionary, rig: int = 0, forced: Dictionary = {}) -> void:
 		_awaiting_roll = false
 	var n: int = rig if rig > 0 else randi_range(1, 6)
 	_last_roll = n
-	Audio.play("click")
+	Audio.play("dice_shake")
 	_pawn_bump(node)
 	await _dice.roll_to(n)
-	Audio.play("toast")
+	Audio.play("dice_land")
 	_steps_left = n
 	_steps_label.text = str(n)
 	_steps_label.visible = true
@@ -1178,7 +1178,7 @@ func _kraken_chest(p: Dictionary) -> void:
 		shot_hint = "62c_chest_win"
 		await _banner(tr("TREASURE!"), tr("Your bet is doubled: +%d coins") % (bet * 2), 1.3)
 	else:
-		Audio.play("box_burst")
+		Audio.play("kraken_slam")
 		Audio.play("roar")
 		_shake_camera(0.55, 0.45)
 		shot_hint = "62d_chest_kraken"
@@ -1510,7 +1510,7 @@ func _play_minigame(id: String) -> Array:
 	await _fade_black(black, 1.0, 0.4)
 	mg.queue_free()
 	await get_tree().create_timer(0.4, false).timeout
-	Audio.play_music(0.0, "board")
+	Audio.play_music(0.0, "ship" if world.on_ship else "board")
 	await _fade_black(black, 0.0, 0.4)
 	layer.queue_free()
 	return order
@@ -2327,6 +2327,7 @@ func _ranking() -> Array:
 
 
 func _show_results() -> void:
+	Audio.play_music(0.3, "results")
 	if _winner.is_empty():
 		_winner = _ranking()[0]
 	var w := _winner

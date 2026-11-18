@@ -7,36 +7,38 @@ extends Node
 ## 음악은 "Music" 버스, 효과음은 "SFX" 버스 → 설정의 음량 슬라이더가 그대로 적용돼요.
 
 const MUSIC_PATH := "res://audio/music/menu_theme.ogg"
-## 배경음악 목록 (tools/make_audio.py · tools/make_music.py 로 만듦)
+## 배경음악 (FreePD 퍼블릭 도메인 곡 · tools/build_audio.py 로 다듬음, audio/CREDITS.md)
 const TRACKS := {
 	"menu": "res://audio/music/menu_theme.ogg",
 	"board": "res://audio/music/board_theme.ogg",
+	"ship": "res://audio/music/ship_theme.ogg",
 	"mg_intro": "res://audio/music/mg_intro.ogg",
-	"pearl_pop": "res://audio/music/mg_pearl_pop.ogg",
-	"timing_stop": "res://audio/music/mg_timing_stop.ogg",
-	"shell_game": "res://audio/music/mg_shell_game.ogg",
-	"jelly_dodge": "res://audio/music/mg_jelly_dodge.ogg",
+	"results": "res://audio/music/results.ogg",
 }
+## 미니게임 음악: 미니게임 id 마다 하나씩 (목록에 없으면 id 로 골고루 나눠 줌)
+const MG_TRACKS := ["mg_a", "mg_b", "mg_c", "mg_d", "mg_e", "mg_f"]
 const SFX_DIR := "res://audio/sfx/"
 const SFX_NAMES := [
 	"hover", "click", "back", "toggle_on", "toggle_off", "tick", "tab", "color",
-	"equip", "unequip", "add", "remove", "start", "toast", "bubbles",
-	"box_rumble", "box_burst", "box_whoosh",
+	"equip", "unequip", "add", "remove", "start", "toast", "bubbles", "splash",
+	"box_rumble", "box_burst", "box_whoosh", "dice_shake", "dice_land",
 	"cannon", "explode", "whoosh", "portal", "card_spin", "card_flip", "coins", "roar", "thud", "creak",
+	"kraken_rumble", "kraken_slam", "kraken_rise",
 ]
-## 소리별 음량(dB). 자주 나는 소리는 작게.
+## 소리별 음량(dB). 파일은 모두 최고점 -1dB 로 맞춰 두었으니 여기서 크기를 정함. 자주 나는 소리는 작게.
 const SFX_DB := {
-	"hover": -14.0, "tick": -10.0, "click": -5.0, "back": -5.0, "tab": -6.0,
-	"color": -5.0, "equip": -4.0, "unequip": -5.0, "add": -3.0, "remove": -4.0,
-	"start": -2.0, "toast": -6.0, "toggle_on": -6.0, "toggle_off": -6.0, "bubbles": -16.0,
-	"box_rumble": -4.0, "box_burst": -2.0, "box_whoosh": -3.0,
-	"cannon": -1.0, "explode": -3.0, "whoosh": -6.0, "portal": -5.0, "card_spin": -7.0, "card_flip": -5.0,
-	"coins": -5.0, "roar": -2.0, "thud": -6.0, "creak": -8.0,
+	"hover": -20.0, "tick": -14.0, "click": -9.0, "back": -9.0, "tab": -10.0,
+	"color": -10.0, "equip": -8.0, "unequip": -9.0, "add": -7.0, "remove": -7.0,
+	"start": -8.0, "toast": -10.0, "toggle_on": -10.0, "toggle_off": -10.0, "bubbles": -14.0, "splash": -8.0,
+	"box_rumble": -6.0, "box_burst": -5.0, "box_whoosh": -7.0, "dice_shake": -8.0, "dice_land": -6.0,
+	"cannon": -2.0, "explode": -3.0, "whoosh": -8.0, "portal": -6.0, "card_spin": -8.0, "card_flip": -7.0,
+	"coins": -7.0, "roar": -1.0, "thud": -6.0, "creak": -9.0,
+	"kraken_rumble": -2.0, "kraken_slam": -2.0, "kraken_rise": -5.0,
 }
 ## 반복되는 배경 소리 (크라켄의 배 위 바람 등)
 const AMBIENCE := {"wind": "res://audio/sfx/wind.wav"}
-const PITCH_JITTER := {"hover": 0.08, "click": 0.05, "tick": 0.06, "bubbles": 0.15, "color": 0.03, "thud": 0.1, "coins": 0.05,
-	"cannon": 0.05, "explode": 0.06}
+const PITCH_JITTER := {"hover": 0.06, "click": 0.04, "tick": 0.05, "bubbles": 0.15, "color": 0.03, "thud": 0.1, "coins": 0.05,
+	"cannon": 0.05, "explode": 0.06, "kraken_slam": 0.08, "splash": 0.1, "dice_land": 0.04}
 const MIN_INTERVAL_MS := 40
 const VOICES := 10
 const MUSIC_DB := -4.0
@@ -104,7 +106,12 @@ func play_music(fade_time: float = 0.0, track: String = "menu") -> void:
 	_track = track
 	if _music_tween:
 		_music_tween.kill()
-	var stream := load(TRACKS.get(track, MUSIC_PATH)) as AudioStreamOggVorbis
+	var path: String = TRACKS.get(track, "")
+	if path == "":
+		# 미니게임: id 로 골고루 (같은 미니게임은 늘 같은 곡)
+		var k: String = MG_TRACKS[absi(hash(track)) % MG_TRACKS.size()] if track != "" else "mg_a"
+		path = "res://audio/music/%s.ogg" % k
+	var stream := load(path) as AudioStreamOggVorbis
 	if stream == null:
 		return
 	stream.loop = true

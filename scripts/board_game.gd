@@ -123,16 +123,17 @@ func _kraken_wakes() -> void:
 	_move_camera(Vector3(lair.x, 6.0, -world.half_d + 2.0), 3.0, 1.6)
 	_cinematic(Vector3(eye.x - 16.0, 20.0, -world.half_d + 46.0), eye + Vector3(0, 2.0, -6.0), 1.0, 1.6)
 	await get_tree().create_timer(1.6, false).timeout
-	Audio.play("box_rumble")
-	Audio.play("roar")
+	Audio.play("kraken_rumble")
 	_shake_camera(0.25, 1.2)
 	world.kraken_awaken()
 	await get_tree().create_timer(1.6, false).timeout
-	Audio.play("box_burst")
+	Audio.play("roar")
 	_shake_camera(0.6, 0.8)
 	# 촉수들이 판을 콱 움켜쥠
-	await get_tree().create_timer(2.05, false).timeout
-	Audio.play("box_burst")
+	await get_tree().create_timer(1.85, false).timeout
+	Audio.play("kraken_rise")
+	await get_tree().create_timer(0.2, false).timeout
+	Audio.play("kraken_slam")
 	_shake_camera(0.9, 0.9)
 	await get_tree().create_timer(1.6, false).timeout
 	shot_hint = "34_kraken_awakens"
@@ -192,11 +193,11 @@ func _kraken_strikes(r: int) -> void:
 		var pos: Vector3 = world.spaces[t]["pos"]
 		_move_camera(pos + Vector3(0, 0.5, 0), 1.5, 0.55)
 		await get_tree().create_timer(0.55, false).timeout
-		Audio.play("box_rumble")
+		Audio.play("kraken_rise")
 		world.tentacle_strike(t)
 		await world.tentacle_slammed
 		shot_hint = "49b_kraken_strike"
-		Audio.play("box_burst")
+		Audio.play("kraken_slam")
 		_shake_camera(0.55, 0.4)
 		for q in _alive_pawns():
 			if int(q["tile"]) == t:
@@ -210,17 +211,18 @@ func _mass_strike(targets: Array) -> void:
 		_strike_due.erase(t)
 	_move_camera(world.overview, world.overview_zoom * 0.85, 0.9)
 	await get_tree().create_timer(0.9, false).timeout
-	Audio.play("box_rumble")
+	Audio.play("kraken_rumble")
 	_shake_camera(0.3, 1.2)
 	await _banner(tr("TENTACLE STORM"), "", 0.6)
 	for t in targets:
 		world.tentacle_strike(t, _rng.randf_range(0.0, 0.9))
 	# 솟구침(0.5) + 젖힘(0.35) + 내려침(0.22) 뒤 쾅쾅쾅
+	Audio.play("kraken_rise")
 	await get_tree().create_timer(1.1, false).timeout
-	Audio.play("box_burst")
+	Audio.play("kraken_slam")
 	_shake_camera(1.0, 1.1)
 	await get_tree().create_timer(0.5, false).timeout
-	Audio.play("box_burst")
+	Audio.play("kraken_slam")
 	shot_hint = "49b_kraken_strike"
 	await get_tree().create_timer(0.8, false).timeout
 	var hit := []
@@ -276,7 +278,7 @@ func _kraken_turn(r: int) -> void:
 	_follow = null
 	# 크라켄이 몸을 일으키며 으르렁
 	_move_camera(world.overview, world.overview_zoom * 0.85, 0.9)
-	Audio.play("box_rumble")
+	Audio.play("kraken_rumble")
 	Audio.play("roar")
 	_shake_camera(0.4, 1.0)
 	await get_tree().create_timer(0.9, false).timeout
@@ -521,7 +523,7 @@ func _kraken_card(a: String) -> void:
 	t2.add_theme_constant_override("line_spacing", 4)
 	# 4) 뒤집힘 + 오라가 확 피어오름
 	Audio.play("card_flip")
-	Audio.play("box_burst")
+	Audio.play("whoosh")
 	_shake_camera(0.3, 0.4)
 	var flip := create_tween()
 	flip.tween_property(pick, "scale:x", 0.05, 0.14)
@@ -586,7 +588,7 @@ func _kraken_surge(r: int) -> void:
 		await get_tree().create_timer(0.8, false).timeout
 		for t in shops:
 			world.bubbles_at(world.spaces[int(t)]["pos"], 18, 0.8, true)
-		Audio.play("box_burst")
+		Audio.play("splash")
 		Audio.play("coins")
 		_shake_camera(0.4, 0.5)
 	shop_price_mult = Rules.KRAKEN_SURGE_MULT
@@ -651,7 +653,7 @@ func _fall_through(alive: Array, from_ship: bool) -> void:
 		portals.append(world.drop_portal((q["node"] as Node3D).position + Vector3(0, 0.04, 0)))
 		Audio.play("portal", 300)
 		await get_tree().create_timer(0.12, false).timeout
-	Audio.play("box_rumble")
+	Audio.play("kraken_rumble")
 	_shake_camera(0.35, 1.0)
 	await get_tree().create_timer(0.7, false).timeout
 	shot_hint = "60b_ship_portals" if not from_ship else "60e_ship_leave"
@@ -678,9 +680,11 @@ func _fall_through(alive: Array, from_ship: bool) -> void:
 	if from_ship:
 		world.leave_ship()
 		Audio.play_ambience("")
+		Audio.play_music(1.0, "board")
 	else:
 		world.enter_ship()
-		Audio.play_ambience("wind", -12.0, 2.5)
+		Audio.play_ambience("wind", -14.0, 2.5)
+		Audio.play_music(1.0, "ship")
 	_update_round_label()
 
 
