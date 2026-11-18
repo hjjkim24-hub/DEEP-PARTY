@@ -1434,6 +1434,7 @@ func _build_settings_page(parent: Control) -> Control:
 	var defaults := _make_glass_button("DEFAULTS", Vector2(190, 64), 20)
 	defaults.pressed.connect(_on_defaults_pressed)
 	bottom.add_child(defaults)
+	_defaults_btn = defaults
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bottom.add_child(spacer)
@@ -1448,6 +1449,7 @@ func _build_settings_page(parent: Control) -> Control:
 
 
 var _credits_text: RichTextLabel
+var _defaults_btn: Button
 var _credits_lang := ""
 
 
@@ -1633,6 +1635,13 @@ func _circle_texture(d: int, col: Color) -> ImageTexture:
 
 func _select_settings_tab(i: int) -> void:
 	_settings_tab = i
+	# 크레딧은 설정이 아니라서 "기본값" 버튼을 숨김 (자리는 그대로 두어 "뒤로" 버튼이 움직이지 않게)
+	if _defaults_btn:
+		var credits_tab := i == SETTINGS_TABS.find("CREDITS")
+		_defaults_btn.modulate.a = 0.0 if credits_tab else 1.0
+		_defaults_btn.disabled = credits_tab
+		_defaults_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE if credits_tab else Control.MOUSE_FILTER_STOP
+		_defaults_btn.focus_mode = Control.FOCUS_NONE if credits_tab else Control.FOCUS_ALL
 	if i == SETTINGS_TABS.find("CREDITS") and _credits_text and _credits_lang != Settings.language:
 		_credits_lang = Settings.language
 		_credits_text.text = Credits.bbcode(Settings.language == "ko")
