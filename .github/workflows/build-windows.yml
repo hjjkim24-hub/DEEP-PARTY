@@ -66,6 +66,7 @@ jobs:
           if (-not (Test-Path "build/DeepParty.exe")) { Write-Host "::error::Export failed"; exit 1 }
           $bad = Select-String -Path export.log -Pattern "SCRIPT ERROR|Could not start rcedit|rcedit failed"
           if ($bad) { Write-Host "::error::Export problems"; $bad | ForEach-Object { Write-Host $_.Line }; exit 1 }
+          & $env:GODOT --headless --path . -s res://tools/write_licenses.gd -- build/LICENSES.txt
           Get-Item "build/DeepParty.exe" | Format-Table Name, Length
           exit 0
 
@@ -80,7 +81,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: DEEP-PARTY-windows
-          path: "build/DeepParty.exe"
+          path: |
+            build/DeepParty.exe
+            build/LICENSES.txt
 
       - name: Publish to Releases
         uses: softprops/action-gh-release@v2
@@ -89,4 +92,6 @@ jobs:
           name: "DEEP PARTY build ${{ github.run_number }}"
           body: "DeepParty.exe 를 받아서 더블클릭하면 바로 실행됩니다. (설치 필요 없음)"
           make_latest: true
-          files: "build/DeepParty.exe"
+          files: |
+            build/DeepParty.exe
+            build/LICENSES.txt

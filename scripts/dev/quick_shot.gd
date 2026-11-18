@@ -167,6 +167,26 @@ func _wait_idle(m: Node, page: String, extra: float = 2.0) -> void:
 
 func _run() -> void:
 	await get_tree().create_timer(1.0, true, false, true).timeout
+	if "credits" in _want:
+		for lang in ["ko", "en"]:
+			Settings.language = lang
+			Settings.apply_language()
+			var old := get_tree().current_scene
+			get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+			while get_tree().current_scene == null or get_tree().current_scene == old or get_tree().current_scene.name != "MainMenu":
+				await get_tree().process_frame
+			var m: Node = get_tree().current_scene
+			await _wait_idle(m, "main", 5.0)
+			m._show_page("settings")
+			await _wait_idle(m, "settings")
+			m._select_settings_tab(3)
+			await get_tree().create_timer(1.0).timeout
+			await _shot("credits_%s_top" % lang)
+			m._credits_text.scroll_to_line(m._credits_text.get_line_count() - 60)
+			await get_tree().create_timer(0.5).timeout
+			await _shot("credits_%s_end" % lang)
+		get_tree().quit(0)
+		return
 	if "menus" in _want:
 		await _menus("en")
 		await _menus("ko")

@@ -29,6 +29,7 @@ const KO := {
 	"AUDIO": "오디오",
 	"VIDEO": "비디오",
 	"LANGUAGE": "언어",
+	"CREDITS": "크레딧",
 	"Master Volume": "전체 볼륨",
 	"Music": "음악",
 	"Sound Effects": "효과음",

@@ -26,7 +26,8 @@ const GAME_SUBTITLE := "UP TO 4 PLAYERS  •  MINIGAME PARTY"
 const VERSION_TEXT := "v0.1.0  •  Dev Build"
 ## 한글 등 Poppins 에 없는 글자를 그릴 시스템 폰트 (출시 전에는 한글 폰트 파일을 넣어 교체하세요)
 const FALLBACK_FONTS := ["Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK KR", "Noto Sans KR", "NanumGothic"]
-const SETTINGS_TABS := ["AUDIO", "VIDEO", "LANGUAGE"]
+const SETTINGS_TABS := ["AUDIO", "VIDEO", "LANGUAGE", "CREDITS"]
+const Credits := preload("res://scripts/credits.gd")
 const GAME_SCENE := "res://scenes/board.tscn"
 const BoxOpenFx := preload("res://scripts/ui/box_open_fx.gd")  ## 진짜 보드 게임 (scripts/board_game.gd)
 
@@ -1332,7 +1333,7 @@ func _build_settings_page(parent: Control) -> Control:
 	tabs.add_theme_constant_override("separation", 10)
 	v.add_child(tabs)
 	for i in SETTINGS_TABS.size():
-		var tb := _make_glass_button(SETTINGS_TABS[i], Vector2(170, 60), 20)
+		var tb := _make_glass_button(SETTINGS_TABS[i], Vector2(140, 60), 20)
 		tb.alignment = HORIZONTAL_ALIGNMENT_CENTER
 		tb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		tb.set_meta("pivot_left", false)
@@ -1403,6 +1404,29 @@ func _build_settings_page(parent: Control) -> Control:
 	_lang_seg = _make_segmented(lang_names, lang_idx, _on_language_changed, false)
 	lang.add_child(_stack_row("LANGUAGE", _lang_seg))
 
+	# ---- 크레딧 · 라이선스 (처음 열 때 채움 — 엔진 라이선스 전문이 길어서)
+	var credits := _settings_tab_box(content)
+	_credits_text = RichTextLabel.new()
+	_credits_text.bbcode_enabled = true
+	_credits_text.scroll_active = true
+	_credits_text.selection_enabled = true
+	_credits_text.custom_minimum_size = Vector2(0, 440)
+	_credits_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_credits_text.add_theme_font_size_override("normal_font_size", 17)
+	_credits_text.add_theme_font_size_override("bold_font_size", 17)
+	_credits_text.add_theme_color_override("default_color", PEARL)
+	_credits_text.add_theme_font_override("normal_font", KoFont)
+	_credits_text.add_theme_font_override("bold_font", KoFont)
+	var cpanel := PanelContainer.new()
+	var cbox := _glass_box(Color(0.02, 0.1, 0.12, 0.72), GLASS_BORDER, 1, 14)
+	cbox.content_margin_left = 22
+	cbox.content_margin_right = 12
+	cbox.content_margin_top = 16
+	cbox.content_margin_bottom = 16
+	cpanel.add_theme_stylebox_override("panel", cbox)
+	cpanel.add_child(_credits_text)
+	credits.add_child(cpanel)
+
 	# ---- 아래 버튼
 	var bottom := HBoxContainer.new()
 	bottom.add_theme_constant_override("separation", 12)
@@ -1421,6 +1445,10 @@ func _build_settings_page(parent: Control) -> Control:
 	_select_settings_tab(0)
 	_update_resolution_state()
 	return col.get_parent().get_parent() as Control
+
+
+var _credits_text: RichTextLabel
+var _credits_lang := ""
 
 
 func _settings_tab_box(parent: Control) -> VBoxContainer:
@@ -1605,6 +1633,10 @@ func _circle_texture(d: int, col: Color) -> ImageTexture:
 
 func _select_settings_tab(i: int) -> void:
 	_settings_tab = i
+	if i == SETTINGS_TABS.find("CREDITS") and _credits_text and _credits_lang != Settings.language:
+		_credits_lang = Settings.language
+		_credits_text.text = Credits.bbcode(Settings.language == "ko")
+		_credits_text.scroll_to_line(0)
 	for k in _tab_pages.size():
 		_tab_pages[k].visible = k == i
 	for k in _tab_buttons.size():

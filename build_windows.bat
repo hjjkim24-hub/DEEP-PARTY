@@ -38,6 +38,7 @@ echo [3/4] Importing assets ...
 echo [4/4] Exporting build\DeepParty.exe ...
 "%GODOT%" --headless --path "%PROJ%" --export-release "Windows Desktop" "build/DeepParty.exe"
 if not exist "%PROJ%\build\DeepParty.exe" goto fail_export
+"%GODOT%" --headless --path "%PROJ%" -s res://tools/write_licenses.gd -- build/LICENSES.txt
 
 echo.
 echo Done!  build\DeepParty.exe

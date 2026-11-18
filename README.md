@@ -21,6 +21,12 @@ Godot 에디터로 직접 만들 때: 프로젝트 → 내보내기 → "Windows
 - 시간 조절: `FADE_IN`, `HOLD`, `FADE_OUT`, `GAP` 상수.
 - Godot 로고: Andrea Calabró, CC BY 4.0 (`textures/splash/GODOT_LOGO_LICENSE.txt`). 검은 배경에 맞게 글자색만 흰색으로 바꿨습니다.
 
+## 크레딧 · 라이선스 (스팀 출시용)
+- 게임 안: 설정 → **크레딧** 탭. 음악 · 효과음 · 글꼴 · 로고 출처와 Godot 엔진 · 서드파티 라이브러리 · 글꼴(SIL OFL) 라이선스 전문을 보여 줍니다 (`scripts/credits.gd`).
+- 설치 폴더: 내보낸 뒤 `godot --headless --path . -s res://tools/write_licenses.gd -- build/LICENSES.txt` 로 `LICENSES.txt`를 만들어 exe 옆에 같이 배포하세요.
+- 음악이나 효과음을 바꾸면 `audio/CREDITS.md`와 `scripts/credits.gd`의 목록도 같이 고쳐 주세요.
+- 스팀 콘텐츠 설문의 생성형 AI 항목 문구: `docs/STEAM_AI_DISCLOSURE.md`
+
 ## 소리
 `scripts/autoload/audio.gd` (자동 로드 `Audio`)
 - 배경음악 `audio/music/menu_theme.ogg` — 116 BPM 마림바 곡, 약 66초 끊김 없이 반복. 메인화면에서 서서히 시작.
