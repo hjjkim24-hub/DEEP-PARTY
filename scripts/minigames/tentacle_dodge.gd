@@ -29,6 +29,8 @@ func _init() -> void:
 func _build_stage() -> void:
 	env_sea_day()
 	var sea := ocean(-0.55, 180.0, RAFT_R + 1.5)
+	sea_debris(7, RAFT_R + 3.0, RAFT_R + 9.0, -0.45, 5)
+	gulls(4, Vector3(0, 0, -3), 9.0, 9.0, 2)
 	(sea.material_override as ShaderMaterial).set_shader_parameter("crest_foam", 0.6)
 	cam.position = Vector3(0, 13.2, 12.0)
 	cam.look_at(Vector3(0, 0, 0.6))
@@ -40,28 +42,8 @@ func _build_stage() -> void:
 func _build_raft() -> void:
 	var rr := RandomNumberGenerator.new()
 	rr.seed = 11
-	# 통나무 받침 (물에 반쯤 잠김)
-	var log_mat := wood_mat(Color(0.32, 0.22, 0.14), Vector3(1, 0, 0), 0.4)
-	for k in 5:
-		var z := -RAFT_R * 0.8 + k * RAFT_R * 0.4
-		var half := sqrt(maxf(RAFT_R * RAFT_R - z * z, 1.0)) - 0.2
-		var cyl := CylinderMesh.new()
-		cyl.top_radius = 0.42
-		cyl.bottom_radius = 0.42
-		cyl.height = half * 2.0
-		cyl.radial_segments = 20
-		add_mesh(cyl, log_mat, Vector3(0, -0.55, z), Basis(Vector3(0, 0, 1), PI / 2), _raft)
-	# 널빤지 (가장자리는 원을 따라 들쭉날쭉)
-	var cols := [Color(0.36, 0.27, 0.19), Color(0.4, 0.3, 0.21), Color(0.33, 0.25, 0.18), Color(0.38, 0.28, 0.2)]
-	var z := -RAFT_R + 0.25
-	var idx := 0
-	while z < RAFT_R - 0.2:
-		var half := sqrt(maxf(RAFT_R * RAFT_R - z * z, 0.5)) + rr.randf_range(-0.25, 0.15)
-		var m := wood_mat(cols[idx % cols.size()], Vector3(1, 0, 0), 0.12)
-		box(Vector3(half * 2.0, 0.16, 0.4), m, Vector3(rr.randf_range(-0.1, 0.1), -0.08 + rr.randf_range(-0.015, 0.015), z),
-			Basis(Vector3.UP, rr.randf_range(-0.012, 0.012)), _raft)
-		z += 0.43
-		idx += 1
+	build_raft(_raft, RAFT_R, 11)
+	deck_clutter(_raft, [Vector3(-4.6, 0, -3.6), Vector3(4.9, 0, -2.6), Vector3(-5.1, 0, 2.3), Vector3(3.6, 0, 4.4)], 3)
 	# 널을 묶은 밧줄 · 테두리 기둥 · 등불
 	var rope := std_mat(Color(0.66, 0.55, 0.38), 0.9)
 	var post := wood_mat(Color(0.36, 0.25, 0.16), Vector3(0, 1, 0), 0.3)

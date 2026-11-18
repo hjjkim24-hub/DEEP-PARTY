@@ -70,6 +70,13 @@ func _mg_shot(id: String, intro_only: bool) -> void:
 	layer.add_child(mg)
 	var t0 := Time.get_ticks_msec()
 	mg.run()
+	if OS.get_environment("BGTEST") != "":
+		mg.env.background_color = Color(1, 0, 1)
+	if OS.get_environment("SHOTS") != "":
+		await get_tree().create_timer(4.0).timeout
+		await _shot("mg_%s_x" % id)
+		get_tree().quit(0)
+		return
 	var k := 0
 	while is_instance_valid(mg) and Time.get_ticks_msec() - t0 < 60000:
 		await get_tree().create_timer(3.2).timeout

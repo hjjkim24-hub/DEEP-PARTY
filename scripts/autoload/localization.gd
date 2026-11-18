@@ -261,6 +261,7 @@ const KO := {
 	"Someone is holding a lit powder keg! Bump into another player to pass it on. It blows up at a random moment - whoever holds it is out. Last one standing wins!": "누군가 불붙은 화약통을 들고 있어요! 다른 사람에게 부딪혀서 넘기세요. 언제 터질지 몰라요 - 펑! 들고 있던 사람은 탈락. 마지막까지 남으면 승리!",
 	"Don't be holding it when it blows!": "터질 때 들고 있지 마세요!",
 	"KEG!": "화약통!",
+	"Current": "해류",
 	"Safe": "안전",
 	"ANCHOR DROP": "닻 내리기",
 	"Your boat sails over the sunken treasure! Click to drop your anchor - the closer it lands to the center of the glowing mark, the more points. Watch out for the current!": "배가 가라앉은 보물 위를 지나가요! 클릭해서 닻을 떨어뜨리세요. 빛나는 과녁 가운데에 가까울수록 높은 점수. 물살을 조심하세요!",

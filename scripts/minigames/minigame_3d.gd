@@ -17,7 +17,7 @@ const KRAKEN_BODY := preload("res://models/kraken_body.obj")
 const CloudShader := preload("res://shaders/cloud_puff.gdshader")
 const RayShader := preload("res://shaders/light_ray.gdshader")
 
-const PAWN_SCALE := 1.25
+const PAWN_SCALE := 1.45
 
 var vpc: SubViewportContainer
 var vp: SubViewport
@@ -33,6 +33,8 @@ var _t3 := 0.0
 var cam_base := Transform3D()   ## 흔들림 없는 카메라 자리 (무대 만든 뒤 저장)
 var _shake := 0.0
 var _shake_t := 0.0
+var _floaters: Array = []      ## 물 위에 둥둥 떠다니는 것 {node, base, ph}
+var _gulls: Array = []         ## 하늘을 도는 갈매기 {node, wl, wr, c, r, h, sp, ph}
 
 
 func _make_stage() -> void:
@@ -85,6 +87,22 @@ func _process(delta: float) -> void:
 	super._process(delta)
 	if cam == null:
 		return
+	var tt := Time.get_ticks_msec() / 1000.0
+	for f in _floaters:
+		var n: Node3D = f["node"]
+		var ph: float = f["ph"]
+		n.position = (f["base"] as Vector3) + Vector3(sin(tt * 0.3 + ph) * 0.4, sin(tt * 1.1 + ph) * 0.12, cos(tt * 0.25 + ph) * 0.4)
+		n.rotation = Vector3(sin(tt * 0.9 + ph) * 0.12, f["yaw"] + tt * 0.05, cos(tt * 0.8 + ph) * 0.12)
+	for g in _gulls:
+		var n: Node3D = g["node"]
+		var a := tt * float(g["sp"]) + float(g["ph"])
+		var c: Vector3 = g["c"]
+		var r: float = g["r"]
+		n.position = c + Vector3(cos(a) * r, float(g["h"]) + sin(a * 2.0) * 0.6, sin(a) * r * 0.7)
+		n.rotation = Vector3(0, -a + (PI if float(g["sp"]) > 0 else 0.0), sin(a) * 0.3)
+		var flap := sin(tt * 7.0 + float(g["ph"]) * 3.0) * 0.55 + 0.1
+		(g["wl"] as Node3D).rotation.z = flap
+		(g["wr"] as Node3D).rotation.z = -flap
 	if _shake > 0.0:
 		_shake_t += delta
 		_shake = maxf(0.0, _shake - delta * 2.4)
@@ -166,16 +184,68 @@ func env_stormy_dusk() -> void:
 ## 밝은 물속 (모래 바닥 + 물빛)
 func env_underwater() -> void:
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.03, 0.22, 0.27)
+	env.background_color = Color(0.01, 0.1, 0.14)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.4, 0.6, 0.64)
-	env.ambient_light_energy = 0.85
+	env.ambient_light_color = Color(0.3, 0.55, 0.62)
+	env.ambient_light_energy = 0.42
+	env.tonemap_exposure = 0.78
+	# 거리 안개: 가까운 무대는 또렷, 멀어질수록 짙은 청록 물속으로 사라짐
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.04, 0.26, 0.3)
-	env.fog_density = 0.035
-	sun.light_color = Color(0.95, 1.0, 0.92)
-	sun.light_energy = 1.2
+	env.fog_mode = Environment.FOG_MODE_DEPTH
+	env.fog_light_color = Color(0.02, 0.17, 0.22)
+	env.fog_density = 1.0
+	env.fog_depth_begin = 10.0
+	env.fog_depth_end = 42.0
+	env.fog_depth_curve = 1.4
+	env.fog_sky_affect = 1.0
+	# 물속 색 보정: 붉은빛은 먼저 흡수되고, 그림자는 청록으로 뜸
+	var g := Gradient.new()
+	g.set_color(0, Color(0.0, 0.035, 0.06))
+	g.set_color(1, Color(0.82, 0.98, 0.97))
+	g.add_point(0.25, Color(0.08, 0.17, 0.2))
+	g.add_point(0.55, Color(0.33, 0.49, 0.52))
+	var gt := GradientTexture1D.new()
+	gt.gradient = g
+	gt.width = 256
+	env.adjustment_color_correction = gt
+	env.adjustment_contrast = 1.12
+	env.adjustment_saturation = 1.0
+	env.glow_intensity = 0.5
+	sun.light_color = Color(0.85, 1.0, 0.95)
+	sun.light_energy = 1.45
+	# 먼 물속 배경 (안개가 닿지 않는 끝을 감싸는 큰 구)
+	var bs := SphereMesh.new()
+	bs.radius = 46.0
+	bs.height = 92.0
+	bs.radial_segments = 32
+	bs.rings = 16
+	var bm := ShaderMaterial.new()
+	bm.shader = load("res://shaders/uw_backdrop.gdshader")
+	var bmi := add_mesh(bs, bm, Vector3.ZERO)
+	bmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	sun.rotation_degrees = Vector3(-62, -25, 0)
+
+
+## 밑에서 올려다본 수면: 짙은 청록 + 일렁이는 밝은 물결 하이라이트
+func surface_from_below(y: float, size: float = 120.0) -> MeshInstance3D:
+	var surf := PlaneMesh.new()
+	surf.size = Vector2(size, size)
+	surf.flip_faces = true
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.1, 0.32, 0.38, 0.72)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.normal_enabled = true
+	m.normal_texture = load("res://textures/ocean/water_normal_a.png")
+	m.normal_scale = 1.6
+	m.uv1_scale = Vector3(5, 5, 5)
+	m.roughness = 0.05
+	m.metallic_specular = 1.0
+	m.emission_enabled = true
+	m.emission = Color(0.08, 0.3, 0.34)
+	m.emission_energy_multiplier = 1.0
+	var mi := add_mesh(surf, m, Vector3(0, y, 0))
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
 
 
 func ocean(y: float = 0.0, size: float = 160.0, calm_r: float = 0.0, day: bool = true) -> MeshInstance3D:
@@ -222,7 +292,10 @@ func reef(kind: String, p: Vector3, c: Color = Color.WHITE, size: float = 1.0) -
 		"rock":
 			var mi := MeshInstance3D.new()
 			mi.mesh = kit._rock_mesh()
-			mi.material_override = kit._rock_mat(randi() % 3)
+			var rm: ShaderMaterial = kit._rock_mat(randi() % 3).duplicate()
+			rm.set_shader_parameter("moss_color", Color(0.2, 0.3, 0.19))
+			rm.set_shader_parameter("moss", 0.6)
+			mi.material_override = rm
 			mi.position = p
 			mi.scale = Vector3(size * randf_range(0.9, 1.3), size * randf_range(0.6, 0.85), size * randf_range(0.9, 1.2))
 			mi.rotation = Vector3(randf_range(-0.12, 0.12), randf() * TAU, randf_range(-0.12, 0.12))
@@ -499,12 +572,21 @@ func debris(pos: Vector3, col: Color, amount: int = 18) -> void:
 	p.finished.connect(p.queue_free)
 
 
+## 미니게임용 크라켄 피부: 형광을 낮춰 젖은 문어 살갗처럼 (경고 때 glow 로 달아오르는 건 그대로)
+static func skin_tone(m: ShaderMaterial) -> void:
+	m.set_shader_parameter("neon", Color(0.13, 0.42, 0.17))
+	m.set_shader_parameter("vein_col", Color(0.3, 0.44, 0.12))
+	m.set_shader_parameter("deep", Color(0.03, 0.12, 0.06))
+
+
 ## 보드와 같은 크라켄 촉수 (셰이더로 휘는 관). 돌려줌 {"root", "mat"}
 func tentacle(length: float, radius: float, dir: Vector3) -> Dictionary:
 	var tn: Dictionary = kit.make_tentacle(1, radius, length, dir)
 	var m: ShaderMaterial = tn["mat"]
 	m.set_shader_parameter("caustics", 0.0)
 	m.set_shader_parameter("opacity", 0.96)
+	# 미니게임에선 형광을 낮춰 실제 문어 · 오징어 같은 젖은 살갗 느낌으로
+	skin_tone(m)
 	world3.add_child(tn["root"])
 	return tn
 
@@ -516,6 +598,323 @@ func pose_tentacle(m: ShaderMaterial, a: Array, b: Array, f: float) -> void:
 	m.set_shader_parameter("tipback", lerpf(a[3], b[3], f))
 	m.set_shader_parameter("wave", lerpf(a[4], b[4], f))
 	m.set_shader_parameter("wtime", _t3)
+
+
+## 통나무 뗏목 (반지름 R): 물에 잠긴 통나무 받침(가로질러) + 들쭉날쭉한 널빤지(사이 틈) + 통나무 자리마다 밧줄로 동여맴 + 못
+func build_raft(parent: Node3D, R: float, seed_: int) -> void:
+	var rr := RandomNumberGenerator.new()
+	rr.seed = seed_
+	var log_cols := [Color(0.3, 0.21, 0.13), Color(0.27, 0.19, 0.12), Color(0.33, 0.23, 0.14)]
+	var log_x := []
+	for k in 5:
+		var x := -R * 0.72 + k * R * 0.36
+		log_x.append(x)
+		var half := sqrt(maxf(R * R - x * x, 1.0)) - 0.15
+		var cyl := CylinderMesh.new()
+		var lr := rr.randf_range(0.36, 0.46)
+		cyl.top_radius = lr
+		cyl.bottom_radius = lr * 1.05
+		cyl.height = half * 2.0
+		cyl.radial_segments = 18
+		add_mesh(cyl, wood_mat(log_cols[k % 3], Vector3(0, 0, 1), 0.55), Vector3(x, -0.5, rr.randf_range(-0.1, 0.1)), Basis(Vector3(1, 0, 0), PI / 2), parent)
+		# 잘린 통나무 끝 (나이테 색)
+		for sd: float in [-1.0, 1.0]:
+			var cap := CylinderMesh.new()
+			cap.top_radius = lr * 0.98
+			cap.bottom_radius = lr * 0.98
+			cap.height = 0.03
+			add_mesh(cap, std_mat(Color(0.62, 0.48, 0.32), 0.9), Vector3(x, -0.5, sd * half), Basis(Vector3(1, 0, 0), PI / 2), parent)
+	var cols := [Color(0.42, 0.32, 0.22), Color(0.46, 0.35, 0.24), Color(0.39, 0.29, 0.2), Color(0.44, 0.33, 0.22), Color(0.36, 0.27, 0.19)]
+	var nail := std_mat(Color(0.12, 0.1, 0.09), 0.5, 0.7)
+	var nail_m := CylinderMesh.new()
+	nail_m.top_radius = 0.025
+	nail_m.bottom_radius = 0.025
+	nail_m.height = 0.02
+	nail_m.radial_segments = 6
+	var z := -R + 0.25
+	var idx := 0
+	while z < R - 0.2:
+		var w := rr.randf_range(0.34, 0.44)
+		var half := sqrt(maxf(R * R - z * z, 0.5)) + rr.randf_range(-0.3, 0.12)
+		var off := rr.randf_range(-0.12, 0.12)
+		var tilt := rr.randf_range(-0.015, 0.015)
+		box(Vector3(half * 2.0, 0.14, w), wood_mat(cols[idx % cols.size()], Vector3(1, 0, 0), 0.1),
+			Vector3(off, -0.07 + rr.randf_range(-0.012, 0.012), z), Basis(Vector3.UP, tilt) * Basis(Vector3(1, 0, 0), rr.randf_range(-0.02, 0.02)), parent)
+		for x: float in log_x:
+			if absf(x - off) < half - 0.15:
+				for dz: float in [-w * 0.28, w * 0.28]:
+					add_mesh(nail_m, nail, Vector3(x + rr.randf_range(-0.05, 0.05), 0.005, z + dz), Basis(), parent)
+		z += w + rr.randf_range(0.03, 0.06)
+		idx += 1
+	# 통나무 자리마다 널 위를 가로지르는 밧줄 동여맴 (가장자리 몇 군데)
+	var rope := std_mat(Color(0.6, 0.5, 0.34), 0.95)
+	for x: float in log_x:
+		for sd: float in [-1.0, 1.0]:
+			var zz: float = sd * (sqrt(maxf(R * R - x * x, 1.0)) - rr.randf_range(0.5, 0.9))
+			for k in 3:
+				var t := TorusMesh.new()
+				t.inner_radius = 0.46
+				t.outer_radius = 0.52
+				t.rings = 24
+				add_mesh(t, rope, Vector3(x, -0.45, zz + (k - 1) * 0.07), Basis(Vector3(1, 0, 0), PI / 2), parent)
+
+
+## 갑판 잡동사니: 나무 상자 · 감긴 밧줄 · 양동이 · 그물 더미 (pos 들에)
+func deck_clutter(parent: Node3D, spots: Array, seed_: int) -> void:
+	var rr := RandomNumberGenerator.new()
+	rr.seed = seed_
+	var rope := std_mat(Color(0.62, 0.5, 0.33), 0.95)
+	var iron := std_mat(Color(0.2, 0.19, 0.18), 0.5, 0.7)
+	for k in spots.size():
+		var p: Vector3 = spots[k]
+		match k % 4:
+			0:   # 나무 상자 (판자 + 모서리 각목)
+				var c := Node3D.new()
+				c.position = p
+				c.rotation.y = rr.randf_range(-0.6, 0.6)
+				parent.add_child(c)
+				var sz := rr.randf_range(0.55, 0.75)
+				box(Vector3(sz, sz, sz), wood_mat(Color(0.55, 0.42, 0.27), Vector3(1, 0, 0), 0.1), Vector3(0, sz * 0.5, 0), Basis(), c)
+				var edge := wood_mat(Color(0.4, 0.29, 0.18), Vector3(0, 1, 0), 0.1)
+				for sx: float in [-1.0, 1.0]:
+					for sz2: float in [-1.0, 1.0]:
+						box(Vector3(0.07, sz + 0.02, 0.07), edge, Vector3(sx * sz * 0.5, sz * 0.5, sz2 * sz * 0.5), Basis(), c)
+				box(Vector3(sz + 0.02, 0.06, 0.07), edge, Vector3(0, sz * 0.5, sz * 0.5), Basis(Vector3(0, 0, 1), 0.78), c)
+			1:   # 감긴 밧줄
+				for j in 5:
+					var t := TorusMesh.new()
+					t.inner_radius = 0.18 + j * 0.035
+					t.outer_radius = 0.28 + j * 0.035
+					t.rings = 24
+					add_mesh(t, rope, p + Vector3(0, 0.05 + j * 0.075, 0), Basis(), parent)
+			2:   # 양동이 (나무 + 쇠테)
+				var b := CylinderMesh.new()
+				b.top_radius = 0.22
+				b.bottom_radius = 0.18
+				b.height = 0.36
+				add_mesh(b, wood_mat(Color(0.5, 0.36, 0.22), Vector3(0, 1, 0), 0.1), p + Vector3(0, 0.18, 0), Basis(), parent)
+				for hy: float in [0.08, 0.3]:
+					var band := CylinderMesh.new()
+					band.top_radius = 0.19 + hy * 0.1
+					band.bottom_radius = band.top_radius
+					band.height = 0.03
+					add_mesh(band, iron, p + Vector3(0, hy, 0), Basis(), parent)
+			3:   # 그물 더미 (울퉁불퉁한 그물 + 찌)
+				var net := std_mat(Color(0.35, 0.42, 0.36), 0.95)
+				for j in 3:
+					var sp := SphereMesh.new()
+					sp.radius = 0.35
+					sp.height = 0.3
+					add_mesh(sp, net, p + Vector3(rr.randf_range(-0.2, 0.2), 0.08, rr.randf_range(-0.2, 0.2)), Basis(), parent).scale = Vector3(1.2, 0.6, 1.0)
+				for j in 3:
+					var fl := SphereMesh.new()
+					fl.radius = 0.07
+					fl.height = 0.14
+					add_mesh(fl, std_mat(Color(0.9, 0.35, 0.2), 0.5), p + Vector3(rr.randf_range(-0.3, 0.3), 0.2, rr.randf_range(-0.3, 0.3)), Basis(), parent)
+
+
+## 배 선체 메시: 뱃머리는 뾰족하고 고물은 뭉툭, 단면은 둥근 V, 갑판선(sheer)은 앞뒤로 휨. +X = 뱃머리
+static func hull_mesh(L: float, B: float, D: float, stations: int = 18, ring: int = 12) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rows := []
+	for i in stations + 1:
+		var t := float(i) / stations                       # 0 = 고물, 1 = 뱃머리
+		var x := (t - 0.5) * L
+		var w := B * 0.5 * (pow(sin(PI * clampf(t * 0.82 + 0.18, 0.0, 1.0)), 0.55))
+		if t > 0.97:
+			w *= (1.0 - t) / 0.03 * 0.3 + 0.0
+		var sheer := 0.18 * D * pow(absf(t - 0.45) * 1.8, 2.0)
+		var depth := D * (0.55 + 0.45 * sin(PI * clampf(t * 0.9 + 0.05, 0.0, 1.0)))
+		var row := []
+		for j in ring + 1:
+			var a := -PI * 0.5 + PI * float(j) / ring             # 좌현 갑판선 → 용골 → 우현 갑판선
+			var ca := cos(a)
+			var sa := sin(a)
+			var yy := sheer - depth * pow(ca, 1.35)
+			var zz := w * signf(sa) * pow(absf(sa), 0.7)
+			row.append(Vector3(x, yy, zz))
+		rows.append(row)
+	for i in stations:
+		for j in ring:
+			var a: Vector3 = rows[i][j]
+			var b: Vector3 = rows[i + 1][j]
+			var c: Vector3 = rows[i + 1][j + 1]
+			var d: Vector3 = rows[i][j + 1]
+			st.add_vertex(a); st.add_vertex(c); st.add_vertex(b)
+			st.add_vertex(a); st.add_vertex(d); st.add_vertex(c)
+	# 고물 판 (transom)
+	var r0: Array = rows[0]
+	var cen := Vector3(r0[0].x, r0[0].y, 0)
+	for j in ring:
+		st.add_vertex(cen); st.add_vertex(r0[j]); st.add_vertex(r0[j + 1])
+	st.generate_normals()
+	return st.commit()
+
+
+## 갑판 윤곽(위에서 본 폭) — hull_mesh 와 같은 식
+static func hull_half_width(t: float, B: float) -> float:
+	var w := B * 0.5 * pow(sin(PI * clampf(t * 0.82 + 0.18, 0.0, 1.0)), 0.55)
+	if t > 0.97:
+		w *= (1.0 - t) / 0.03 * 0.3
+	return w
+
+
+## 작은 돛단배 한 척: 선체 · 갑판 널 · 뱃전 난간 · 돛대 · 붐 · 삼각돛 · 밧줄 · 깃발. 반환 = 루트 (원점 = 수면)
+func sailboat(sail_col: Color, parent: Node3D, L: float = 2.6, B: float = 1.0, D: float = 0.55) -> Node3D:
+	var root := Node3D.new()
+	parent.add_child(root)
+	var hull_m := wood_mat(Color(0.36, 0.22, 0.13), Vector3(1, 0, 0), 0.25)
+	var hull := MeshInstance3D.new()
+	hull.mesh = hull_mesh(L, B, D)
+	hull.material_override = hull_m
+	hull.position = Vector3(0, 0.22, 0)
+	root.add_child(hull)
+	# 갑판 널 (선체 폭에 맞춰)
+	var deck := wood_mat(Color(0.6, 0.46, 0.3), Vector3(1, 0, 0), 0.05)
+	var n := 9
+	for i in n:
+		var t0 := (float(i) + 0.5) / n * 0.92 + 0.02
+		var w := hull_half_width(t0, B) * 2.0 * 0.9
+		if w > 0.05:
+			box(Vector3(L / n * 0.98, 0.04, w), deck, Vector3((t0 - 0.5) * L, 0.2, 0), Basis(), root)
+	# 뱃전 난간
+	var rail := wood_mat(Color(0.28, 0.17, 0.1), Vector3(1, 0, 0), 0.1)
+	for sd: float in [-1.0, 1.0]:
+		for i in 12:
+			var ta := float(i) / 12.0 * 0.96
+			var tb := float(i + 1) / 12.0 * 0.96
+			var pa := Vector3((ta - 0.5) * L, 0.26 + 0.18 * D * pow(absf(ta - 0.45) * 1.8, 2.0), sd * hull_half_width(ta, B))
+			var pb := Vector3((tb - 0.5) * L, 0.26 + 0.18 * D * pow(absf(tb - 0.45) * 1.8, 2.0), sd * hull_half_width(tb, B))
+			var seg := pb - pa
+			var bb := Basis.looking_at(seg.normalized(), Vector3.UP)
+			box(Vector3(0.06, 0.08, seg.length() + 0.02), rail, (pa + pb) * 0.5, bb, root)
+	# 돛대 · 붐
+	var mast_x := L * 0.1
+	var mast := CylinderMesh.new()
+	mast.top_radius = 0.035
+	mast.bottom_radius = 0.05
+	mast.height = L * 0.95
+	add_mesh(mast, rail, Vector3(mast_x, 0.2 + L * 0.475, 0), Basis(), root)
+	var boom := CylinderMesh.new()
+	boom.top_radius = 0.03
+	boom.bottom_radius = 0.03
+	boom.height = L * 0.55
+	add_mesh(boom, rail, Vector3(mast_x - L * 0.27, 0.62, 0), Basis(Vector3(0, 0, 1), PI / 2), root)
+	# 삼각돛 (살짝 바람에 부푼 면)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var top := Vector3(mast_x, 0.2 + L * 0.9, 0)
+	var foot0 := Vector3(mast_x, 0.68, 0)
+	var foot1 := Vector3(mast_x - L * 0.52, 0.68, 0)
+	var g := 6
+	var pts := []
+	for i in g + 1:
+		var row := []
+		for j in g + 1 - i:
+			var u := float(j) / g
+			var v := float(i) / g
+			var pp := foot0 + (foot1 - foot0) * u + (top - foot0) * v
+			pp.z += sin(PI * u / maxf(1.0 - v, 0.001) * (1.0 - v)) * sin(PI * minf(v + 0.1, 1.0)) * 0.16
+			row.append(pp)
+		pts.append(row)
+	for i in g:
+		for j in g - i:
+			st.add_vertex(pts[i][j]); st.add_vertex(pts[i][j + 1]); st.add_vertex(pts[i + 1][j])
+			if j + 1 < pts[i + 1].size():
+				st.add_vertex(pts[i][j + 1]); st.add_vertex(pts[i + 1][j + 1]); st.add_vertex(pts[i + 1][j])
+	st.generate_normals()
+	var sail_m := std_mat(sail_col.lerp(Color(0.95, 0.92, 0.84), 0.45), 0.9)
+	sail_m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var sail := MeshInstance3D.new()
+	sail.mesh = st.commit()
+	sail.material_override = sail_m
+	root.add_child(sail)
+	# 버팀줄 (돛대 꼭대기 → 뱃머리 / 고물)
+	var rope := std_mat(Color(0.55, 0.47, 0.33), 0.9)
+	for end: Vector3 in [Vector3(L * 0.48, 0.3, 0), Vector3(-L * 0.46, 0.3, 0.0)]:
+		var a := top + Vector3(0, 0.02, 0)
+		var seg := end - a
+		var c := CylinderMesh.new()
+		c.top_radius = 0.008
+		c.bottom_radius = 0.008
+		c.height = seg.length()
+		c.radial_segments = 4
+		var y := seg.normalized()
+		var x := y.cross(Vector3(0, 0, 1)).normalized()
+		add_mesh(c, rope, (a + end) * 0.5, Basis(x, y, x.cross(y)), root)
+	# 돛대 꼭대기 깃발
+	var flag := std_mat(sail_col, 0.7)
+	flag.cull_mode = BaseMaterial3D.CULL_DISABLED
+	box(Vector3(0.3, 0.16, 0.01), flag, Vector3(mast_x - 0.17, 0.2 + L * 0.93, 0), Basis(), root)
+	return root
+
+
+## 물 위에 떠다니는 나무통 · 널조각 · 부표 (뗏목 둘레 r0 ~ r1)
+func sea_debris(count: int, r0: float, r1: float, y: float, seed_: int, center := Vector3.ZERO) -> void:
+	var rr := RandomNumberGenerator.new()
+	rr.seed = seed_
+	for k in count:
+		var a := rr.randf() * TAU
+		var d := rr.randf_range(r0, r1)
+		var n := Node3D.new()
+		world3.add_child(n)
+		match k % 3:
+			0:
+				var c := CylinderMesh.new()
+				c.top_radius = 0.3
+				c.bottom_radius = 0.3
+				c.height = 0.8
+				add_mesh(c, wood_mat(Color(0.42, 0.29, 0.18), Vector3(0, 1, 0), 0.4), Vector3.ZERO, Basis(Vector3(0, 0, 1), PI / 2), n)
+				for hx: float in [-0.25, 0.25]:
+					var b := CylinderMesh.new()
+					b.top_radius = 0.315
+					b.bottom_radius = 0.315
+					b.height = 0.05
+					add_mesh(b, std_mat(Color(0.2, 0.19, 0.18), 0.5, 0.7), Vector3(hx, 0, 0), Basis(Vector3(0, 0, 1), PI / 2), n)
+			1:
+				box(Vector3(rr.randf_range(1.2, 2.0), 0.1, 0.32), wood_mat(Color(0.38, 0.28, 0.19), Vector3(1, 0, 0), 0.5), Vector3.ZERO, Basis(), n)
+			2:
+				var s := SphereMesh.new()
+				s.radius = 0.28
+				s.height = 0.5
+				add_mesh(s, std_mat(Color(0.85, 0.25, 0.18), 0.4), Vector3.ZERO, Basis(), n)
+				box(Vector3(0.6, 0.06, 0.06), std_mat(Color(0.95, 0.95, 0.9), 0.5), Vector3(0, 0.12, 0), Basis(), n)
+		var base := center + Vector3(cos(a) * d, y, sin(a) * d)
+		n.position = base
+		_floaters.append({"node": n, "base": base, "ph": rr.randf() * TAU, "yaw": rr.randf() * TAU})
+
+
+## 하늘을 빙빙 도는 갈매기들
+func gulls(count: int, center: Vector3, radius: float, h: float, seed_: int) -> void:
+	var rr := RandomNumberGenerator.new()
+	rr.seed = seed_
+	var white := std_mat(Color(0.95, 0.95, 0.93), 0.7)
+	var grey := std_mat(Color(0.55, 0.57, 0.6), 0.7)
+	var beak := std_mat(Color(0.95, 0.7, 0.2), 0.5)
+	for k in count:
+		var n := Node3D.new()
+		world3.add_child(n)
+		var body := SphereMesh.new()
+		body.radius = 0.12
+		body.height = 0.24
+		add_mesh(body, white, Vector3.ZERO, Basis(), n).scale = Vector3(1.0, 0.9, 2.6)
+		var bk := CylinderMesh.new()
+		bk.top_radius = 0.0
+		bk.bottom_radius = 0.035
+		bk.height = 0.12
+		add_mesh(bk, beak, Vector3(0, 0.02, -0.36), Basis(Vector3(1, 0, 0), -PI / 2), n)
+		var wl := Node3D.new()
+		var wr := Node3D.new()
+		n.add_child(wl)
+		n.add_child(wr)
+		box(Vector3(0.7, 0.02, 0.2), white, Vector3(-0.36, 0, 0), Basis(), wl)
+		box(Vector3(0.28, 0.021, 0.14), grey, Vector3(-0.62, 0, 0.02), Basis(), wl)
+		box(Vector3(0.7, 0.02, 0.2), white, Vector3(0.36, 0, 0), Basis(), wr)
+		box(Vector3(0.28, 0.021, 0.14), grey, Vector3(0.62, 0, 0.02), Basis(), wr)
+		n.scale = Vector3.ONE * rr.randf_range(0.9, 1.2)
+		_gulls.append({"node": n, "wl": wl, "wr": wr, "c": center + Vector3(rr.randf_range(-4, 4), 0, rr.randf_range(-4, 4)),
+			"r": radius * rr.randf_range(0.7, 1.2), "h": h + rr.randf_range(-1.5, 2.0), "sp": rr.randf_range(0.25, 0.4) * (1.0 if rr.randf() < 0.6 else -1.0), "ph": rr.randf() * TAU})
 
 
 ## 하늘의 뭉게구름 (빌보드) — 수평선 둘레에
@@ -570,7 +969,7 @@ func underwater_fx(half: float, top: float = 12.0) -> void:
 		var m := ShaderMaterial.new()
 		m.shader = RayShader
 		m.set_shader_parameter("phase", rr.randf() * TAU)
-		m.set_shader_parameter("strength", rr.randf_range(0.018, 0.04))
+		m.set_shader_parameter("strength", rr.randf_range(0.012, 0.026))
 		var p := Vector3(rr.randf_range(-half, half), top, rr.randf_range(-half, half * 0.4))
 		var b := Basis(Vector3.UP, rr.randf_range(-0.5, 0.5)) * Basis(Vector3(0, 0, 1), deg_to_rad(18))
 		add_mesh(q, m, p, b).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -721,6 +1120,7 @@ func spline_tentacle(pts: Array, r0: float, belly: Callable, tip := 0.1, parent:
 	m.set_shader_parameter("tip", tip)
 	m.set_shader_parameter("opacity", 0.97)
 	m.set_shader_parameter("pattern_scale", 1.6 / maxf(r0, 0.3))
+	skin_tone(m)
 	var mi := add_mesh(st.commit(), m, Vector3.ZERO, Basis(), parent)
 	# 빨판 두 줄 (배 쪽, 엇갈려서)
 	var xs := []
@@ -823,6 +1223,7 @@ func kraken_head(pos: Vector3, scl: float, yaw: float = 0.0, tilt: float = -0.35
 	bm.shader = KrakenBodyShader
 	bm.set_shader_parameter("pattern_scale", 1.2)
 	bm.set_shader_parameter("opacity", 1.0)
+	skin_tone(bm)
 	add_mesh(KRAKEN_BODY, bm, Vector3.ZERO, Basis(), root)
 	var em := ShaderMaterial.new()
 	em.shader = KrakenEyeShader

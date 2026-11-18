@@ -39,26 +39,10 @@ func _build_stage() -> void:
 	cam.look_at(Vector3(0, 0, 0.6))
 	_raft = Node3D.new()
 	world3.add_child(_raft)
-	var rr := RandomNumberGenerator.new()
-	rr.seed = 31
-	var cols := [Color(0.36, 0.27, 0.19), Color(0.4, 0.3, 0.21), Color(0.33, 0.25, 0.18)]
-	var z := -RAFT_R + 0.25
-	var idx := 0
-	while z < RAFT_R - 0.2:
-		var half := sqrt(maxf(RAFT_R * RAFT_R - z * z, 0.5)) + rr.randf_range(-0.25, 0.15)
-		box(Vector3(half * 2.0, 0.16, 0.4), wood_mat(cols[idx % 3], Vector3(1, 0, 0), 0.12),
-			Vector3(rr.randf_range(-0.1, 0.1), -0.08, z), Basis(Vector3.UP, rr.randf_range(-0.012, 0.012)), _raft)
-		z += 0.43
-		idx += 1
-	var log_mat := wood_mat(Color(0.32, 0.22, 0.14), Vector3(1, 0, 0), 0.4)
-	for k in 5:
-		var zz := -RAFT_R * 0.8 + k * RAFT_R * 0.4
-		var half := sqrt(maxf(RAFT_R * RAFT_R - zz * zz, 1.0)) - 0.2
-		var cyl := CylinderMesh.new()
-		cyl.top_radius = 0.42
-		cyl.bottom_radius = 0.42
-		cyl.height = half * 2.0
-		add_mesh(cyl, log_mat, Vector3(0, -0.55, zz), Basis(Vector3(0, 0, 1), PI / 2), _raft)
+	build_raft(_raft, RAFT_R, 31)
+	deck_clutter(_raft, [Vector3(-3.9, 0, -3.4), Vector3(4.3, 0, 2.6), Vector3(-4.6, 0, 1.9), Vector3(2.6, 0, -4.6)], 9)
+	sea_debris(7, RAFT_R + 3.0, RAFT_R + 9.0, -0.45, 8)
+	gulls(4, Vector3(0, 0, -3), 9.0, 9.0, 4)
 	# 가장자리 화약통 더미 · 횃불 기둥
 	var barrel := wood_mat(Color(0.45, 0.3, 0.18), Vector3(0, 1, 0), 0.2)
 	var metal := std_mat(Color(0.18, 0.17, 0.16), 0.45, 0.8)

@@ -39,7 +39,8 @@ func _init() -> void:
 
 func _build_stage() -> void:
 	env_underwater()
-	env.fog_density = 0.014
+	env.fog_depth_begin = 14.0
+	env.fog_depth_end = 40.0
 	cam.fov = 46.0
 	cam.position = Vector3(0, 13.5, 10.8)
 	cam.look_at(Vector3(0, 0, 0.9))

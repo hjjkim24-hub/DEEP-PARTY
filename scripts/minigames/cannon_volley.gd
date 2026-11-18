@@ -50,6 +50,14 @@ func _build_stage() -> void:
 		var c := Vector3(rr.randf_range(-120, 120), SEA_Y - 2.0, rr.randf_range(-220, -160))
 		for j in 4:
 			reef("rock", c + Vector3(rr.randf_range(-14, 14), 0, rr.randf_range(-6, 6)), Color.WHITE, rr.randf_range(9.0, 17.0))
+	# 먼 바다를 지나가는 범선 두 척 · 갈매기 · 떠다니는 나무통
+	for k in 2:
+		var sb := sailboat(Color(0.9, 0.88, 0.8), world3, 2.6, 1.0, 0.55)
+		sb.scale = Vector3.ONE * (9.0 if k == 0 else 6.5)
+		sb.position = Vector3(-70.0 if k == 0 else 85.0, SEA_Y - 0.5, -140.0 if k == 0 else -175.0)
+		sb.rotation.y = 0.3 if k == 0 else 2.9
+	gulls(5, Vector3(0, 0, -16), 14.0, 10.0, 9)
+	sea_debris(6, 26.0, 40.0, SEA_Y + 0.1, 3, Vector3(0, 0, -6))
 
 
 

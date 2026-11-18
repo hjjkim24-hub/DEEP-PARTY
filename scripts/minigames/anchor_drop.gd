@@ -30,11 +30,8 @@ func _init() -> void:
 
 func _build_stage() -> void:
 	env_underwater()
-	env.fog_density = 0.03
-	env.background_color = Color(0.02, 0.14, 0.2)
-	env.fog_light_color = Color(0.03, 0.18, 0.24)
-	env.ambient_light_energy = 0.5
-	env.tonemap_exposure = 0.8
+	env.fog_depth_begin = 12.0
+	env.fog_depth_end = 34.0
 	cam.fov = 58.0
 	cam.position = Vector3(0, 3.6, 10.5)
 	cam.look_at(Vector3(0, 2.7, 0))
@@ -46,19 +43,7 @@ func _build_stage() -> void:
 	sm.set_shader_parameter("sand_normal", kit._mip_tex(load("res://textures/seabed/sand_normal.png")))
 	add_mesh(pm, sm, Vector3.ZERO)
 	# 수면 (밑에서 올려다본 물결면)
-	var surf := PlaneMesh.new()
-	surf.size = Vector2(120, 120)
-	surf.flip_faces = true
-	var swm := StandardMaterial3D.new()
-	swm.albedo_color = Color(0.45, 0.85, 0.9, 0.55)
-	swm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	swm.normal_enabled = true
-	swm.normal_texture = load("res://textures/ocean/water_normal_a.png")
-	swm.uv1_scale = Vector3(6, 6, 6)
-	swm.roughness = 0.1
-	swm.emission_enabled = true
-	swm.emission = Color(0.25, 0.55, 0.6)
-	add_mesh(surf, swm, Vector3(0, SEA_Y, 0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	surface_from_below(SEA_Y)
 	seed(5)
 	var rr := RandomNumberGenerator.new()
 	rr.seed = 12
@@ -112,23 +97,11 @@ func _build_stage() -> void:
 func _make_boat(p: Dictionary, z: float) -> Dictionary:
 	var root := Node3D.new()
 	world3.add_child(root)
-	var hull := wood_mat(Color(0.45, 0.3, 0.19), Vector3(1, 0, 0), 0.1)
-	var b := box(Vector3(2.2, 0.45, 0.9), hull, Vector3(0, SEA_Y + 0.05, z), Basis(), root)
-	var keel := SphereMesh.new()
-	keel.radius = 0.5
-	keel.height = 0.8
-	add_mesh(keel, hull, Vector3(0, SEA_Y - 0.15, z), Basis(), root).scale = Vector3(2.1, 0.55, 0.9)
-	var mast := CylinderMesh.new()
-	mast.top_radius = 0.04
-	mast.bottom_radius = 0.05
-	mast.height = 1.8
-	add_mesh(mast, hull, Vector3(0, SEA_Y + 1.1, z), Basis(), root)
-	var sail := std_mat(Color(p["color"]).lightened(0.25), 0.8)
-	sail.cull_mode = BaseMaterial3D.CULL_DISABLED
-	box(Vector3(0.9, 1.1, 0.02), sail, Vector3(0.35, SEA_Y + 1.25, z), Basis(), root)
+	var boat := sailboat(Color(p["color"]), root, 2.6, 1.0, 0.55)
+	boat.position = Vector3(0, SEA_Y - 0.08, z)
 	var pawn := make_pawn(p)
 	pawn.reparent(root, false)
-	pawn.position = Vector3(-0.55, SEA_Y + 0.28, z)
+	pawn.position = Vector3(-0.75, SEA_Y + 0.14, z)
 	pawn.scale = Vector3.ONE * 0.7
 	# 닻 (쇠)
 	var iron := std_mat(Color(0.22, 0.22, 0.24), 0.4, 0.8)
@@ -207,7 +180,7 @@ func _play_round() -> void:
 	_marker.scale = Vector3.ONE * _target_r
 	await _big_text(tr("ROUND %d") % (_round + 1), 0.6)
 	if absf(_current) > 0.1:
-		float_at(Vector3(0, 4.0, 0), "≫ CURRENT" if _current > 0 else "CURRENT ≪", Color(0.6, 0.95, 1.0), 40)
+		float_at(Vector3(0, 4.0, 0), ("≫ " + tr("Current")) if _current > 0 else (tr("Current") + " ≪"), Color(0.6, 0.95, 1.0), 40)
 	for s in _boats:
 		var b: Dictionary = _boats[s]
 		b["dropped"] = false

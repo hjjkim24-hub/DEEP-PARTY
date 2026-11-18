@@ -36,16 +36,7 @@ func _build_stage() -> void:
 	cam.fov = 44.0
 	cam.position = Vector3(0, 15.5, 12.5)
 	cam.look_at(Vector3(0, 0, 0.8))
-	# 갑판 (네모난 뗏목 · 널빤지)
-	var cols := [Color(0.5, 0.38, 0.26), Color(0.55, 0.42, 0.29), Color(0.47, 0.35, 0.24)]
-	for k in 18:
-		var x := -HALF - 0.4 + k * 0.9
-		box(Vector3(0.86, 0.3, HALF * 2.0 + 0.8), wood_mat(cols[k % 3], Vector3(0, 0, 1), 0.06), Vector3(x, -0.15, 0))
-	var rail := wood_mat(Color(0.36, 0.24, 0.15), Vector3(1, 0, 0), 0.2)
-	for sd: float in [-1.0, 1.0]:
-		box(Vector3(HALF * 2.0 + 1.4, 0.5, 0.35), rail, Vector3(0, 0.1, sd * (HALF + 0.55)))
-		box(Vector3(0.35, 0.5, HALF * 2.0 + 1.4), rail, Vector3(sd * (HALF + 0.55), 0.1, 0))
-	box(Vector3(HALF * 2.0 + 1.6, 1.2, HALF * 2.0 + 1.6), wood_mat(Color(0.3, 0.2, 0.13), Vector3(1, 0, 0), 0.4), Vector3(0, -0.9, 0))
+	_build_ship()
 	# 칠하는 면 (갑판 바로 위 투명 판)
 	_img = Image.create(GRID, GRID, false, Image.FORMAT_RGBA8)
 	_img.fill(Color(0, 0, 0, 0))
@@ -59,6 +50,180 @@ func _build_stage() -> void:
 	add_mesh(q, _paint_mat, Vector3(0, 0.02, 0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# 뒤쪽 바다의 크라켄 (먹물을 뱉음)
 	kraken_head(Vector3(0, -5.0, -24.0), 4.2, 0.0, -0.1)
+
+
+## 갑판 = 큰 배의 주갑판: 선체(뱃머리는 크라켄 쪽) · 널빤지(선체 모양대로) · 뱃전 · 대포 · 돛대 · 잡동사니
+func _build_ship() -> void:
+	const L := 25.0
+	const B := 19.0
+	const D := 4.2
+	var stern_z := HALF + 1.6
+	var hull := MeshInstance3D.new()
+	hull.mesh = hull_mesh(L, B, D, 24, 14)
+	hull.material_override = wood_mat(Color(0.3, 0.19, 0.11), Vector3(1, 0, 0), 0.3)
+	# 메시 +X(뱃머리) → 월드 -Z
+	hull.basis = Basis(Vector3.UP, PI / 2)
+	hull.position = Vector3(0, -0.05, stern_z - L * 0.5)
+	world3.add_child(hull)
+	# 흘수선 위 검은 띠 (wale)
+	var wale := MeshInstance3D.new()
+	wale.mesh = hull.mesh
+	wale.material_override = std_mat(Color(0.07, 0.06, 0.06), 0.6)
+	wale.basis = hull.basis.scaled(Vector3(1.004, 0.12, 1.004))
+	wale.position = hull.position + Vector3(0, -0.28, 0)
+	world3.add_child(wale)
+	# t(0=고물, 1=뱃머리) ↔ z
+	var z_of := func(t: float) -> float: return stern_z - t * L
+	# 갑판 널: 세로(배 길이 방향)로, 선체 폭 안쪽만
+	var cols := [Color(0.56, 0.42, 0.28), Color(0.6, 0.46, 0.31), Color(0.52, 0.39, 0.26), Color(0.58, 0.44, 0.3)]
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 21
+	var pw := 0.62
+	var nx := int(B / pw)
+	var nail := std_mat(Color(0.12, 0.1, 0.09), 0.5, 0.7)
+	var nail_m := CylinderMesh.new()
+	nail_m.top_radius = 0.03
+	nail_m.bottom_radius = 0.03
+	nail_m.height = 0.02
+	nail_m.radial_segments = 6
+	for k in nx:
+		var x := -B * 0.5 + (k + 0.5) * pw
+		var t0 := -1.0
+		var t1 := -1.0
+		for i in 101:
+			var t := i / 100.0
+			if hull_half_width(t, B) * 0.94 > absf(x) + pw * 0.5:
+				if t0 < 0.0:
+					t0 = t
+				t1 = t
+		if t0 < 0.0:
+			continue
+		# 널 한 줄을 이음매 몇 개로 나눔 (엇갈린 이음)
+		var za: float = z_of.call(t0)
+		var zb: float = z_of.call(t1)
+		var seg := 3.6 + rr.randf_range(-0.4, 0.4)
+		var z := za - rr.randf_range(0.0, seg)
+		var pieces := []
+		pieces.append(za)
+		while z > zb:
+			pieces.append(z)
+			z -= seg
+		pieces.append(zb)
+		for j in pieces.size() - 1:
+			var z0: float = pieces[j]
+			var z1: float = pieces[j + 1]
+			var ln := z0 - z1
+			if ln < 0.2:
+				continue
+			box(Vector3(pw - 0.04, 0.22, ln - 0.03), wood_mat(cols[(k + j) % cols.size()], Vector3(0, 0, 1), 0.04),
+				Vector3(x, -0.11 + rr.randf_range(-0.01, 0.01), (z0 + z1) * 0.5))
+			# 이음매의 못 두 개
+			add_mesh(nail_m, nail, Vector3(x - pw * 0.22, 0.005, z0 - 0.12))
+			add_mesh(nail_m, nail, Vector3(x + pw * 0.22, 0.005, z0 - 0.12))
+	# 널 아래 메움 (틈으로 보이는 어두운 바닥)
+	box(Vector3(B * 0.9, 0.2, L * 0.9), std_mat(Color(0.12, 0.08, 0.05), 0.9), Vector3(0, -0.3, stern_z - L * 0.47))
+	# 뱃전 (bulwark): 선체 둘레를 따라 판벽 + 기둥 + 위 난간
+	var wall := wood_mat(Color(0.38, 0.25, 0.15), Vector3(1, 0, 0), 0.15)
+	var cap := wood_mat(Color(0.26, 0.16, 0.09), Vector3(1, 0, 0), 0.1)
+	var n := 30
+	for sd: float in [-1.0, 1.0]:
+		for i in n:
+			var ta := float(i) / n * 0.985
+			var tb := float(i + 1) / n * 0.985
+			var pa := Vector3(sd * hull_half_width(ta, B) * 0.97, 0, z_of.call(ta))
+			var pb := Vector3(sd * hull_half_width(tb, B) * 0.97, 0, z_of.call(tb))
+			var sg := pb - pa
+			var bb := Basis.looking_at(sg.normalized(), Vector3.UP)
+			box(Vector3(0.16, 0.85, sg.length() + 0.04), wall, (pa + pb) * 0.5 + Vector3(0, 0.42, 0), bb)
+			box(Vector3(0.32, 0.1, sg.length() + 0.06), cap, (pa + pb) * 0.5 + Vector3(0, 0.88, 0), bb)
+			if i % 2 == 0:
+				var inward := Vector3(-sd * 0.12, 0, 0)
+				box(Vector3(0.16, 0.9, 0.16), cap, pa + inward + Vector3(0, 0.45, 0), bb)
+	# 고물 쪽 가로 난간 (카메라 앞)
+	var hw0 := hull_half_width(0.0, B) * 0.97
+	box(Vector3(hw0 * 2.0, 0.85, 0.16), wall, Vector3(0, 0.42, stern_z), Basis())
+	box(Vector3(hw0 * 2.0 + 0.2, 0.1, 0.32), cap, Vector3(0, 0.88, stern_z), Basis())
+	# 대포: 양쪽 뱃전에 3문씩 (무대 밖 여백)
+	var iron := std_mat(Color(0.1, 0.1, 0.11), 0.4, 0.75)
+	var carriage := wood_mat(Color(0.42, 0.28, 0.17), Vector3(1, 0, 0), 0.1)
+	for sd: float in [-1.0, 1.0]:
+		for z: float in [-HALF * 0.65, 0.0, HALF * 0.65]:
+			var t := (stern_z - z) / L
+			var xw := hull_half_width(t, B) * 0.97 - 0.75
+			var c := Node3D.new()
+			c.position = Vector3(sd * xw, 0, z)
+			c.rotation.y = -sd * PI / 2
+			world3.add_child(c)
+			box(Vector3(0.7, 0.3, 1.0), carriage, Vector3(0, 0.2, 0.0), Basis(), c)
+			for wx: float in [-0.3, 0.3]:
+				for wz: float in [-0.35, 0.35]:
+					var wh := CylinderMesh.new()
+					wh.top_radius = 0.16
+					wh.bottom_radius = 0.16
+					wh.height = 0.1
+					add_mesh(wh, carriage, Vector3(wx + signf(wx) * 0.05, 0.16, wz), Basis(Vector3(0, 0, 1), PI / 2), c)
+			var bar := CylinderMesh.new()
+			bar.top_radius = 0.13
+			bar.bottom_radius = 0.2
+			bar.height = 1.6
+			add_mesh(bar, iron, Vector3(0, 0.45, -0.55), Basis(Vector3(1, 0, 0), -PI / 2 + 0.05), c)
+			var muz := TorusMesh.new()
+			muz.inner_radius = 0.09
+			muz.outer_radius = 0.17
+			add_mesh(muz, iron, Vector3(0, 0.49, -1.33), Basis(Vector3(1, 0, 0), PI / 2), c)
+	# 돛대 (뱃머리 쪽, 무대 밖) + 돛줄
+	var mast_z := -HALF - 3.2
+	var mast := CylinderMesh.new()
+	mast.top_radius = 0.32
+	mast.bottom_radius = 0.42
+	mast.height = 22.0
+	add_mesh(mast, cap, Vector3(0, 11.0, mast_z))
+	for k in 3:
+		var ring := TorusMesh.new()
+		ring.inner_radius = 0.4
+		ring.outer_radius = 0.48
+		add_mesh(ring, iron, Vector3(0, 0.6 + k * 1.2, mast_z))
+	var yard := CylinderMesh.new()
+	yard.top_radius = 0.16
+	yard.bottom_radius = 0.16
+	yard.height = 14.0
+	add_mesh(yard, cap, Vector3(0, 12.0, mast_z + 0.5), Basis(Vector3(0, 0, 1), PI / 2))
+	var rope := std_mat(Color(0.5, 0.42, 0.3), 0.9)
+	for sd: float in [-1.0, 1.0]:
+		for k in 4:
+			var t := (stern_z - (mast_z + 1.8 + k * 0.7)) / L
+			var a := Vector3(sd * hull_half_width(t, B) * 0.96, 0.9, mast_z + 1.8 + k * 0.7)
+			var b := Vector3(sd * 0.3, 14.0, mast_z)
+			var sg := b - a
+			var c := CylinderMesh.new()
+			c.top_radius = 0.03
+			c.bottom_radius = 0.03
+			c.height = sg.length()
+			c.radial_segments = 5
+			var y := sg.normalized()
+			var xx := y.cross(Vector3(0, 0, 1)).normalized()
+			add_mesh(c, rope, (a + b) * 0.5, Basis(xx, y, xx.cross(y)))
+	# 잡동사니: 무대(정사각형) 밖 여백 — 고물 쪽 양 모서리 · 돛대 주변
+	deck_clutter(world3, [Vector3(-HALF - 0.2, 0.0, HALF + 0.9), Vector3(HALF + 0.3, 0.0, HALF + 0.9), Vector3(-1.6, 0.0, mast_z + 1.2),
+		Vector3(1.5, 0.0, mast_z + 1.3), Vector3(-3.4, 0.0, mast_z + 0.6), Vector3(3.3, 0.0, mast_z + 0.4)], 14)
+	# 칠할 구역 경계: 갑판에 박은 낮은 말뚝 + 밧줄
+	var post := wood_mat(Color(0.3, 0.2, 0.12), Vector3(0, 1, 0), 0.1)
+	var rope2 := std_mat(Color(0.75, 0.62, 0.42), 0.9)
+	var e := HALF + 0.12
+	for k in 9:
+		var f := -e + k * e * 2.0 / 8.0
+		for p: Vector3 in [Vector3(f, 0, -e), Vector3(f, 0, e), Vector3(-e, 0, f), Vector3(e, 0, f)]:
+			var c := CylinderMesh.new()
+			c.top_radius = 0.07
+			c.bottom_radius = 0.08
+			c.height = 0.34
+			c.radial_segments = 8
+			add_mesh(c, post, p + Vector3(0, 0.17, 0))
+	for sd: float in [-1.0, 1.0]:
+		box(Vector3(e * 2.0, 0.05, 0.05), rope2, Vector3(0, 0.28, sd * e))
+		box(Vector3(0.05, 0.05, e * 2.0), rope2, Vector3(sd * e, 0.28, 0))
+	sea_debris(8, 15.0, 28.0, -1.3, 6)
+	gulls(5, Vector3(0, 0, -6), 12.0, 14.0, 7)
 
 
 func _setup_game() -> void:

@@ -23,11 +23,6 @@ func _init() -> void:
 
 func _build_stage() -> void:
 	env_underwater()
-	env.ambient_light_energy = 0.5
-	env.tonemap_exposure = 0.82
-	env.background_color = Color(0.02, 0.15, 0.21)
-	env.fog_light_color = Color(0.03, 0.2, 0.26)
-	env.fog_density = 0.03
 	cam.fov = 46.0
 	cam.position = Vector3(0, 11.0, 9.0)
 	cam.look_at(Vector3(0, 0, 0.3))

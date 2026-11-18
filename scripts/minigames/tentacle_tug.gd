@@ -67,6 +67,22 @@ func _build_deck() -> void:
 			tor.outer_radius = 0.42 + k * 0.04
 			add_mesh(tor, rope, Vector3(x * 0.85, 0.07 + k * 0.1, 5.0))
 	_lane_iron = iron
+	# 널 이음매의 못 · 갑판 잡동사니 · 바다 위 부유물 · 갈매기 · 물속에서 지켜보는 크라켄의 머리
+	var nail := std_mat(Color(0.12, 0.1, 0.09), 0.5, 0.7)
+	var nm := CylinderMesh.new()
+	nm.top_radius = 0.03
+	nm.bottom_radius = 0.03
+	nm.height = 0.02
+	nm.radial_segments = 6
+	for k in 24:
+		for z: float in [1.2, 3.6, 6.0, 8.4]:
+			for dx: float in [-0.3, 0.3]:
+				add_mesh(nm, nail, Vector3(-12.0 + k * 1.04 + dx, 0.005, z + (0.6 if k % 2 == 0 else 0.0)))
+	deck_clutter(world3, [Vector3(-11.4, 0, 1.6), Vector3(11.2, 0, 1.5), Vector3(-11.0, 0, 4.0), Vector3(10.8, 0, 3.6)], 17)
+	sea_debris(9, 9.0, 30.0, SEA_Y + 0.1, 12, Vector3(0, 0, -14))
+	gulls(5, Vector3(0, 0, -10), 10.0, 9.0, 3)
+	var kh := kraken_head(Vector3(0, SEA_Y - 3.4, -27.0), 3.4, 0.0, -0.05)
+	kh.name = "KrakenHead"
 
 
 var _lane_iron: Material
