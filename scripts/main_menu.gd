@@ -703,10 +703,6 @@ func _on_lobby_start() -> void:
 		return
 	if Net.is_guest():
 		return
-	if Net.is_online() and not _mg_lobby:
-		Audio.play("back")
-		_toast(tr("Online board games are coming soon. Try MINIGAMES online!"))
-		return
 	Audio.play("click")
 	if _mg_lobby:
 		if Net.is_host():
@@ -934,9 +930,17 @@ func _on_board_play() -> void:
 		Audio.play("back")
 		_toast(tr("Co-op rules are coming soon!"))
 		return
+	if Net.is_online() and data.get("tutorial", false):
+		Audio.play("back")
+		_toast(tr("The tutorial board is single-player only."))
+		return
 	Audio.play("start")
 	GameState.selected_board = data["id"]
 	var scene_path := TUTORIAL_BOARD_SCENE if data.get("tutorial", false) else GAME_SCENE
+	GameState.board_online = Net.is_host()
+	if Net.is_host():
+		GameState.board_seed = randi() % 2000000000 + 1
+		Net.broadcast({"k": "go_board", "board": data["id"], "seed": GameState.board_seed, "mode": GameState.selected_mode, "scene": scene_path})
 	if ResourceLoader.exists(scene_path):
 		_busy = true
 		Audio.stop_music(0.8)
@@ -2046,6 +2050,18 @@ func _play_intro() -> void:
 		var msg := GameState.return_to.substr(6)
 		GameState.return_to = ""
 		get_tree().create_timer(1.2).timeout.connect(func() -> void: _toast(tr(msg)))
+	if GameState.return_to == "lobby":
+		# 온라인 보드 게임에서 돌아옴 → 같은 방의 로비
+		GameState.return_to = ""
+		_busy = false
+		_logo.play_intro()
+		_mg_lobby = false
+		_joined_as_guest = Net.is_guest()
+		_lobby_mode_label.text = GameState.get_mode_name()
+		_refresh_lobby()
+		_show_page("lobby")
+		create_tween().tween_property(_fade, "color:a", 0.0, 0.5)
+		return
 	if GameState.return_to == "mg_lobby":
 		# 미니게임 모음에서 돌아옴 → 같은 사람들이 있는 로비를 바로 (온라인 방은 그대로)
 		GameState.return_to = ""
@@ -2404,6 +2420,16 @@ func _on_net_message(from: int, d: Dictionary) -> void:
 			_on_net_failed("full")
 		"go_hall":
 			_start_minigame_hall()
+		"go_board":
+			GameState.selected_board = String(d.get("board", "sunken_island"))
+			GameState.set_mode(int(d.get("mode", 0)))
+			GameState.board_seed = int(d.get("seed", 1))
+			GameState.board_online = true
+			_busy = true
+			Audio.stop_music(0.6)
+			var t := create_tween()
+			t.tween_property(_fade, "color:a", 1.0, 0.5)
+			t.tween_callback(func() -> void: get_tree().change_scene_to_file(String(d.get("scene", GAME_SCENE))))
 
 
 ## 방장 → 모두: 지금 로비 상태

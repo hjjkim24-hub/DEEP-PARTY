@@ -186,6 +186,59 @@ func _wait_idle(m: Node, page: String, extra: float = 2.0) -> void:
 
 func _run() -> void:
 	await get_tree().create_timer(1.0, true, false, true).timeout
+	# netboardhost / netboardjoin: 온라인 보드 게임 (짧게 3라운드). 둘 다 자동 진행, 차례마다 상태 비교
+	if "netboardhost" in _want or "netboardjoin" in _want:
+		var host := "netboardhost" in _want
+		var room_file := "/tmp/dp_room_board.txt"
+		var tag := "h" if host else "c"
+		Settings.language = "ko"
+		Settings.apply_language()
+		GameState.debug_autoplay = true
+		GameState.debug_round_limit = int(OS.get_environment("ROUNDS")) if OS.get_environment("ROUNDS") != "" else 3
+		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+		while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
+			await get_tree().process_frame
+		var m: Node = get_tree().current_scene
+		await _wait_idle(m, "main", 4.0)
+		if host:
+			if FileAccess.file_exists(room_file):
+				DirAccess.remove_absolute(room_file)
+			m._open_lobby(GameState.Mode.FREE_FOR_ALL)
+			await _wait_idle(m, "lobby")
+			m._lobby_add_cpu(2)
+			m._lobby_add_cpu(3)
+			m._lobby_invite()
+			while Net.code == "":
+				await get_tree().process_frame
+			var f := FileAccess.open(room_file, FileAccess.WRITE)
+			f.store_string(Net.code)
+			f.close()
+			while Net.peers.size() == 0:
+				await get_tree().process_frame
+			await get_tree().create_timer(3.0).timeout
+			m._on_lobby_start()
+			await get_tree().create_timer(1.5).timeout
+			m._board_index = 1
+			m._on_board_play()
+		else:
+			while not FileAccess.file_exists(room_file):
+				await get_tree().create_timer(0.3).timeout
+			await get_tree().create_timer(0.5).timeout
+			m._open_join_page()
+			await _wait_idle(m, "join")
+			m._join_edit.text = FileAccess.get_file_as_string(room_file).strip_edges()
+			m._on_join_pressed()
+		while get_tree().current_scene == null or get_tree().current_scene.name != "BoardGame":
+			await get_tree().process_frame
+		var b: Node = get_tree().current_scene
+		print("BOARD %s my_slot=%d seed=%d online=%s" % [tag, GameState.my_slot, GameState.board_seed, b._online])
+		var t0 := Time.get_ticks_msec()
+		while is_instance_valid(b) and b.is_inside_tree() and Time.get_ticks_msec() - t0 < 900000:
+			await get_tree().create_timer(1.0).timeout
+		print("BOARD %s back in %s, online=%s room=%s" % [tag, get_tree().current_scene.name if get_tree().current_scene else "?", Net.is_online(), Net.code])
+		await get_tree().create_timer(2.0).timeout
+		get_tree().quit(0)
+		return
 	# nethallhost / nethalljoin: 온라인 미니게임 한 판 (MG_ID 환경변수). 둘 다 자동 진행, 장면마다 촬영
 	if "nethallhost" in _want or "nethalljoin" in _want:
 		var host := "nethallhost" in _want

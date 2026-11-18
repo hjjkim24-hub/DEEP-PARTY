@@ -129,6 +129,14 @@ var shot_hint := ""           ## 자동 스크린샷용: 지금 보여 주는 �
 
 func _ready() -> void:
 	_rng.randomize()
+	_aux_rng.randomize()
+	_online = Net.is_online() and GameState.board_online
+	if _online:
+		_rng.seed = GameState.board_seed   # 모두 같은 씨앗 → 같은 주사위 · 크라켄 · 카드
+		Net.message.connect(_on_board_net)
+		Net.peer_left.connect(_on_board_peer_left)
+		Net.room_closed.connect(_on_board_lost.bind("The host closed the room."))
+		Net.disconnected.connect(_on_board_lost.bind("Lost connection to the server."))
 	world = BoardWorld.new()
 	world.map_id = map_id()
 	add_child(world)
@@ -159,10 +167,17 @@ func _setup_pawns() -> void:
 			continue
 		var pname := "You"
 		var cpu := false
-		if p.get("kind", "") == "cpu":
-			cpu_no += 1
-			pname = tr("CPU %d") % cpu_no
-			cpu = true
+		match p.get("kind", ""):
+			"cpu":
+				cpu_no += 1
+				pname = tr("CPU %d") % cpu_no
+				cpu = true
+			"host":
+				if slot != GameState.my_slot:
+					pname = "Host"
+			"friend":
+				if slot != GameState.my_slot:
+					pname = tr("Player %d") % (slot + 1)
 		list.append({"slot": slot, "name": pname, "cpu": cpu, "color": GameState.player_color(slot), "look": GameState.look(slot)})
 	if list.is_empty():
 		list.append({"slot": 0, "name": "You", "cpu": false, "color": GameState.PALETTE[0], "look": {}})
@@ -221,7 +236,183 @@ func _alive_pawns() -> Array:
 
 ## 사람 대신 알아서 하는 말인지 (CPU, 또는 자동 점검 중인 내 말)
 func _is_auto(p: Dictionary) -> bool:
-	return bool(p["cpu"]) or GameState.debug_autoplay
+	match _ctl(p):
+		"cpu", "proxy":
+			return true
+		"me":
+			return GameState.debug_autoplay
+	return false
+
+
+# ── 온라인 보드 (방 코드) ─────────────────────────────────────
+## 모든 PC 가 같은 씨앗으로 같은 판을 진행하고, 사람이 고른 것(주사위 · 갈림길 · 대답 · 상점 · 칸 고르기)만
+## 서로 주고받음. 차례가 끝날 때마다 방장이 상태를 보내 혹시 어긋난 걸 맞춤.
+var _online := false
+var _aux_rng := RandomNumberGenerator.new()   ## 내 말 자동 진행(점검용)에만 · 모두와 같은 _rng 를 건드리지 않게
+var _dec_q := {}            ## slot → [받은 결정 …]
+var _departed := {}         ## 방장: 나간 친구 slot → true (방장이 대신 정해서 보냄)
+var _sync_n := 0
+var _sync_got := {}         ## n → 상태 (손님)
+var _acks := {}             ## n → {peer: true} (방장)
+
+
+## 이 말을 누가 움직이나: "cpu" 모두가 같은 _rng 로 · "me" 이 PC 사람 · "proxy" 방장이 나간 친구 대신 · "remote" 다른 PC 사람
+func _ctl(p: Dictionary) -> String:
+	if bool(p["cpu"]):
+		return "cpu"
+	if not _online:
+		return "me"
+	if int(p["slot"]) == GameState.my_slot:
+		return "me"
+	if Net.is_host() and _departed.has(int(p["slot"])):
+		return "proxy"
+	return "remote"
+
+
+func _is_remote(p: Dictionary) -> bool:
+	return _ctl(p) == "remote"
+
+
+## 사람 말을 자동으로 정할 때는 다른 _rng 를 써서 모두의 _rng 순서가 어긋나지 않게
+func _use_aux(p: Dictionary) -> RandomNumberGenerator:
+	var keep := _rng
+	if _online and not bool(p["cpu"]):
+		_rng = _aux_rng
+	return keep
+
+
+## 내가(또는 방장이 대신) 고른 것을 모두에게
+func _put_dec(p: Dictionary, v: Variant) -> void:
+	if _online and _ctl(p) in ["me", "proxy"]:
+		Net.broadcast({"k": "bd", "s": int(p["slot"]), "v": Marshalls.variant_to_base64(v)})
+
+
+## 다른 PC 사람이 고를 때까지 기다림
+func _get_dec(p: Dictionary) -> Variant:
+	var s := int(p["slot"])
+	_waiting_label(p, true)
+	while (not _dec_q.has(s) or (_dec_q[s] as Array).is_empty()) and is_inside_tree():
+		await get_tree().process_frame
+	_waiting_label(p, false)
+	return (_dec_q[s] as Array).pop_front()
+
+
+var _wait_lbl: Label
+
+
+func _waiting_label(p: Dictionary, on: bool) -> void:
+	if on:
+		if _wait_lbl == null:
+			_wait_lbl = _outlined_label("", 28)
+			_wait_lbl.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+			_wait_lbl.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+			_wait_lbl.grow_horizontal = Control.GROW_DIRECTION_BOTH
+			_wait_lbl.position.y -= 150
+			_root.add_child(_wait_lbl)
+		_wait_lbl.text = tr("%s is choosing…") % tr(String(p["name"]))
+		_wait_lbl.visible = true
+	elif _wait_lbl:
+		_wait_lbl.visible = false
+
+
+func _on_board_net(from: int, d: Dictionary) -> void:
+	match String(d.get("k", "")):
+		"bd":
+			var s := int(d.get("s", -1))
+			var v = Marshalls.base64_to_variant(String(d.get("v", "")))
+			if not _dec_q.has(s):
+				_dec_q[s] = []
+			(_dec_q[s] as Array).append(v)
+		"bd_sync":
+			_sync_got[int(d.get("n", 0))] = Marshalls.base64_to_variant(String(d.get("st", "")))
+		"bd_ack":
+			var n := int(d.get("n", 0))
+			if not _acks.has(n):
+				_acks[n] = {}
+			_acks[n][from] = true
+		"bd_exit":
+			if Net.is_guest():
+				_exit_to_menu(true)
+
+
+## 차례가 끝날 때: 방장이 상태를 보내고 손님들이 받을 때까지 기다림 (서로 너무 앞서가지 않게 + 어긋남 보정)
+func _net_sync() -> void:
+	if not _online:
+		return
+	_sync_n += 1
+	var n := _sync_n
+	if Net.is_host():
+		var st := {"pawns": {}, "departed": _departed.keys()}
+		for q in _pawns:
+			st["pawns"][int(q["slot"])] = [int(q["tile"]), int(q["coins"]), int(q["trophies"]), int(q.get("hearts", 0)), int(q.get("shield", 0)), bool(q.get("alive", true))]
+		Net.broadcast({"k": "bd_sync", "n": n, "st": Marshalls.variant_to_base64(st)})
+		var t0 := Time.get_ticks_msec()
+		while is_inside_tree() and Time.get_ticks_msec() - t0 < 15000:
+			var got: Dictionary = _acks.get(n, {})
+			var all := true
+			for peer in Net.peers:
+				if not got.has(peer):
+					all = false
+			if all:
+				break
+			await get_tree().process_frame
+		_acks.erase(n)
+	else:
+		var t0 := Time.get_ticks_msec()
+		while is_inside_tree() and not _sync_got.has(n) and Time.get_ticks_msec() - t0 < 60000:
+			await get_tree().process_frame
+		var st = _sync_got.get(n)
+		_sync_got.erase(n)
+		if typeof(st) == TYPE_DICTIONARY:
+			_apply_sync(st)
+		Net.to_host({"k": "bd_ack", "n": n})
+
+
+func _apply_sync(st: Dictionary) -> void:
+	var ps: Dictionary = st.get("pawns", {})
+	for q in _pawns:
+		var v: Array = ps.get(int(q["slot"]), [])
+		if v.size() < 6:
+			continue
+		var mine := [int(q["tile"]), int(q["coins"]), int(q["trophies"]), int(q.get("hearts", 0)), int(q.get("shield", 0)), bool(q.get("alive", true))]
+		if OS.is_debug_build() and OS.get_environment("BOARD_NET_DEBUG") != "":
+			print("BSYNC %d slot %d %s %s" % [_sync_n, q["slot"], "OK" if mine == v else "MISMATCH", str(mine) + " vs " + str(v)])
+		if int(q["tile"]) != int(v[0]):
+			push_warning("online board: tile mismatch for slot %d (%d vs %d) — corrected" % [q["slot"], q["tile"], v[0]])
+			q["tile"] = int(v[0])
+			(q["node"] as Node3D).position = _spot_on(int(v[0]), q)
+		q["coins"] = int(v[1])
+		q["trophies"] = int(v[2])
+		q["hearts"] = int(v[3])
+		q["shield"] = int(v[4])
+		q["alive"] = bool(v[5])
+		_refresh_chip(q)
+
+
+## 방장: 친구가 나가면 그 말은 방장이 대신 (자동으로) 진행
+func _on_board_peer_left(id: int) -> void:
+	if not Net.is_host():
+		return
+	for q in _pawns:
+		if int(GameState.players[int(q["slot"])].get("peer", -999)) == id:
+			_departed[int(q["slot"])] = true
+
+
+func _on_board_lost(msg: String) -> void:
+	if not _online:
+		return
+	if Net.is_host():
+		_online = false
+		return
+	_online = false
+	var me := {"kind": "host", "color": 0}
+	if not GameState.my_profile.is_empty():
+		me.merge(GameState.my_profile, true)
+		me["kind"] = "host"
+	GameState.players = [me, {}, {}, {}]
+	GameState.my_slot = 0
+	GameState.return_to = "toast:" + msg
+	_exit_to_menu(true)
 
 
 ## 왼쪽 위 나가기 버튼 글씨 (상속해서 바꿈)
@@ -236,7 +427,7 @@ func board_title() -> String:
 
 func _my_pawn() -> Dictionary:
 	for p in _pawns:
-		if int(p["slot"]) == 0:
+		if int(p["slot"]) == GameState.my_slot:
 			return p
 	return _pawns[0]
 
@@ -673,15 +864,20 @@ func _play_turn(p: Dictionary, rig: int = 0, forced: Dictionary = {}) -> void:
 	_move_camera(node.position + Vector3(0, 1.3, 0), 1.25, 0.8)
 	await get_tree().create_timer(0.85, false).timeout
 	_dice.show_at(node.position + Vector3(0, DICE_H, 0))
-	if _is_auto(p):
+	if _is_remote(p):
+		await _get_dec(p)
+		_dice_hit = true
+	elif _is_auto(p):
 		await get_tree().create_timer(1.0, false).timeout
 		_dice_hit = true
+		_put_dec(p, "roll")
 	else:
 		_awaiting_roll = true
 		while not _dice_hit:
 			await get_tree().process_frame
 		_awaiting_roll = false
-	var n: int = rig if rig > 0 else randi_range(1, 6)
+		_put_dec(p, "roll")
+	var n: int = rig if rig > 0 else _rng.randi_range(1, 6)
 	_last_roll = n
 	Audio.play("dice_shake")
 	_pawn_bump(node)
@@ -698,11 +894,17 @@ func _play_turn(p: Dictionary, rig: int = 0, forced: Dictionary = {}) -> void:
 		var opts := _next_options(p)
 		var nxt: int = opts[0]
 		if opts.size() > 1:
-			if _is_auto(p):
+			if _is_remote(p):
+				nxt = int(await _get_dec(p))
+			elif _is_auto(p):
 				await get_tree().create_timer(0.5, false).timeout
+				var keep := _use_aux(p)
 				nxt = _cpu_pick_path(p, opts)
+				_rng = keep
+				_put_dec(p, nxt)
 			else:
 				nxt = await _choose(p, opts, int(forced.get(int(p["tile"]), -1)))
+				_put_dec(p, nxt)
 		await _hop(p, nxt)
 		_steps_left -= 1
 		_steps_label.text = str(_steps_left)
@@ -901,7 +1103,8 @@ func _pop(c: Control) -> void:
 
 
 func _turn_banner(p: Dictionary) -> void:
-	var text := tr("YOUR TURN!") if not p["cpu"] else tr("%s'S TURN!") % p["name"]
+	var mine := not bool(p["cpu"]) and int(p["slot"]) == GameState.my_slot
+	var text := tr("YOUR TURN!") if mine else tr("%s'S TURN!") % tr(String(p["name"]))
 	await _banner(text, "", 1.0)
 
 
@@ -1285,15 +1488,25 @@ func _ask_bet(p: Dictionary, coins: int) -> int:
 	_dialog_open = true
 	await _show_modal(panel)
 	shot_hint = "62a_chest_bet"
-	if _is_auto(p):
+	if _is_remote(p):
+		_block(panel)
+		st["bet"] = int(await _get_dec(p))
+		refresh.call()
+		await get_tree().create_timer(0.5, false).timeout
+		st["done"] = true
+	elif _is_auto(p):
 		await get_tree().create_timer(1.2, false).timeout
+		var keep := _use_aux(p)
 		var k := 0.15 if int(p.get("hearts", 3)) <= 1 else _rng.randf_range(0.25, 0.7)
+		_rng = keep
 		st["bet"] = clampi(int(round(coins * k)), 1, coins)
 		refresh.call()
 		await get_tree().create_timer(0.8, false).timeout
 		st["done"] = true
 	while not bool(st["done"]):
 		await get_tree().process_frame
+	if not _is_remote(p):
+		_put_dec(p, int(st["bet"]))
 	_dialog_open = false
 	dim.queue_free()
 	return int(st["bet"])
@@ -1353,7 +1566,8 @@ func _eliminate(p: Dictionary) -> void:
 	await get_tree().create_timer(0.6, false).timeout
 	await world.tentacle_drag(node)
 	_refresh_chip(p)
-	await _banner(tr("%s IS GONE!") % p["name"] if p["cpu"] else tr("YOU'RE GONE!"), tr("Now you serve the kraken..."), 1.2)
+	var mine := not bool(p["cpu"]) and int(p["slot"]) == GameState.my_slot
+	await _banner(tr("YOU'RE GONE!") if mine else tr("%s IS GONE!") % tr(String(p["name"])), tr("Now you serve the kraken..."), 1.2)
 
 
 ## 화면 흔들기 (촉수가 내려칠 때)
@@ -1483,8 +1697,11 @@ func _play_minigame(id: String) -> Array:
 	world.visible = false
 	await get_tree().create_timer(0.7, false).timeout
 	# 소개 화면
+	var net_mode := ("host" if Net.is_host() else "client") if _online else ""
+	var mg_seed := _rng.randi() % 2000000000 + 1
 	var intro := MinigameIntro.new()
 	intro.setup(id, _pawns, auto, hint_cb)
+	intro.net_setup(net_mode, GameState.my_slot)
 	layer.add_child(intro)
 	layer.move_child(black, -1)
 	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1499,6 +1716,8 @@ func _play_minigame(id: String) -> Array:
 	# 게임
 	var mg := Minigames.create(id, _rng)
 	mg.setup(_pawns, auto, hint_cb)
+	mg.net_seed = mg_seed
+	mg.net_setup(net_mode, GameState.my_slot)
 	if has_method("_round_limit"):
 		pass   # 보드 진행에 따른 난이도 변화 없음 (미니게임 기본 난이도만 살짝 높게 · heat 기본값)
 	if GameState.debug_autoplay and mg.duration < 100.0:
@@ -1519,6 +1738,15 @@ func _play_minigame(id: String) -> Array:
 	await _fade_black(black, 0.0, 0.4)
 	layer.queue_free()
 	return order
+
+
+## 모두 같은 순서로 섞기 (온라인: 전역 난수 대신 _rng)
+func _shuffle(a: Array) -> void:
+	for i in range(a.size() - 1, 0, -1):
+		var j := _rng.randi() % (i + 1)
+		var tmp = a[i]
+		a[i] = a[j]
+		a[j] = tmp
 
 
 func _fade_black(black: ColorRect, to: float, time: float) -> void:
@@ -1761,7 +1989,7 @@ func _spawn_coin_spaces(p: Dictionary, kind: String) -> void:
 	for i in world.regular_tiles():
 		if not _tile_mods.has(i) and i != world.trophy_tile and String(world.spaces[i]["kind"]) != "chance":
 			pool.append(i)
-	pool.shuffle()
+	_shuffle(pool)
 	_follow = null
 	_move_camera(world.overview, world.overview_zoom, 1.0)
 	await get_tree().create_timer(1.05, false).timeout
@@ -1869,6 +2097,7 @@ func _open_shop(p: Dictionary) -> void:
 			buy.pressed.connect(func() -> void:
 				if buy.disabled:
 					return
+				_put_dec(p, gid)
 				buy.disabled = true
 				buy.text = "SOLD"
 				_add_coins(p, -cost)
@@ -1978,6 +2207,20 @@ func _open_shop(p: Dictionary) -> void:
 		flick.tween_property(glow, "modulate:a", 0.5, 0.25)
 	await t.finished
 	shot_hint = "45_shop_trophy" if has_trophy else "45_shop"
+	_shop_p = p
+	if _is_remote(p):
+		# 다른 PC 사람의 쇼핑을 그대로 따라 보여줌
+		_block(_shop_panel)
+		while _shop_open:
+			var d = await _get_dec(p)
+			if String(d) == "close":
+				_close_shop()
+			else:
+				for bb in _shop_buys:
+					if bb[1] == String(d) and not (bb[0] as Button).disabled:
+						(bb[0] as Button).pressed.emit()
+						break
+		return
 	if _is_auto(p):
 		await get_tree().create_timer(1.4, false).timeout
 		# CPU: 하트가 모자라면 물약, 아니면 방패
@@ -1993,9 +2236,14 @@ func _open_shop(p: Dictionary) -> void:
 		await get_tree().process_frame
 
 
+var _shop_p: Dictionary = {}
+
+
 func _close_shop() -> void:
 	if not _shop_open:
 		return
+	if not _shop_p.is_empty() and not _is_remote(_shop_p):
+		_put_dec(_shop_p, "close")
 	_shop_open = false
 	if is_instance_valid(_shop_panel):
 		var panel := _shop_panel
@@ -2143,15 +2391,33 @@ func _ask(p: Dictionary, title: String, body: String, options: Array, auto_choic
 		_dialog_buttons.append(btn)
 	_dialog_open = true
 	await _show_modal(panel)
-	if _is_auto(p):
+	if _is_remote(p):
+		_block(panel)
+		_dialog_choice = int(await _get_dec(p))
+		await get_tree().create_timer(0.4, false).timeout
+	elif _is_auto(p):
 		await get_tree().create_timer(1.5, false).timeout
 		_dialog_choice = auto_choice
 	while _dialog_choice < 0:
 		await get_tree().process_frame
+	if not _is_remote(p):
+		_put_dec(p, _dialog_choice)
 	_dialog_open = false
 	_dialog_buttons = []
 	dim.queue_free()
 	return _dialog_choice
+
+
+## 다른 PC 사람이 고르는 창: 보이기만 하고 누를 수 없게
+func _block(panel: Control) -> void:
+	if not is_instance_valid(panel):
+		return
+	var blk := Control.new()
+	blk.mouse_filter = Control.MOUSE_FILTER_STOP
+	blk.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	panel.add_child(blk)
+	for b in panel.find_children("*", "BaseButton", true, false):
+		(b as BaseButton).mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
 ## 열린 창의 버튼 누르기 (튜토리얼 자동 점검용)
@@ -2210,7 +2476,11 @@ func _pick_player(p: Dictionary, cands: Array, prompt: String, by: String) -> Di
 	_dialog_open = true
 	await _show_modal(panel)
 	shot_hint = "46_pick_player"
-	if _is_auto(p):
+	if _is_remote(p):
+		_block(panel)
+		_dialog_choice = int(await _get_dec(p))
+		await get_tree().create_timer(0.4, false).timeout
+	elif _is_auto(p):
 		await get_tree().create_timer(1.5, false).timeout
 		var best := 0
 		for k in cands.size():
@@ -2219,6 +2489,8 @@ func _pick_player(p: Dictionary, cands: Array, prompt: String, by: String) -> Di
 		_dialog_choice = best
 	while _dialog_choice < 0:
 		await get_tree().process_frame
+	if not _is_remote(p):
+		_put_dec(p, _dialog_choice)
 	_dialog_open = false
 	_dialog_buttons = []
 	dim.queue_free()
@@ -2251,12 +2523,19 @@ func _pick_tile(p: Dictionary, text: String = "", auto_tile: int = -1, shot: Str
 	_picked_tile = -1
 	_hover_tile = -1
 	shot_hint = shot
-	if _is_auto(p):
+	if _is_remote(p):
+		var rt := int(await _get_dec(p))
+		_show_pick_marker(rt)
+		await get_tree().create_timer(0.6, false).timeout
+		_picked_tile = rt
+	elif _is_auto(p):
 		await get_tree().create_timer(1.2, false).timeout
 		var t := auto_tile if auto_tile >= 0 else world.trophy_tile
 		if t < 0 or t == int(p["tile"]):
 			var pool: Array = world.regular_tiles()
+			var keep := _use_aux(p)
 			t = pool[_rng.randi() % pool.size()]
+			_rng = keep
 		_show_pick_marker(t)
 		await get_tree().create_timer(0.6, false).timeout
 		_picked_tile = t
@@ -2272,6 +2551,8 @@ func _pick_tile(p: Dictionary, text: String = "", auto_tile: int = -1, shot: Str
 			await get_tree().process_frame
 		_picking_tile = false
 		_tile_catcher.queue_free()
+	if not _is_remote(p):
+		_put_dec(p, _picked_tile)
 	prompt.queue_free()
 	_pick_marker.visible = false
 	return _picked_tile
@@ -2331,7 +2612,11 @@ func _ranking() -> Array:
 	return order
 
 
+var _ended := false   ## 결과 화면까지 옴
+
+
 func _show_results() -> void:
+	_ended = true
 	Audio.play_music(0.3, "results")
 	if _winner.is_empty():
 		_winner = _ranking()[0]
@@ -2346,7 +2631,7 @@ func _show_results() -> void:
 	var head: String = tr("%s WINS!") % w["name"]
 	if String(w["team"]) != "":
 		head = tr("TEAM %s WINS!") % w["team"]
-	elif int(w["slot"]) == 0 and not w["cpu"]:
+	elif int(w["slot"]) == GameState.my_slot and not w["cpu"]:
 		head = tr("YOU WIN!")
 	await _banner(head, "", 1.6)
 	var dim := _modal_dim()
@@ -2537,12 +2822,31 @@ func _after_intro() -> void:
 	pass
 
 
-func _exit_to_menu() -> void:
+func _exit_to_menu(from_host: bool = false) -> void:
 	get_tree().paused = false
 	Audio.play_ambience("", -60.0, 0.4)
-	if _fade.color.a > 0.5 and not _intro_done:
+	if _fade.color.a > 0.5 and not _intro_done and not from_host:
 		return
 	GameState.tutorial_active = false
+	if _online:
+		_online = false
+		if Net.is_host():
+			# 방장이 나가면 모두 같은 방의 로비로
+			Net.broadcast({"k": "bd_exit"})
+			GameState.return_to = "lobby"
+		elif (from_host or _ended) and Net.is_guest():
+			# 게임이 끝난 뒤 나가면 방은 그대로 · 같은 방 로비에서 방장을 기다림
+			GameState.return_to = "lobby"
+		else:
+			# 손님이 스스로 나감 → 방에서 나와 내 원래 말로
+			Net.leave()
+			var me := {"kind": "host", "color": 0}
+			if not GameState.my_profile.is_empty():
+				me.merge(GameState.my_profile, true)
+				me["kind"] = "host"
+			GameState.players = [me, {}, {}, {}]
+			GameState.my_slot = 0
+	GameState.board_online = false
 	_fade.get_parent().move_child(_fade, -1)
 	var t := create_tween()
 	t.tween_property(_fade, "color:a", 1.0, 0.4)

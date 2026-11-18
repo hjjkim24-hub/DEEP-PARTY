@@ -65,11 +65,13 @@ func _game_loop() -> void:
 			if _over():
 				break
 			await _tile_effect(p)
+			await _net_sync()
 			if _over():
 				break
 		if _over():
 			break
 		await _kraken_phase(r)
+		await _net_sync()
 	_over()
 	_highlight_chip({})
 	await _show_results()
@@ -799,7 +801,7 @@ func _spread_picks(n: int) -> Array:
 		var best_i := -1
 		var best_d := -1.0
 		var pool := cands.duplicate()
-		pool.shuffle()
+		_shuffle(pool)
 		for k in mini(tries, pool.size()):
 			var c: int = pool[k]
 			if taken.call(c):
@@ -814,7 +816,7 @@ func _spread_picks(n: int) -> Array:
 		used.append(world.spaces[i]["pos"])
 	# 1) 사람마다 앞길에 몇 칸
 	var alive := _alive_pawns()
-	alive.shuffle()
+	_shuffle(alive)
 	for q in alive:
 		var near := _reachable(int(q["tile"]), 1, 6)
 		for k in Rules.KRAKEN_AIM_PER_PAWN:
@@ -857,7 +859,7 @@ func _minion_mark(q: Dictionary) -> void:
 ## 미끼 카드: 그 사람 앞쪽 칸 두 곳을 노림
 func _bait(target: Dictionary) -> void:
 	var near := _reachable(int(target["tile"]), 1, 6)
-	near.shuffle()
+	_shuffle(near)
 	_follow = null
 	_move_camera((target["node"] as Node3D).position, 2.2, 0.8)
 	await get_tree().create_timer(0.8, false).timeout

@@ -216,6 +216,8 @@ const KO := {
 	"OUCH!": "아야!",
 	"TROPHY MINIGAME!": "트로피 미니게임!",
 	"RESULTS": "결과",
+	"%s is choosing…": "%s 님이 고르는 중…",
+	"The tutorial board is single-player only.": "튜토리얼 보드는 혼자서만 할 수 있어요.",
 	"The host picks the minigame": "방장이 미니게임을 골라요",
 	"Waiting for the host to pick a game…": "방장이 게임을 고르기를 기다리는 중…",
 	"Waiting for the host…": "방장을 기다리는 중…",
