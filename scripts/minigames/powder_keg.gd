@@ -42,59 +42,14 @@ func _build_stage() -> void:
 	build_raft(_raft, RAFT_R, 31)
 	deck_clutter(_raft, [Vector3(-3.9, 0, -3.4), Vector3(4.3, 0, 2.6), Vector3(-4.6, 0, 1.9), Vector3(2.6, 0, -4.6)], 9)
 	sea_debris(7, RAFT_R + 3.0, RAFT_R + 9.0, -0.45, 8)
-	gulls(4, Vector3(0, 0, -3), 9.0, 9.0, 4)
+	gulls(4, Vector3(0, 0, -16), 12.0, 5.0, 4)
 	# 가장자리 화약통 더미 · 횃불 기둥
-	var barrel := wood_mat(Color(0.45, 0.3, 0.18), Vector3(0, 1, 0), 0.2)
-	var metal := std_mat(Color(0.18, 0.17, 0.16), 0.45, 0.8)
 	for a: float in [0.6, 2.2, 3.7, 5.1]:
 		var p := Vector3(cos(a), 0, sin(a)) * (RAFT_R - 0.6)
-		_barrel(p, barrel, metal, 0.32, 0.75)
+		barrel(_raft, p, 0.32, 0.75, Color(0.36, 0.22, 0.12))
 	for k in 4:
 		var a := TAU * (k + 0.125) / 4.0
-		var p := Vector3(cos(a), 0, sin(a)) * (RAFT_R - 0.3)
-		var c := CylinderMesh.new()
-		c.top_radius = 0.08
-		c.bottom_radius = 0.1
-		c.height = 1.8
-		add_mesh(c, wood_mat(Color(0.36, 0.25, 0.16), Vector3(0, 1, 0), 0.3), p + Vector3(0, 0.9, 0), Basis(), _raft)
-		var fl := StandardMaterial3D.new()
-		fl.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		fl.albedo_color = Color(1.0, 0.7, 0.3)
-		var s := SphereMesh.new()
-		s.radius = 0.14
-		s.height = 0.34
-		add_mesh(s, fl, p + Vector3(0, 1.9, 0), Basis(), _raft)
-		var l := OmniLight3D.new()
-		l.light_color = Color(1.0, 0.6, 0.3)
-		l.light_energy = 2.0
-		l.omni_range = 6.0
-		l.position = p + Vector3(0, 2.0, 0)
-		_raft.add_child(l)
-
-
-func _barrel(p: Vector3, wood: Material, metal: Material, r: float, h: float, parent: Node3D = null) -> Node3D:
-	var root := Node3D.new()
-	root.position = p
-	(parent if parent else _raft).add_child(root)
-	var c := CylinderMesh.new()
-	c.top_radius = r * 0.88
-	c.bottom_radius = r * 0.88
-	c.height = h
-	c.radial_segments = 20
-	add_mesh(c, wood, Vector3(0, h * 0.5, 0), Basis(), root)
-	var bulge := SphereMesh.new()
-	bulge.radius = r
-	bulge.height = h * 0.95
-	bulge.radial_segments = 20
-	add_mesh(bulge, wood, Vector3(0, h * 0.5, 0), Basis(), root)
-	for hy: float in [0.12, 0.5, 0.88]:
-		var band := CylinderMesh.new()
-		var rr := r * (0.92 if hy != 0.5 else 1.01)
-		band.top_radius = rr
-		band.bottom_radius = rr
-		band.height = 0.05
-		add_mesh(band, metal, Vector3(0, h * hy, 0), Basis(), root)
-	return root
+		torch(_raft, Vector3(cos(a), 0, sin(a)) * (RAFT_R - 0.3), 1.8)
 
 
 func _setup_game() -> void:
@@ -108,9 +63,30 @@ func _setup_game() -> void:
 		_ai[int(p["slot"])] = {"t": 0.0, "goal": w["pos"]}
 		scores[int(p["slot"])] = 1
 	# 머리 위에 드는 화약통 + 심지 불꽃
-	_keg = _barrel(Vector3.ZERO, wood_mat(Color(0.3, 0.18, 0.1), Vector3(0, 1, 0), 0.1), std_mat(Color(0.15, 0.14, 0.13), 0.4, 0.8), 0.32, 0.6, world3)
-	var skull := std_mat(Color(0.92, 0.9, 0.82), 0.6)
-	box(Vector3(0.22, 0.18, 0.02), skull, Vector3(0, 0.33, 0.31), Basis(), _keg)
+	_keg = Node3D.new()
+	world3.add_child(_keg)
+	barrel(_keg, Vector3.ZERO, 0.32, 0.62, Color(0.26, 0.15, 0.08))
+	# 화약 표시: 붉은 칠 띠
+	var band := CylinderMesh.new()
+	band.top_radius = 0.325
+	band.bottom_radius = 0.325
+	band.height = 0.09
+	add_mesh(band, std_mat(Color(0.6, 0.08, 0.05), 0.7), Vector3(0, 0.31, 0), Basis(), _keg)
+	# 심지: 뚜껑 가운데서 구불구불 올라온 꼰 줄
+	var fuse := std_mat(Color(0.22, 0.17, 0.12), 0.95)
+	var fp := [Vector3(0.05, 0.58, 0.0), Vector3(0.08, 0.68, 0.03), Vector3(0.04, 0.76, 0.06), Vector3(0.0, 0.82, 0.03)]
+	for k in fp.size() - 1:
+		var a: Vector3 = fp[k]
+		var b: Vector3 = fp[k + 1]
+		var d := b - a
+		var c := CylinderMesh.new()
+		c.top_radius = 0.018
+		c.bottom_radius = 0.018
+		c.height = d.length()
+		c.radial_segments = 6
+		var y := d.normalized()
+		var x := y.cross(Vector3(0, 0, 1)).normalized()
+		add_mesh(c, fuse, (a + b) * 0.5, Basis(x, y, x.cross(y)), _keg)
 	_spark = CPUParticles3D.new()
 	_spark.amount = 30
 	_spark.lifetime = 0.5
@@ -127,7 +103,7 @@ func _setup_game() -> void:
 	smat.albedo_color = Color(1.0, 0.75, 0.3)
 	sm.material = smat
 	_spark.mesh = sm
-	_spark.position = Vector3(0, 0.8, 0)
+	_spark.position = Vector3(0, 0.83, 0.03)
 	_keg.add_child(_spark)
 	_keg_light = OmniLight3D.new()
 	_keg_light.light_color = Color(1.0, 0.6, 0.25)

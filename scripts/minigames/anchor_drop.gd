@@ -107,38 +107,68 @@ func _make_boat(p: Dictionary, z: float) -> Dictionary:
 	var iron := std_mat(Color(0.22, 0.22, 0.24), 0.4, 0.8)
 	var anchor := Node3D.new()
 	root.add_child(anchor)
+	# 자루 · 위 고리 · 가로대(나무 stock) · 아래 둥근 팔(crown) · 끝의 삽 모양 갈고리(fluke)
 	var shank := CylinderMesh.new()
-	shank.top_radius = 0.06
-	shank.bottom_radius = 0.06
-	shank.height = 0.9
-	add_mesh(shank, iron, Vector3(0, 0.45, 0), Basis(), anchor)
+	shank.top_radius = 0.05
+	shank.bottom_radius = 0.07
+	shank.height = 1.0
+	add_mesh(shank, iron, Vector3(0, 0.5, 0), Basis(), anchor)
 	var ring := TorusMesh.new()
-	ring.inner_radius = 0.07
-	ring.outer_radius = 0.13
-	add_mesh(ring, iron, Vector3(0, 0.95, 0), Basis(Vector3(1, 0, 0), PI / 2), anchor)
-	var arm := TorusMesh.new()
-	arm.inner_radius = 0.38
-	arm.outer_radius = 0.46
-	var am := add_mesh(arm, iron, Vector3(0, 0.38, 0), Basis(Vector3(1, 0, 0), PI / 2), anchor)
-	am.scale = Vector3(1, 1, 1)
-	# 아래 반만 보이게 위쪽 반원은 가림막 대신 짧은 가로대
-	box(Vector3(0.62, 0.07, 0.07), iron, Vector3(0, 0.78, 0), Basis(), anchor)
+	ring.inner_radius = 0.06
+	ring.outer_radius = 0.11
+	add_mesh(ring, iron, Vector3(0, 1.08, 0), Basis(Vector3(1, 0, 0), PI / 2), anchor)
+	var stock := CylinderMesh.new()
+	stock.top_radius = 0.05
+	stock.bottom_radius = 0.05
+	stock.height = 0.95
+	add_mesh(stock, wood_mat(Color(0.36, 0.24, 0.15), Vector3(0, 1, 0), 0.4), Vector3(0, 0.88, 0), Basis(Vector3(1, 0, 0), PI / 2), anchor)
+	for sz: float in [-0.48, 0.48]:
+		var cap := SphereMesh.new()
+		cap.radius = 0.065
+		cap.height = 0.13
+		add_mesh(cap, iron, Vector3(0, 0.88, sz), Basis(), anchor)
+	var arc_r := 0.42
+	var prev := Vector3.ZERO
+	for k in 13:
+		var ang := lerpf(-1.25, 1.25, k / 12.0)
+		var q := Vector3(sin(ang) * arc_r, arc_r - cos(ang) * arc_r + 0.02, 0)
+		if k > 0:
+			var d := q - prev
+			var c := CylinderMesh.new()
+			c.top_radius = 0.06
+			c.bottom_radius = 0.06
+			c.height = d.length() + 0.02
+			c.radial_segments = 8
+			add_mesh(c, iron, (q + prev) * 0.5, Basis(Vector3(0, 0, 1), -atan2(d.x, d.y)), anchor)
+		prev = q
 	for sx: float in [-1.0, 1.0]:
-		var tipm := CylinderMesh.new()
-		tipm.top_radius = 0.0
-		tipm.bottom_radius = 0.09
-		tipm.height = 0.22
-		add_mesh(tipm, iron, Vector3(sx * 0.4, 0.06, 0), Basis(Vector3(0, 0, 1), sx * 0.6), anchor)
+		var ang := sx * 1.25
+		var tip := Vector3(sin(ang) * arc_r, arc_r - cos(ang) * arc_r + 0.02, 0)
+		var fl := CylinderMesh.new()
+		fl.top_radius = 0.0
+		fl.bottom_radius = 0.16
+		fl.height = 0.3
+		fl.radial_segments = 3
+		var mi := add_mesh(fl, iron, tip + Vector3(sx * 0.06, 0.1, 0), Basis(Vector3(0, 0, 1), -sx * 0.55), anchor)
+		mi.scale = Vector3(1.0, 1.0, 0.35)
 	anchor.position = Vector3(0.2, SEA_Y - 0.3, z)
 	anchor.scale = Vector3.ONE * 1.3
 	# 사슬 (닻 ↔ 배)
-	var chain := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = 0.025
-	cm.bottom_radius = 0.025
-	cm.height = 1.0
-	chain.mesh = cm
+	# 사슬: 고리를 엇갈려 꿴 쇠사슬 (길이에 맞춰 고리 수를 바꿈)
+	var chain := MultiMeshInstance3D.new()
+	var mmc := MultiMesh.new()
+	mmc.transform_format = MultiMesh.TRANSFORM_3D
+	var link := TorusMesh.new()
+	link.inner_radius = 0.035
+	link.outer_radius = 0.07
+	link.rings = 8
+	link.ring_segments = 6
+	mmc.mesh = link
+	mmc.instance_count = 160
+	mmc.visible_instance_count = 0
+	chain.multimesh = mmc
 	chain.material_override = iron
+	chain.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(chain)
 	return {"node": root, "x": 0.0, "dir": 1.0, "dropped": false, "anchor": anchor, "chain": chain, "z": z, "land_x": 0.0, "pts": 0, "drop_y": SEA_Y - 0.3, "drift": 0.0}
 
@@ -333,17 +363,29 @@ func _tick(delta: float) -> void:
 		elif b.get("landed", false):
 			an.global_position = Vector3(float(b["land_x"]), 0.05, float(b["z"]))
 		# 사슬: 배 → 닻 고리
-		var chain: MeshInstance3D = b["chain"]
+		var chain: MultiMeshInstance3D = b["chain"]
 		var top := node.global_position + Vector3(0.2, SEA_Y - 0.1, float(b["z"]))
-		var bot := an.global_position + an.basis * Vector3(0, 0.95, 0) * 0.9
+		var bot := an.global_transform * Vector3(0, 1.08, 0)
 		var d := bot - top
+		var mmc := chain.multimesh
 		if d.length() > 0.05:
-			chain.visible = true
+			chain.global_transform = Transform3D.IDENTITY
 			var y := d.normalized()
 			var xx := y.cross(Vector3.FORWARD if absf(y.z) < 0.9 else Vector3.RIGHT).normalized()
-			chain.global_transform = Transform3D(Basis(xx, y * d.length(), xx.cross(y)), (top + bot) * 0.5)
+			var zz := xx.cross(y)
+			var step := 0.11
+			var cnt := mini(int(d.length() / step) + 1, mmc.instance_count)
+			mmc.visible_instance_count = cnt
+			for k in cnt:
+				var f := float(k) * step
+				var bas := Basis(xx, y, zz)
+				# 고리를 세로로 세우고 하나 건너 90도 돌림
+				bas = bas * Basis(Vector3(1, 0, 0), PI / 2) * Basis(Vector3(0, 0, 1), 0.0)
+				if k % 2 == 1:
+					bas = Basis(y, PI / 2) * bas
+				mmc.set_instance_transform(k, Transform3D(bas.scaled(Vector3(1.0, 1.0, 1.0)) * Basis().scaled(Vector3(1.0, 1.0, 1.7)), top + y * f))
 		else:
-			chain.visible = false
+			mmc.visible_instance_count = 0
 
 
 func _ranking() -> Array:

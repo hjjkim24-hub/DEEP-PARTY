@@ -409,6 +409,7 @@ func _spawn_ink() -> void:
 	g.set_color(g.get_point_count() - 1, Color(1, 1, 1, 0.0))
 	p.color_ramp = g
 	p.position = start + Vector3(0, 0.6, 0)
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	world3.add_child(p)
 	var pr := pressure()
 	vel *= lerpf(1.0, 1.9, pr)

@@ -3,6 +3,7 @@
 uniform vec3 neon : source_color = vec3(0.35, 1.0, 0.3);
 uniform vec3 deep : source_color = vec3(0.02, 0.2, 0.08);
 uniform vec3 vein_col : source_color = vec3(0.75, 1.0, 0.2);
+uniform float bio = 1.0;          // 몸의 형광 세기 (미니게임은 낮게)
 uniform float glow = 0.0;          // 공격 직전 확 달아오름
 uniform float pattern_scale = 1.0;
 uniform float opacity = 0.82;
@@ -36,9 +37,9 @@ void kraken_skin(vec3 q, float nv, float belly, float t, out vec3 alb, out vec3 
 	vec3 body = mix(deep, neon * 0.55, 0.25 + 0.35 * n1);
 	body = mix(body, vec3(0.6, 0.85, 0.35), belly * 0.35);
 	alb = mix(body, vein_col * 0.5, vn * 0.6);
-	emi = neon * fres * 0.9
+	emi = (neon * fres * 0.9
 		+ vein_col * vn * (0.35 + 0.25 * breathe)
-		+ vec3(0.55, 1.0, 0.2) * spots * breathe * 0.9
+		+ vec3(0.55, 1.0, 0.2) * spots * breathe * 0.9) * bio
 		+ neon * glow * (0.6 + fres);
 	// 가운데는 속이 비치고 가장자리 · 핏줄은 진함
 	alpha = clamp(mix(opacity * 0.7, 1.0, fres) + vn * 0.25 + spots * 0.3, 0.0, 1.0);

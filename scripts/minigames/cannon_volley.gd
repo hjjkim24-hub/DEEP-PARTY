@@ -46,15 +46,14 @@ func _build_stage() -> void:
 	sky_clouds(14, 260.0, 38.0, Vector3.ZERO, Vector2(-1.3, 1.3))
 	var rr := RandomNumberGenerator.new()
 	rr.seed = 17
-	for k in 3:
-		var c := Vector3(rr.randf_range(-120, 120), SEA_Y - 2.0, rr.randf_range(-220, -160))
-		for j in 4:
-			reef("rock", c + Vector3(rr.randf_range(-14, 14), 0, rr.randf_range(-6, 6)), Color.WHITE, rr.randf_range(9.0, 17.0))
+	island(Vector3(-30, SEA_Y - 1.3, -230), 26.0, 16.0, 2)
+	island(Vector3(40, SEA_Y - 1.3, -260), 18.0, 11.0, 5)
+	island(Vector3(140, SEA_Y - 1.3, -220), 12.0, 8.0, 8)
 	# 먼 바다를 지나가는 범선 두 척 · 갈매기 · 떠다니는 나무통
 	for k in 2:
 		var sb := sailboat(Color(0.9, 0.88, 0.8), world3, 2.6, 1.0, 0.55)
-		sb.scale = Vector3.ONE * (9.0 if k == 0 else 6.5)
-		sb.position = Vector3(-70.0 if k == 0 else 85.0, SEA_Y - 0.5, -140.0 if k == 0 else -175.0)
+		sb.scale = Vector3.ONE * (6.5 if k == 0 else 4.5)
+		sb.position = Vector3(-70.0 if k == 0 else 85.0, SEA_Y - 1.3, -140.0 if k == 0 else -175.0)
 		sb.rotation.y = 0.3 if k == 0 else 2.9
 	gulls(5, Vector3(0, 0, -16), 14.0, 10.0, 9)
 	sea_debris(6, 26.0, 40.0, SEA_Y + 0.1, 3, Vector3(0, 0, -6))
@@ -233,8 +232,23 @@ func _spawn_target() -> void:
 		m.set_shader_parameter("neon", Color(1.0, 0.82, 0.25))
 		m.set_shader_parameter("deep", Color(0.35, 0.2, 0.02))
 		m.set_shader_parameter("vein_col", Color(1.0, 0.95, 0.6))
+		m.set_shader_parameter("bio", 1.0)
 	node.position = pos + Vector3(0, -length, 0)
-	var t := {"id": _next_id, "pos": pos, "gold": gold, "alive": true, "tn": tn, "node": node, "len": length,
+	var foam := MeshInstance3D.new()
+	var fq := QuadMesh.new()
+	fq.size = Vector2(3.2, 3.2)
+	fq.orientation = PlaneMesh.FACE_Y
+	foam.mesh = fq
+	var fm := StandardMaterial3D.new()
+	fm.albedo_color = Color(0.95, 0.97, 1.0, 0.0)
+	fm.albedo_texture = _soft_dot()
+	fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fm.roughness = 0.8
+	foam.material_override = fm
+	foam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	foam.position = pos + Vector3(0, 0.12, 0)
+	world3.add_child(foam)
+	var t := {"foam": foam, "id": _next_id, "pos": pos, "gold": gold, "alive": true, "tn": tn, "node": node, "len": length,
 		"up_until": _elapsed + lerpf(2.9, 0.95, p) * rng.randf_range(0.85, 1.15), "phase": rng.randf() * TAU, "rise": 0.0,
 		# 후반엔 옆으로 헤엄치며 움직임 (포탄이 날아가는 동안 비켜 감 → 앞을 내다보고 쏴야 함)
 		"vel": Vector3(rng.randf_range(-1.0, 1.0), 0, rng.randf_range(-0.3, 0.3)).normalized() * (0.0 if p < 0.35 else lerpf(0.0, 4.2, (p - 0.35) / 0.65))}
@@ -248,6 +262,8 @@ func _update_targets(delta: float) -> void:
 	for t in _targets.duplicate():
 		var node: Node3D = t["node"]
 		if not is_instance_valid(node):
+			if is_instance_valid(t.get("foam")):
+				(t["foam"] as Node3D).queue_free()
 			_targets.erase(t)
 			continue
 		var m: ShaderMaterial = (t["tn"] as Dictionary)["mat"]
@@ -260,6 +276,8 @@ func _update_targets(delta: float) -> void:
 			t["rise"] = float(t["rise"]) - delta * 2.2
 			if float(t["rise"]) <= 0.0:
 				node.queue_free()
+				if is_instance_valid(t.get("foam")):
+					(t["foam"] as Node3D).queue_free()
 				_targets.erase(t)
 				continue
 		if t["alive"]:
@@ -273,6 +291,12 @@ func _update_targets(delta: float) -> void:
 		var r: float = t["rise"]
 		var e := 1.0 - pow(1.0 - clampf(r, 0.0, 1.0), 3.0)
 		node.position.y = SEA_Y - length * (1.0 - e) - 0.4
+		var foam: MeshInstance3D = t.get("foam")
+		if is_instance_valid(foam):
+			foam.position = Vector3(node.position.x, SEA_Y + 0.12, node.position.z)
+			var fa := clampf(r, 0.0, 1.0) * (0.55 + 0.1 * sin(_t3 * 3.0 + float(t["phase"])))
+			(foam.material_override as StandardMaterial3D).albedo_color.a = fa
+			foam.scale = Vector3.ONE * (1.0 + 0.08 * sin(_t3 * 2.0 + float(t["phase"])))
 		var ph: float = t["phase"]
 		m.set_shader_parameter("pitch", sin(_t3 * 1.7 + ph) * 0.3)
 		m.set_shader_parameter("curl", 1.1 + sin(_t3 * 2.3 + ph) * 0.6)

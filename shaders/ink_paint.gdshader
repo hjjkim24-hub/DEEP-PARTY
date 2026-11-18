@@ -12,7 +12,10 @@ float n(vec2 p) {
 void fragment() {
 	vec2 uv = UV;
 	float wob = n(uv * grid * 0.9) * 0.6 + n(uv * grid * 2.7) * 0.4;
-	vec4 c = texture(paint, uv + (vec2(n(uv * 40.0), n(uv * 40.0 + 7.0)) - 0.5) / grid * 0.9);
+	// 칸 경계가 계단처럼 보이지 않게 좌표를 두 겹의 잡음으로 비틀어 읽음
+	vec2 warp = (vec2(n(uv * grid * 0.35), n(uv * grid * 0.35 + 7.0)) - 0.5) * 1.6
+		+ (vec2(n(uv * grid * 1.1 + 3.0), n(uv * grid * 1.1 + 11.0)) - 0.5) * 0.7;
+	vec4 c = texture(paint, uv + warp / grid);
 	float a = smoothstep(0.42, 0.55, c.a + (wob - 0.5) * 0.35);
 	vec3 col = c.rgb / max(c.a, 0.05);
 	// 가운데는 진하고 가장자리는 살짝 밝게 + 광택

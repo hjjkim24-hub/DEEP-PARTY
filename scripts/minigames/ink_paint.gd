@@ -3,7 +3,7 @@ extends "res://scripts/minigames/minigame_3d.gd"
 ## 30초 뒤 가장 넓게 칠한 사람이 승리. 남의 색 위도 덮어 칠할 수 있어요.
 ## 후반엔 크라켄이 검은 먹물 덩이를 뱉어 칠해 둔 땅을 지워 버려요 (갈수록 크게 · 자주).
 
-const GRID := 72
+const GRID := 120
 const HALF := 7.2               ## 갑판 반 너비 (정사각형)
 const BRUSH := 0.8
 
@@ -291,9 +291,9 @@ func _cell(p: Vector3) -> Vector2i:
 	return Vector2i(int((p.x + HALF) / (HALF * 2.0) * GRID), int((p.z + HALF) / (HALF * 2.0) * GRID))
 
 
-func _paint_at(p: Vector3, r: float, s: int) -> void:
+func _paint_at(p: Vector3, r: float, s: int, wob: Array = []) -> void:
 	var c := _cell(p)
-	var rc := int(ceil(r / (HALF * 2.0) * GRID))
+	var rc := int(ceil(r * (1.4 if wob.size() > 0 else 1.0) / (HALF * 2.0) * GRID))
 	for dy in range(-rc, rc + 1):
 		for dx in range(-rc, rc + 1):
 			var x := c.x + dx
@@ -301,7 +301,16 @@ func _paint_at(p: Vector3, r: float, s: int) -> void:
 			if x < 0 or y < 0 or x >= GRID or y >= GRID:
 				continue
 			var cp := Vector3((x + 0.5) / GRID * HALF * 2.0 - HALF, 0, (y + 0.5) / GRID * HALF * 2.0 - HALF)
-			if Vector2(cp.x - p.x, cp.z - p.z).length() > r:
+			var dv := Vector2(cp.x - p.x, cp.z - p.z)
+			var rr := r
+			if wob.size() > 0:
+				# 들쭉날쭉한 얼룩 테두리: 각도에 따른 사인 몇 개를 겹침
+				var ang := dv.angle()
+				var f := 1.0
+				for h in wob:
+					f += float(h.x) * sin(ang * float(h.y) + float(h.z))
+				rr = r * f
+			if dv.length() > rr:
 				continue
 			var i := y * GRID + x
 			var old := _owner[i]
@@ -363,7 +372,21 @@ func _spit() -> void:
 func _splat(at: Vector3, r: float) -> void:
 	sfx("splash", 60)
 	shake(0.25)
-	_paint_at(at, r, -1)
+	# 철퍽: 들쭉날쭉한 큰 얼룩 + 사방으로 튄 작은 방울과 꼬리
+	var wob := []
+	for k in 4:
+		wob.append(Vector3(rng.randf_range(0.04, 0.13), float(rng.randi_range(3, 9)), rng.randf() * TAU))
+	_paint_at(at, r * 0.85, -1, wob)
+	for k in rng.randi_range(7, 12):
+		var a := rng.randf() * TAU
+		var d := r * rng.randf_range(0.9, 1.7)
+		var dr := r * rng.randf_range(0.08, 0.22)
+		var q := at + Vector3(cos(a), 0, sin(a)) * d
+		_paint_at(q, dr, -1)
+		# 방울 쪽으로 가늘어지는 꼬리
+		for t in 3:
+			var f := (t + 1) / 4.0
+			_paint_at(at.lerp(q, 0.55 + f * 0.4), dr * (1.0 - f * 0.6), -1)
 	var p := CPUParticles3D.new()
 	p.one_shot = true
 	p.amount = 30

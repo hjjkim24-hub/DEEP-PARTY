@@ -81,8 +81,26 @@ func _build_deck() -> void:
 	deck_clutter(world3, [Vector3(-11.4, 0, 1.6), Vector3(11.2, 0, 1.5), Vector3(-11.0, 0, 4.0), Vector3(10.8, 0, 3.6)], 17)
 	sea_debris(9, 9.0, 30.0, SEA_Y + 0.1, 12, Vector3(0, 0, -14))
 	gulls(5, Vector3(0, 0, -10), 10.0, 9.0, 3)
-	var kh := kraken_head(Vector3(0, SEA_Y - 3.4, -27.0), 3.4, 0.0, -0.05)
+	var kh := kraken_head(Vector3(0, SEA_Y - 2.35, -27.0), 3.4, 0.0, -0.75)
 	kh.name = "KrakenHead"
+	# 머리 둘레에 이는 흰 물거품 띠
+	var foam := TorusMesh.new()
+	foam.inner_radius = 3.6
+	foam.outer_radius = 5.2
+	foam.rings = 48
+	var fm := StandardMaterial3D.new()
+	fm.albedo_color = Color(0.95, 0.97, 1.0, 0.45)
+	fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fm.albedo_texture = _soft_dot()
+	fm.roughness = 0.9
+	add_mesh(foam, fm, Vector3(0, SEA_Y + 0.05, -27.0)).scale = Vector3(1.0, 0.04, 0.8)
+	# 먼 수평선의 섬 · 지나가는 배
+	island(Vector3(-95, SEA_Y - 1.3, -210), 22.0, 14.0, 4)
+	island(Vector3(120, SEA_Y - 1.3, -240), 16.0, 10.0, 9)
+	var sb := sailboat(Color(0.9, 0.88, 0.8), world3)
+	sb.scale = Vector3.ONE * 7.0
+	sb.position = Vector3(60, SEA_Y - 1.3, -160)
+	sb.rotation.y = 2.8
 
 
 var _lane_iron: Material

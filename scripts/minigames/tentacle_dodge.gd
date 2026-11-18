@@ -30,7 +30,7 @@ func _build_stage() -> void:
 	env_sea_day()
 	var sea := ocean(-0.55, 180.0, RAFT_R + 1.5)
 	sea_debris(7, RAFT_R + 3.0, RAFT_R + 9.0, -0.45, 5)
-	gulls(4, Vector3(0, 0, -3), 9.0, 9.0, 2)
+	gulls(4, Vector3(0, 0, -16), 12.0, 5.0, 2)
 	(sea.material_override as ShaderMaterial).set_shader_parameter("crest_foam", 0.6)
 	cam.position = Vector3(0, 13.2, 12.0)
 	cam.look_at(Vector3(0, 0, 0.6))
@@ -60,20 +60,7 @@ func _build_raft() -> void:
 		tor.inner_radius = 0.1
 		tor.outer_radius = 0.17
 		add_mesh(tor, rope, p + Vector3(0, 0.15, 0), Basis(), _raft)
-		# 등불
-		var lb := box(Vector3(0.26, 0.34, 0.26), metal, p + Vector3(0, 1.48, 0), Basis(), _raft)
-		var glass := StandardMaterial3D.new()
-		glass.albedo_color = Color(1.0, 0.75, 0.4)
-		glass.emission_enabled = true
-		glass.emission = Color(1.0, 0.62, 0.25)
-		glass.emission_energy_multiplier = 3.0
-		box(Vector3(0.2, 0.24, 0.2), glass, Vector3(0, 0, 0), Basis(), lb).scale = Vector3(1.05, 1.0, 1.05)
-		var l := OmniLight3D.new()
-		l.light_color = Color(1.0, 0.66, 0.35)
-		l.light_energy = 1.4
-		l.omni_range = 6.0
-		l.position = p + Vector3(0, 1.5, 0)
-		_raft.add_child(l)
+		lantern(_raft, p + Vector3(0, 1.35, 0))
 	# 밧줄 난간 (기둥 사이)
 	for k in 6:
 		var a0 := TAU * (k + 0.5) / 6.0
@@ -94,21 +81,9 @@ func _build_raft() -> void:
 			var y := d.normalized()
 			var x := y.cross(Vector3.UP).normalized()
 			add_mesh(cy, rope, (q0 + q1) * 0.5, Basis(x, y, x.cross(y)), _raft)
-	# 나무통 · 밧줄 더미 (가장자리 장식)
-	var barrel := wood_mat(Color(0.45, 0.3, 0.18), Vector3(0, 1, 0), 0.2)
+	# 나무통 (가장자리 장식)
 	for a: float in [0.9, 2.4, 4.1, 5.3]:
-		var p := Vector3(cos(a), 0, sin(a)) * (RAFT_R - 0.9)
-		var c := CylinderMesh.new()
-		c.top_radius = 0.34
-		c.bottom_radius = 0.34
-		c.height = 0.8
-		add_mesh(c, barrel, p + Vector3(0, 0.4, 0), Basis(), _raft)
-		for hy: float in [0.15, 0.65]:
-			var band := CylinderMesh.new()
-			band.top_radius = 0.355
-			band.bottom_radius = 0.355
-			band.height = 0.06
-			add_mesh(band, metal, p + Vector3(0, hy, 0), Basis(), _raft)
+		barrel(_raft, Vector3(cos(a), 0, sin(a)) * (RAFT_R - 0.9), 0.34, 0.82)
 
 
 func _setup_game() -> void:

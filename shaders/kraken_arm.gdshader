@@ -106,7 +106,7 @@ void fragment() {
 	if (vsuck > 0.5) {
 		// 빨판: 몸처럼 형광으로 빛나는 테두리(조금 덜 밝게) + 그늘진 안쪽 컵 + 가운데 작은 구멍
 		float rim = smoothstep(0.55, 0.85, vcup);
-		vec3 pale = mix(alb, vec3(0.62, 0.84, 0.42), 0.35);
+		vec3 pale = mix(alb, mix(vec3(0.72, 0.62, 0.5), vec3(0.62, 0.84, 0.42), bio), 0.35);
 		vec3 cup = mix(alb * 0.4, alb * 0.8, smoothstep(0.1, 0.6, vcup));
 		alb = mix(cup, pale, rim);
 		emi = emi * mix(0.3, 0.6, rim) + vec3(0.4, 0.9, 0.25) * rim * 0.05;

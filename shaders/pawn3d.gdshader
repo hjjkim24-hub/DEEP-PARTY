@@ -22,6 +22,8 @@ void fragment() {
 		c = mix(c, pattern_color.rgb, d * step(0.1, lp.y) * step(lp.y, 0.62));
 	}
 	ALBEDO = c;
-	ROUGHNESS = 0.22;
-	SPECULAR = 0.7;
+	ROUGHNESS = 0.3;
+	SPECULAR = 0.6;
+	CLEARCOAT = 0.6;
+	CLEARCOAT_ROUGHNESS = 0.12;
 }

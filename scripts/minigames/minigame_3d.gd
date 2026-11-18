@@ -35,6 +35,7 @@ var _shake := 0.0
 var _shake_t := 0.0
 var _floaters: Array = []      ## 물 위에 둥둥 떠다니는 것 {node, base, ph}
 var _gulls: Array = []         ## 하늘을 도는 갈매기 {node, wl, wr, c, r, h, sp, ph}
+var _flickers: Array = []      ## 일렁이는 불빛 {light, base, ph}
 
 
 func _make_stage() -> void:
@@ -52,6 +53,10 @@ func _make_stage() -> void:
 	vpc.add_child(vp)
 	world3 = Node3D.new()
 	vp.add_child(world3)
+	# 입자(물보라 · 먹물 · 불꽃 · 거품)는 그림자를 드리우지 않게 — 네모난 그림자 얼룩 방지
+	(Engine.get_main_loop() as SceneTree).node_added.connect(func(n: Node) -> void:
+		if n is CPUParticles3D or n is GPUParticles3D:
+			(n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 	cam = Camera3D.new()
 	cam.fov = 48.0
 	cam.current = true
@@ -88,6 +93,11 @@ func _process(delta: float) -> void:
 	if cam == null:
 		return
 	var tt := Time.get_ticks_msec() / 1000.0
+	for fl in _flickers:
+		var l: OmniLight3D = fl["light"]
+		if is_instance_valid(l):
+			var ph: float = fl["ph"]
+			l.light_energy = float(fl["base"]) * (0.82 + 0.12 * sin(tt * 13.0 + ph) + 0.08 * sin(tt * 31.0 + ph * 2.0))
 	for f in _floaters:
 		var n: Node3D = f["node"]
 		var ph: float = f["ph"]
@@ -201,9 +211,9 @@ func env_underwater() -> void:
 	# 물속 색 보정: 붉은빛은 먼저 흡수되고, 그림자는 청록으로 뜸
 	var g := Gradient.new()
 	g.set_color(0, Color(0.0, 0.035, 0.06))
-	g.set_color(1, Color(0.82, 0.98, 0.97))
-	g.add_point(0.25, Color(0.08, 0.17, 0.2))
-	g.add_point(0.55, Color(0.33, 0.49, 0.52))
+	g.set_color(1, Color(0.85, 0.96, 1.0))
+	g.add_point(0.25, Color(0.07, 0.15, 0.2))
+	g.add_point(0.55, Color(0.33, 0.47, 0.55))
 	var gt := GradientTexture1D.new()
 	gt.gradient = g
 	gt.width = 256
@@ -241,7 +251,7 @@ func surface_from_below(y: float, size: float = 120.0) -> MeshInstance3D:
 	m.roughness = 0.05
 	m.metallic_specular = 1.0
 	m.emission_enabled = true
-	m.emission = Color(0.08, 0.3, 0.34)
+	m.emission = Color(0.2, 0.48, 0.52)
 	m.emission_energy_multiplier = 1.0
 	var mi := add_mesh(surf, m, Vector3(0, y, 0))
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -376,7 +386,8 @@ func to_arena(p3: Vector3) -> Vector2:
 # ── 말 ───────────────────────────────────────────────────────
 func make_pawn(p: Dictionary) -> Node3D:
 	var n := Pawn3D.new()
-	n.color = p["color"]
+	var pc: Color = p["color"]
+	n.color = Color.from_hsv(pc.h, minf(pc.s * 1.25 + 0.05, 1.0), pc.v * 0.92)
 	n.look = p.get("look", {})
 	n.scale = Vector3.ONE * PAWN_SCALE
 	world3.add_child(n)
@@ -577,6 +588,7 @@ static func skin_tone(m: ShaderMaterial) -> void:
 	m.set_shader_parameter("neon", Color(0.13, 0.42, 0.17))
 	m.set_shader_parameter("vein_col", Color(0.3, 0.44, 0.12))
 	m.set_shader_parameter("deep", Color(0.03, 0.12, 0.06))
+	m.set_shader_parameter("bio", 0.3)
 
 
 ## 보드와 같은 크라켄 촉수 (셰이더로 휘는 관). 돌려줌 {"root", "mat"}
@@ -623,12 +635,12 @@ func build_raft(parent: Node3D, R: float, seed_: int) -> void:
 			cap.top_radius = lr * 0.98
 			cap.bottom_radius = lr * 0.98
 			cap.height = 0.03
-			add_mesh(cap, std_mat(Color(0.62, 0.48, 0.32), 0.9), Vector3(x, -0.5, sd * half), Basis(Vector3(1, 0, 0), PI / 2), parent)
+			add_mesh(cap, std_mat(Color(0.4, 0.3, 0.2), 0.95), Vector3(x, -0.5, sd * half), Basis(Vector3(1, 0, 0), PI / 2), parent)
 	var cols := [Color(0.42, 0.32, 0.22), Color(0.46, 0.35, 0.24), Color(0.39, 0.29, 0.2), Color(0.44, 0.33, 0.22), Color(0.36, 0.27, 0.19)]
-	var nail := std_mat(Color(0.12, 0.1, 0.09), 0.5, 0.7)
+	var nail := std_mat(Color(0.26, 0.2, 0.16), 0.7, 0.4)
 	var nail_m := CylinderMesh.new()
-	nail_m.top_radius = 0.025
-	nail_m.bottom_radius = 0.025
+	nail_m.top_radius = 0.018
+	nail_m.bottom_radius = 0.018
 	nail_m.height = 0.02
 	nail_m.radial_segments = 6
 	var z := -R + 0.25
@@ -641,22 +653,22 @@ func build_raft(parent: Node3D, R: float, seed_: int) -> void:
 		box(Vector3(half * 2.0, 0.14, w), wood_mat(cols[idx % cols.size()], Vector3(1, 0, 0), 0.1),
 			Vector3(off, -0.07 + rr.randf_range(-0.012, 0.012), z), Basis(Vector3.UP, tilt) * Basis(Vector3(1, 0, 0), rr.randf_range(-0.02, 0.02)), parent)
 		for x: float in log_x:
-			if absf(x - off) < half - 0.15:
+			if absf(x - off) < half - 0.15 and rr.randf() < 0.8:
 				for dz: float in [-w * 0.28, w * 0.28]:
 					add_mesh(nail_m, nail, Vector3(x + rr.randf_range(-0.05, 0.05), 0.005, z + dz), Basis(), parent)
 		z += w + rr.randf_range(0.03, 0.06)
 		idx += 1
-	# 통나무 자리마다 널 위를 가로지르는 밧줄 동여맴 (가장자리 몇 군데)
-	var rope := std_mat(Color(0.6, 0.5, 0.34), 0.95)
+	# 가장자리 통나무 끝을 감은 밧줄 (물 위로 보이는 곳만)
+	var rope := std_mat(Color(0.58, 0.48, 0.32), 0.95)
 	for x: float in log_x:
 		for sd: float in [-1.0, 1.0]:
-			var zz: float = sd * (sqrt(maxf(R * R - x * x, 1.0)) - rr.randf_range(0.5, 0.9))
+			var zz: float = sd * (sqrt(maxf(R * R - x * x, 1.0)) - 0.45)
 			for k in 3:
 				var t := TorusMesh.new()
-				t.inner_radius = 0.46
-				t.outer_radius = 0.52
-				t.rings = 24
-				add_mesh(t, rope, Vector3(x, -0.45, zz + (k - 1) * 0.07), Basis(Vector3(1, 0, 0), PI / 2), parent)
+				t.inner_radius = 0.38
+				t.outer_radius = 0.45
+				t.rings = 20
+				add_mesh(t, rope, Vector3(x, -0.5, zz - sd * k * 0.08), Basis(Vector3(1, 0, 0), PI / 2), parent)
 
 
 ## 갑판 잡동사니: 나무 상자 · 감긴 밧줄 · 양동이 · 그물 더미 (pos 들에)
@@ -850,6 +862,234 @@ func sailboat(sail_col: Color, parent: Node3D, L: float = 2.6, B: float = 1.0, D
 	return root
 
 
+## 돌림체 메시: prof = [(반지름, 높이), ...] 아래→위
+static func lathe_mesh(prof: Array, seg: int = 24) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in prof.size() - 1:
+		var a: Vector2 = prof[i]
+		var b: Vector2 = prof[i + 1]
+		for k in seg:
+			var t0 := TAU * k / seg
+			var t1 := TAU * (k + 1) / seg
+			var p00 := Vector3(sin(t0) * a.x, a.y, cos(t0) * a.x)
+			var p01 := Vector3(sin(t1) * a.x, a.y, cos(t1) * a.x)
+			var p10 := Vector3(sin(t0) * b.x, b.y, cos(t0) * b.x)
+			var p11 := Vector3(sin(t1) * b.x, b.y, cos(t1) * b.x)
+			st.add_vertex(p00); st.add_vertex(p11); st.add_vertex(p01)
+			st.add_vertex(p00); st.add_vertex(p10); st.add_vertex(p11)
+	st.generate_normals()
+	return st.commit()
+
+
+## 배불뚝이 나무통: 가운데가 불룩한 몸통 · 쑥 들어간 뚜껑 · 쇠테 4줄. 원점 = 바닥 가운데
+func barrel(parent: Node3D, pos: Vector3, r: float, h: float, col := Color(0.44, 0.29, 0.17)) -> Node3D:
+	var root := Node3D.new()
+	root.position = pos
+	parent.add_child(root)
+	var prof := []
+	for i in 13:
+		var y := float(i) / 12.0
+		prof.append(Vector2(r * (0.84 + 0.16 * sin(PI * y)), y * h))
+	prof.append(Vector2(r * 0.8, h))
+	prof.append(Vector2(r * 0.8, h - 0.04))
+	prof.append(Vector2(0.0, h - 0.04))
+	add_mesh(lathe_mesh(prof, 22), wood_mat(col, Vector3(0, 1, 0), 0.12), Vector3.ZERO, Basis(), root)
+	# 뚜껑 판 이음 (진한 선 두 줄)
+	var lid_line := std_mat(col.darkened(0.5), 0.9)
+	for dx: float in [-r * 0.27, r * 0.27]:
+		box(Vector3(0.015, 0.01, r * 1.5), lid_line, Vector3(dx, h - 0.035, 0), Basis(), root)
+	var iron := std_mat(Color(0.17, 0.16, 0.15), 0.45, 0.75)
+	for hy: float in [0.07, 0.3, 0.7, 0.93]:
+		var band := CylinderMesh.new()
+		var rb := r * (0.84 + 0.16 * sin(PI * hy)) + 0.012
+		band.top_radius = rb
+		band.bottom_radius = rb
+		band.height = h * 0.045
+		band.radial_segments = 22
+		add_mesh(band, iron, Vector3(0, h * hy, 0), Basis(), root)
+	return root
+
+
+## 횃불 기둥: 나무 장대 · 쇠 바구니 · 일렁이는 불꽃(입자) · 깜빡이는 불빛
+func torch(parent: Node3D, pos: Vector3, h: float = 1.8) -> Node3D:
+	var root := Node3D.new()
+	root.position = pos
+	parent.add_child(root)
+	var pole := CylinderMesh.new()
+	pole.top_radius = 0.06
+	pole.bottom_radius = 0.09
+	pole.height = h
+	add_mesh(pole, wood_mat(Color(0.33, 0.22, 0.14), Vector3(0, 1, 0), 0.2), Vector3(0, h * 0.5, 0), Basis(), root)
+	var iron := std_mat(Color(0.14, 0.13, 0.12), 0.5, 0.75)
+	var cup := CylinderMesh.new()
+	cup.top_radius = 0.2
+	cup.bottom_radius = 0.08
+	cup.height = 0.22
+	cup.radial_segments = 8
+	add_mesh(cup, iron, Vector3(0, h + 0.08, 0), Basis(), root)
+	var coal := SphereMesh.new()
+	coal.radius = 0.16
+	coal.height = 0.14
+	var cm := StandardMaterial3D.new()
+	cm.albedo_color = Color(0.2, 0.08, 0.03)
+	cm.emission_enabled = true
+	cm.emission = Color(1.0, 0.35, 0.08)
+	cm.emission_energy_multiplier = 2.0
+	add_mesh(coal, cm, Vector3(0, h + 0.18, 0), Basis(), root)
+	root.add_child(_flame(Vector3(0, h + 0.22, 0), 0.17))
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.6, 0.28)
+	l.light_energy = 2.0
+	l.omni_range = 6.0
+	l.shadow_enabled = false
+	l.position = Vector3(0, h + 0.5, 0)
+	root.add_child(l)
+	_flickers.append({"light": l, "base": 2.0, "ph": randf() * TAU})
+	return root
+
+
+## 불꽃 입자 (위로 날름대며 사라지는 주황 → 빨강 빛 덩어리)
+func _flame(pos: Vector3, size_: float) -> CPUParticles3D:
+	var f := CPUParticles3D.new()
+	f.position = pos
+	var q := QuadMesh.new()
+	q.size = Vector2(size_, size_ * 1.4)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.vertex_color_use_as_albedo = true
+	m.albedo_texture = _soft_dot()
+	q.material = m
+	f.mesh = q
+	f.local_coords = true
+	f.amount = 18
+	f.lifetime = 0.45
+	f.direction = Vector3.UP
+	f.spread = 12.0
+	f.initial_velocity_min = 0.7
+	f.initial_velocity_max = 1.3
+	f.gravity = Vector3.ZERO
+	f.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	f.emission_sphere_radius = size_ * 0.3
+	var sc := Curve.new()
+	sc.add_point(Vector2(0, 0.8))
+	sc.add_point(Vector2(0.3, 1.0))
+	sc.add_point(Vector2(1, 0.1))
+	f.scale_amount_curve = sc
+	var g := Gradient.new()
+	g.set_color(0, Color(1.0, 0.7, 0.3, 0.55))
+	g.add_point(0.35, Color(1.0, 0.4, 0.08, 0.45))
+	g.set_color(g.get_point_count() - 1, Color(0.5, 0.1, 0.02, 0.0))
+	f.color_ramp = g
+	f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return f
+
+
+var _dot_tex: Texture2D
+
+
+## 가장자리가 부드러운 동그라미 텍스처 (불꽃 · 연기용)
+func _soft_dot() -> Texture2D:
+	if _dot_tex:
+		return _dot_tex
+	var gt := GradientTexture2D.new()
+	gt.fill = GradientTexture2D.FILL_RADIAL
+	gt.fill_from = Vector2(0.5, 0.5)
+	gt.fill_to = Vector2(0.5, 0.0)
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	gt.gradient = g
+	gt.width = 64
+	gt.height = 64
+	_dot_tex = gt
+	return gt
+
+
+## 쇠 등불: 받침 · 네 모서리 기둥 · 빛나는 유리 · 뾰족 지붕 · 고리
+func lantern(parent: Node3D, pos: Vector3) -> Node3D:
+	var root := Node3D.new()
+	root.position = pos
+	parent.add_child(root)
+	var iron := std_mat(Color(0.13, 0.12, 0.11), 0.45, 0.8)
+	box(Vector3(0.3, 0.04, 0.3), iron, Vector3(0, 0.02, 0), Basis(), root)
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			box(Vector3(0.03, 0.32, 0.03), iron, Vector3(sx * 0.12, 0.2, sz * 0.12), Basis(), root)
+	var glass := StandardMaterial3D.new()
+	glass.albedo_color = Color(1.0, 0.8, 0.5)
+	glass.emission_enabled = true
+	glass.emission = Color(1.0, 0.6, 0.25)
+	glass.emission_energy_multiplier = 2.5
+	box(Vector3(0.21, 0.28, 0.21), glass, Vector3(0, 0.2, 0), Basis(), root)
+	var roof := CylinderMesh.new()
+	roof.top_radius = 0.0
+	roof.bottom_radius = 0.22
+	roof.height = 0.14
+	roof.radial_segments = 4
+	add_mesh(roof, iron, Vector3(0, 0.43, 0), Basis(Vector3.UP, PI / 4), root)
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.04
+	ring.outer_radius = 0.06
+	add_mesh(ring, iron, Vector3(0, 0.54, 0), Basis(Vector3(1, 0, 0), PI / 2), root)
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.66, 0.35)
+	l.light_energy = 1.4
+	l.omni_range = 6.0
+	l.position = Vector3(0, 0.25, 0)
+	root.add_child(l)
+	_flickers.append({"light": l, "base": 1.4, "ph": randf() * TAU})
+	return root
+
+
+## 먼 수평선의 열대 섬: 모래 띠 · 바위 · 짙은 숲 덩어리 · 야자수 몇 그루
+func island(pos: Vector3, r: float, h: float, seed_: int) -> void:
+	var rr := RandomNumberGenerator.new()
+	rr.seed = seed_
+	var root := Node3D.new()
+	root.position = pos
+	world3.add_child(root)
+	var sand := CylinderMesh.new()
+	sand.top_radius = r * 0.92
+	sand.bottom_radius = r * 1.0
+	sand.height = h * 0.05
+	add_mesh(sand, std_mat(Color(0.66, 0.6, 0.46), 0.95), Vector3(0, h * 0.02, 0), Basis(), root)
+	var rock := std_mat(Color(0.32, 0.3, 0.28), 0.9)
+	var green := std_mat(Color(0.14, 0.27, 0.12), 0.95)
+	var green2 := std_mat(Color(0.18, 0.33, 0.14), 0.95)
+	for k in 5:
+		var s := SphereMesh.new()
+		var rk := r * rr.randf_range(0.35, 0.6)
+		s.radius = rk
+		s.height = rk * 2.0
+		var off := Vector3(rr.randf_range(-r * 0.45, r * 0.45), 0, rr.randf_range(-r * 0.3, r * 0.3))
+		var hh := h * (1.25 if k == 1 else rr.randf_range(0.45, 0.85))
+		if k == 1:
+			off = Vector3(rr.randf_range(-r * 0.15, r * 0.15), 0, 0)
+		add_mesh(s, rock if k == 0 else (green if k % 2 == 0 else green2), off + Vector3(0, 0.0, 0), Basis(), root).scale = Vector3(1.0, hh / rk, 1.0)
+	# 야자수
+	var trunk := std_mat(Color(0.42, 0.33, 0.22), 0.9)
+	for k in 6:
+		var base := Vector3(rr.randf_range(-r * 0.85, r * 0.85), h * 0.08, rr.randf_range(r * 0.2, r * 0.7))
+		var th := h * rr.randf_range(0.55, 0.85)
+		var lean := rr.randf_range(-0.35, 0.35)
+		var top := base + Vector3(sin(lean) * th, cos(lean) * th, 0)
+		var c := CylinderMesh.new()
+		c.top_radius = h * 0.012
+		c.bottom_radius = h * 0.022
+		c.height = th
+		add_mesh(c, trunk, (base + top) * 0.5, Basis(Vector3(0, 0, 1), -lean), root)
+		for j in 7:
+			var a := TAU * j / 7.0
+			var fd := Vector3(cos(a), -0.35, sin(a)).normalized()
+			var fl := h * 0.28
+			var bb := Basis.looking_at(fd, Vector3.UP)
+			box(Vector3(fl * 0.25, h * 0.008, fl), green2, top + fd * fl * 0.5, bb, root)
+
+
 ## 물 위에 떠다니는 나무통 · 널조각 · 부표 (뗏목 둘레 r0 ~ r1)
 func sea_debris(count: int, r0: float, r1: float, y: float, seed_: int, center := Vector3.ZERO) -> void:
 	var rr := RandomNumberGenerator.new()
@@ -861,17 +1101,8 @@ func sea_debris(count: int, r0: float, r1: float, y: float, seed_: int, center :
 		world3.add_child(n)
 		match k % 3:
 			0:
-				var c := CylinderMesh.new()
-				c.top_radius = 0.3
-				c.bottom_radius = 0.3
-				c.height = 0.8
-				add_mesh(c, wood_mat(Color(0.42, 0.29, 0.18), Vector3(0, 1, 0), 0.4), Vector3.ZERO, Basis(Vector3(0, 0, 1), PI / 2), n)
-				for hx: float in [-0.25, 0.25]:
-					var b := CylinderMesh.new()
-					b.top_radius = 0.315
-					b.bottom_radius = 0.315
-					b.height = 0.05
-					add_mesh(b, std_mat(Color(0.2, 0.19, 0.18), 0.5, 0.7), Vector3(hx, 0, 0), Basis(Vector3(0, 0, 1), PI / 2), n)
+				var b := barrel(n, Vector3(-0.4, 0, 0), 0.32, 0.8, Color(0.38, 0.26, 0.16))
+				b.rotation.z = -PI / 2
 			1:
 				box(Vector3(rr.randf_range(1.2, 2.0), 0.1, 0.32), wood_mat(Color(0.38, 0.28, 0.19), Vector3(1, 0, 0), 0.5), Vector3.ZERO, Basis(), n)
 			2:
@@ -913,6 +1144,8 @@ func gulls(count: int, center: Vector3, radius: float, h: float, seed_: int) -> 
 		box(Vector3(0.7, 0.02, 0.2), white, Vector3(0.36, 0, 0), Basis(), wr)
 		box(Vector3(0.28, 0.021, 0.14), grey, Vector3(0.62, 0, 0.02), Basis(), wr)
 		n.scale = Vector3.ONE * rr.randf_range(0.9, 1.2)
+		for mi in n.find_children("*", "MeshInstance3D", true, false):
+			(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_gulls.append({"node": n, "wl": wl, "wr": wr, "c": center + Vector3(rr.randf_range(-4, 4), 0, rr.randf_range(-4, 4)),
 			"r": radius * rr.randf_range(0.7, 1.2), "h": h + rr.randf_range(-1.5, 2.0), "sp": rr.randf_range(0.25, 0.4) * (1.0 if rr.randf() < 0.6 else -1.0), "ph": rr.randf() * TAU})
 
@@ -960,6 +1193,7 @@ func underwater_fx(half: float, top: float = 12.0) -> void:
 	snow.gravity = Vector3(0, -0.03, 0)
 	snow.initial_velocity_max = 0.15
 	snow.spread = 180.0
+	snow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	world3.add_child(snow)
 	var rr := RandomNumberGenerator.new()
 	rr.seed = 4
@@ -1261,14 +1495,14 @@ func slam_tentacle(root: Vector3, dir: Vector3, length: float, warn: float, floo
 	t.tween_property(node, "position:y", root.y, rise_t).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
 	t.parallel().tween_method(func(f: float) -> void:
 		pose_tentacle(m, straight, raised, smoothstep(0.35, 1.0, f))
-		m.set_shader_parameter("glow", f * 0.6), 0.0, 1.0, rise_t)
+		m.set_shader_parameter("glow", f * 0.35), 0.0, 1.0, rise_t)
 	t.tween_method(func(f: float) -> void: pose_tentacle(m, raised, wound, f), 0.0, 1.0, wind_t).set_trans(Tween.TRANS_SINE)
 	t.tween_interval(maxf(0.0, warn - rise_t - wind_t - 0.2))
 	t.tween_method(func(f: float) -> void: pose_tentacle(m, wound, slammed, f * f), 0.0, 1.0, 0.2)
 	t.tween_interval(0.55)
 	t.tween_method(func(f: float) -> void:
 		pose_tentacle(m, slammed, raised, f)
-		m.set_shader_parameter("glow", 0.6 * (1.0 - f)), 0.0, 1.0, 0.35)
+		m.set_shader_parameter("glow", 0.35 * (1.0 - f)), 0.0, 1.0, 0.35)
 	t.tween_property(node, "position:y", root.y - length, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	t.tween_callback(node.queue_free)
 	if is_nan(water_y):

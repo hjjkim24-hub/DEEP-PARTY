@@ -38,6 +38,10 @@ func _mg_close(id: String) -> void:
 		mg.env.ambient_light_energy = float(OS.get_environment("AMB"))
 	if OS.get_environment("NOSUN") != "":
 		mg.sun.visible = false
+	if OS.get_environment("OPENALL") != "" and mg.has_method("_open_one"):
+		for i in 9:
+			mg._open_one(0.3)
+		await get_tree().create_timer(0.5).timeout
 	var views := [Vector3(-3.2, 2.4, 3.4), Vector3(3.4, 2.0, -2.8), Vector3(0.0, 4.6, 0.8), Vector3(3.8, 1.2, 1.0)]
 	for k in views.size():
 		mg.cam_base = Transform3D(Basis.looking_at(Vector3(0, 0.5, 0) - views[k], Vector3.UP), views[k])
