@@ -66,6 +66,9 @@ const ICONS := {
 	"kraken_chest": preload("res://textures/tiles/icon_treasure.png"),
 	"cannon": preload("res://textures/tiles/icon_cannon.png"),
 	"harpoon": preload("res://textures/tiles/icon_harpoon.png"),
+	"eel": preload("res://textures/tiles/icon_eel.png"),
+	"trap": preload("res://textures/tiles/icon_trap.png"),       ## 카드 그림 (칸 아님)
+	"jelly": preload("res://textures/tiles/icon_jelly.png"),     ## 카드 그림 (칸 아님)
 }
 const BORDER_TEX := preload("res://textures/tiles/icon_border.png")
 const CHANCE_CARD_TEX := preload("res://textures/tiles/card_chance.png")
@@ -79,6 +82,7 @@ const TILE_COLORS := {
 	"kraken_chest": Color(0.96, 0.72, 0.2),
 	"cannon": Color(0.3, 0.33, 0.4),
 	"harpoon": Color(0.6, 0.17, 0.15),
+	"eel": Color(0.86, 0.7, 0.12),
 }
 const INK_COLORS := {
 	"plain": Color(1, 1, 1), "chance": Color(1.0, 0.98, 0.9), "minigame": Color(0.95, 0.98, 1.0),
@@ -90,6 +94,7 @@ const INK_COLORS := {
 	"kraken_chest": Color(1.0, 0.97, 0.86),
 	"cannon": Color(1.0, 0.76, 0.42),
 	"harpoon": Color(1.0, 0.93, 0.86),
+	"eel": Color(0.16, 0.12, 0.05),
 }
 ## 범례 순서 + 화면에 보일 이름 (번역 키)
 const KIND_ORDER := ["plain", "chance", "minigame", "portal", "shop"]
@@ -98,7 +103,7 @@ const KIND_NAMES := {
 	"coin_plus": "Lucky +5", "coin_minus": "Trap -5",
 	"treasure": "Treasure", "supply": "Supply Crate", "urchin": "Sea Urchin", "whirlpool": "Whirlpool",
 	"heal": "Air Bubble", "boss": "Kraken's Lair", "kraken_chest": "Kraken's Chest", "cannon": "Cannon",
-	"harpoon": "Harpoon",
+	"harpoon": "Harpoon", "eel": "Electric Eel",
 }
 ## 협동 원정 범례 순서
 const COOP_KIND_ORDER := ["plain", "treasure", "supply", "heal", "shop", "urchin", "whirlpool", "boss"]
@@ -830,6 +835,7 @@ func _tile_top_mat(kind: String, on_ship_: bool = false) -> ShaderMaterial:
 		var sm := (_tile_top_mat(kind) as ShaderMaterial).duplicate() as ShaderMaterial
 		if kind != "portal":
 			sm.set_shader_parameter("caustics", 0.0)
+			sm.set_shader_parameter("weather", 0.35)
 		_mats[key] = sm
 		return sm
 	var m := ShaderMaterial.new()
@@ -844,6 +850,8 @@ func _tile_top_mat(kind: String, on_ship_: bool = false) -> ShaderMaterial:
 	m.set_shader_parameter("icon_tex", _mip_tex(ICONS[kind]))
 	m.set_shader_parameter("border_tex", _mip_tex(BORDER_TEX))
 	m.set_shader_parameter("icon_scale", 0.8 if kind == "start" else 0.62)
+	m.set_shader_parameter("det_tex", _mip_tex(StoneAlbedo))
+	m.set_shader_parameter("det_nrm", _mip_tex(StoneNormal))
 	if kind == "kraken_chest":
 		# 대각선 반반: 보물상자(금빛) / 크라켄(검푸른 초록)
 		m.set_shader_parameter("split", true)
@@ -863,9 +871,10 @@ func _rbox(size: Vector3, r: float) -> ArrayMesh:
 
 
 func _tiles() -> void:
-	var foot_m := _mat(Color(0.6, 0.57, 0.5), 0.8)
-	var foot2_m := _mat(Color(0.7, 0.67, 0.58), 0.75)
-	var gold := _mat(Color(0.95, 0.76, 0.34), 0.25, 0.85)
+	# 옛 신전 돌판: 받침돌 두 단 · 녹청 슨 청동 띠와 징 (반짝이는 금 대신)
+	var foot_m := _smat(Color(0.52, 0.51, 0.47), "stone", 0.0, 0.8)
+	var foot2_m := _smat(Color(0.6, 0.58, 0.52), "stone", 0.0, 0.6)
+	var gold := _mat(Color(0.26, 0.34, 0.29), 0.62, 0.45)
 	var stud := SphereMesh.new()
 	stud.radius = 0.08
 	stud.height = 0.12
@@ -877,7 +886,7 @@ func _tiles() -> void:
 		var kind: String = sp["kind"]
 		var b := Basis(Vector3.UP, sp["yaw"])
 		if kind == "start":
-			_mi(_rbox(Vector3(PLAZA, 0.5, PLAZA), 0.22), _mat(Color(0.5, 0.6, 0.58), 0.35), base + Vector3(0, 0.25, 0), b)
+			_mi(_rbox(Vector3(PLAZA, 0.5, PLAZA), 0.22), _smat(Color(0.56, 0.6, 0.57), "stone", 0.0, 0.5), base + Vector3(0, 0.25, 0), b)
 			_mi(_rbox(Vector3(PLAZA + 0.6, 0.2, PLAZA + 0.6), 0.08), foot_m, base + Vector3(0, 0.1, 0), b)
 			var top := PlaneMesh.new()
 			top.size = Vector2(PLAZA - 0.5, PLAZA - 0.5)
@@ -887,15 +896,10 @@ func _tiles() -> void:
 					stud_x.append(Transform3D(Basis(), base + b * Vector3(cx * (PLAZA * 0.5 + 0.15), 0.21, cz * (PLAZA * 0.5 + 0.15))))
 			continue
 		var size := TILE + (0.2 if kind == "junction" else 0.0)
-		var body_c: Color = Color(0.82, 0.82, 0.77) if kind == "junction" else (TILE_COLORS[kind] as Color).darkened(0.2)
-		# 유약 바른 도자기 같은 칸 몸통 + 크림색 받침 + 금 장식
-		var glaze := _mat(body_c, 0.32)
-		glaze.clearcoat_enabled = true
-		glaze.clearcoat = 0.7
-		glaze.clearcoat_roughness = 0.1
-		glaze.rim_enabled = true
-		glaze.rim = 0.25
-		sp["body_mi"] = _mi(_rbox(Vector3(size, TILE_H, size), 0.15), glaze, base + Vector3(0, TILE_H * 0.5, 0), b)
+		# 칸 몸통: 다듬은 돌덩이 (옆면에 칸 색 안료가 살짝 번져 있음 · 아래쪽엔 이끼)
+		var stone_c := Color(0.6, 0.58, 0.53)
+		var body_c: Color = stone_c if kind == "junction" else stone_c.lerp((TILE_COLORS[kind] as Color).darkened(0.15), 0.22)
+		sp["body_mi"] = _mi(_rbox(Vector3(size, TILE_H, size), 0.1), _smat(body_c, "stone", 0.0, 0.3), base + Vector3(0, TILE_H * 0.5, 0), b)
 		# 받침돌 2 단 (넓고 낮은 단 + 칸 바로 아래 단) + 몸통 아래를 두른 금 띠
 		_mi(_rbox(Vector3(size + 0.5, 0.12, size + 0.5), 0.05), foot_m, base + Vector3(0, 0.04, 0), b)
 		_mi(_rbox(Vector3(size + 0.26, 0.14, size + 0.26), 0.06), foot2_m, base + Vector3(0, 0.13, 0), b)
@@ -3313,6 +3317,8 @@ func _tile_props() -> void:
 				_chance_card(i)
 			"harpoon":
 				_harpoon_gun(i)
+			"eel":
+				_eel_den(i)
 
 
 ## 작살 칸: 옆에 포경선에서 떼어 온 듯한 작살포 (돌 받침 · 나무 기둥 · 돌아가는 쇠 포신 · 장전된 작살 · 밧줄 타래)
@@ -3432,6 +3438,169 @@ func harpoon_reload(tile: int) -> void:
 	l.visible = true
 	l.scale = Vector3.ONE * 0.01
 	create_tween().tween_property(l, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+## 전기뱀장어 칸: 옆의 바위굴에서 뱀장어가 몸을 내밀고 칸 쪽을 노려봄 (평소엔 천천히 꿈틀)
+var eel_dens := {}   ## 칸 → {"root", "body", "head", "mat"}
+
+
+func _eel_den(i: int) -> void:
+	var sp: Dictionary = spaces[i]
+	var base: Vector3 = sp["base"]
+	var side := Basis(Vector3.UP, _path_yaw(i)).x
+	var at := base + side * 2.5
+	for sgn in [1.0, -1.0, 1.3, -1.3]:
+		var c: Vector3 = base + side * (2.5 * sgn)
+		if _stall_ok(c, i):
+			at = c
+			break
+	at.y = base.y
+	var root := Node3D.new()
+	root.position = at
+	var to_tile := base - at
+	root.rotation.y = atan2(to_tile.x, to_tile.z)     # +Z 가 칸 쪽
+	add_child(root)
+	# 굴: 울퉁불퉁한 바위 무더기 + 칸 쪽으로 뚫린 검은 구멍
+	var rock := _smat(Color(0.5, 0.49, 0.45), "stone", 0.0, 0.7)
+	for r in [[Vector3(0, 0.25, -0.15), Vector3(1.0, 0.75, 0.9)], [Vector3(-0.5, 0.15, -0.35), Vector3(0.6, 0.5, 0.6)],
+			[Vector3(0.48, 0.12, -0.3), Vector3(0.55, 0.42, 0.55)]]:
+		var sm := SphereMesh.new()
+		sm.radius = 0.5
+		sm.height = 1.0
+		sm.radial_segments = 12
+		sm.rings = 6
+		_mi(sm, rock, r[0], Basis.from_scale(r[1]), root)
+	var hole := _cyl(0.24, 0.24, 0.1, 16)
+	_mi(hole, _mat(Color(0.02, 0.02, 0.03), 1.0), Vector3(0, 0.32, 0.27), Basis(Vector3(1, 0, 0), PI / 2 - 0.35), root)
+	# 뱀장어: 굴에서 휘어져 나온 몸 (점점 가늘어지는 마디) + 머리 · 눈 · 벌린 입
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.34, 0.3, 0.2)
+	mat.roughness = 0.45
+	mat.emission_enabled = true
+	mat.emission = Color(0.55, 0.9, 1.0)
+	mat.emission_energy_multiplier = 0.0
+	var belly := StandardMaterial3D.new()
+	belly.albedo_color = Color(0.85, 0.55, 0.22)
+	belly.roughness = 0.5
+	var body := Node3D.new()
+	body.position = Vector3(0, 0.32, 0.25)
+	root.add_child(body)
+	var n := 12
+	var last := Vector3.ZERO
+	for k in n:
+		var t := float(k) / (n - 1)
+		var p := Vector3(0.12 * sin(t * 4.0), 0.75 * sin(t * 1.9), 0.95 * t)
+		var r := lerpf(0.15, 0.11, t)
+		var sm := SphereMesh.new()
+		sm.radius = r
+		sm.height = r * 2.0
+		sm.radial_segments = 10
+		sm.rings = 6
+		var seg := MeshInstance3D.new()
+		seg.mesh = sm
+		seg.material_override = mat
+		seg.position = p
+		body.add_child(seg)
+		last = p
+	var head := Node3D.new()
+	head.position = last + Vector3(0, 0.02, 0.12)
+	head.rotation.x = 0.35
+	body.add_child(head)
+	var hm := SphereMesh.new()
+	hm.radius = 0.5
+	hm.height = 1.0
+	var hmi := MeshInstance3D.new()
+	hmi.mesh = hm
+	hmi.material_override = mat
+	hmi.scale = Vector3(0.24, 0.2, 0.36)
+	head.add_child(hmi)
+	var jaw := MeshInstance3D.new()
+	jaw.mesh = hm
+	jaw.material_override = belly
+	jaw.scale = Vector3(0.2, 0.08, 0.3)
+	jaw.position = Vector3(0, -0.08, 0.03)
+	head.add_child(jaw)
+	var eye_m := _mat(Color(0.02, 0.02, 0.02), 0.2)
+	for x in [-0.09, 0.09]:
+		var em := SphereMesh.new()
+		em.radius = 0.025
+		em.height = 0.05
+		_mi(em, eye_m, Vector3(x, 0.05, 0.1), Basis(), head)
+	# 평소: 천천히 고개를 흔듦
+	var sway := create_tween().set_loops()
+	sway.tween_property(body, "rotation:y", 0.18, 1.6 + i % 3 * 0.2).set_trans(Tween.TRANS_SINE)
+	sway.tween_property(body, "rotation:y", -0.18, 1.6 + i % 3 * 0.2).set_trans(Tween.TRANS_SINE)
+	eel_dens[i] = {"root": root, "body": body, "head": head, "mat": mat}
+
+
+## 곰덫 (쇠 받침 + 톱니 턱 두 개). jaws[0] · [1] 의 rotation:x 로 열고 닫음 (열림 0 · 닫힘 ±1.45)
+func bear_trap() -> Dictionary:
+	var root := Node3D.new()
+	var iron := _mat(Color(0.3, 0.29, 0.28), 0.55, 0.8)
+	var rust := _mat(Color(0.42, 0.24, 0.14), 0.85, 0.3)
+	_mi(_cyl(0.16, 0.18, 0.05, 14), rust, Vector3(0, 0.03, 0), Basis(), root)
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.4
+	ring.outer_radius = 0.46
+	ring.rings = 28
+	ring.ring_segments = 6
+	_mi(ring, iron, Vector3(0, 0.03, 0), Basis(), root)
+	var jaws := []
+	for sgn in [1.0, -1.0]:
+		var pv := Node3D.new()
+		pv.position = Vector3(0, 0.05, 0)
+		root.add_child(pv)
+		for k in 11:
+			var a := PI * (k + 0.5) / 11
+			var p := Vector3(cos(a) * 0.43, 0, sgn * sin(a) * 0.43)
+			_mi(_box(Vector3(0.13, 0.04, 0.05)), iron, p, Basis(Vector3.UP, -sgn * a + PI / 2), pv)
+			_mi(_cyl(0.0, 0.032, 0.11, 5), iron, p + Vector3(0, 0.07, 0) - p.normalized() * 0.02, Basis(), pv)
+		jaws.append(pv)
+	return {"root": root, "jaws": jaws}
+
+
+## 흡혈 해파리 (반투명 분홍 갓 + 늘어진 촉수, 스스로 빛남)
+func jelly() -> Node3D:
+	var root := Node3D.new()
+	var bell := StandardMaterial3D.new()
+	bell.albedo_color = Color(0.95, 0.45, 0.75, 0.55)
+	bell.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bell.emission_enabled = true
+	bell.emission = Color(1.0, 0.3, 0.6)
+	bell.emission_energy_multiplier = 1.2
+	bell.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var sm := SphereMesh.new()
+	sm.radius = 0.45
+	sm.height = 0.5
+	sm.is_hemisphere = true
+	var b := MeshInstance3D.new()
+	b.mesh = sm
+	b.material_override = bell
+	b.name = "Bell"
+	root.add_child(b)
+	var core := SphereMesh.new()
+	core.radius = 0.16
+	core.height = 0.3
+	var cm := StandardMaterial3D.new()
+	cm.albedo_color = Color(1.0, 0.2, 0.35)
+	cm.emission_enabled = true
+	cm.emission = Color(1.0, 0.15, 0.3)
+	cm.emission_energy_multiplier = 2.0
+	_mi(core, cm, Vector3(0, 0.12, 0), Basis(), root)
+	var tent := StandardMaterial3D.new()
+	tent.albedo_color = Color(1.0, 0.6, 0.85, 0.7)
+	tent.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	tent.emission_enabled = true
+	tent.emission = Color(1.0, 0.35, 0.7)
+	for k in 8:
+		var a := TAU * k / 8
+		var pv := Node3D.new()
+		pv.name = "T%d" % k
+		pv.position = Vector3(cos(a) * 0.3, 0.0, sin(a) * 0.3)
+		root.add_child(pv)
+		var L := 0.9 + 0.25 * (k % 3)
+		_mi(_cyl(0.012, 0.02, L, 5), tent, Vector3(0, -L * 0.5, 0), Basis(), pv)
+	return root
 
 
 ## 포탈: 칸 위에 서 있는 빛나는 고리 (말이 그 사이를 지나감) + 반짝이 + 보라 불빛
@@ -3878,7 +4047,10 @@ func set_tile_look(i: int, kind: String) -> void:
 	if not sp.has("top_mi"):
 		return
 	(sp["top_mi"] as MeshInstance3D).material_override = _tile_top_mat(kind, sp.get("ship", false))
-	(sp["body_mi"] as MeshInstance3D).material_override = _mat((TILE_COLORS[kind] as Color).darkened(0.2), 0.25)
+	if sp.get("ship", false):
+		(sp["body_mi"] as MeshInstance3D).material_override = _mat((TILE_COLORS[kind] as Color).darkened(0.2), 0.25)
+	else:
+		(sp["body_mi"] as MeshInstance3D).material_override = _smat(Color(0.6, 0.58, 0.53).lerp((TILE_COLORS[kind] as Color).darkened(0.15), 0.22), "stone", 0.0, 0.3)
 	var body := sp["body_mi"] as Node3D
 	var top := sp["top_mi"] as Node3D
 	for n in [body, top]:

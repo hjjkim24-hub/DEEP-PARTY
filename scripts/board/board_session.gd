@@ -1262,6 +1262,9 @@ func _spawn_trophy() -> void:
 # ── 칸 효과 ──────────────────────────────────────────────────
 func _tile_effect(p: Dictionary) -> void:
 	var tile: int = p["tile"]
+	if _traps.has(tile) and int(_traps[tile]) != int(p["slot"]):
+		await _spring_trap(p, tile)
+		return
 	if _tile_mods.get(tile, "") == "urchin":
 		await _urchin_trap(p)
 		return
@@ -1286,6 +1289,8 @@ func _tile_effect(p: Dictionary) -> void:
 			await _cannon(p)
 		"harpoon":
 			await _harpoon(p)
+		"eel":
+			await _eel(p)
 		_:
 			await get_tree().create_timer(0.3, false).timeout
 
@@ -1398,6 +1403,314 @@ func _harpoon(p: Dictionary, thrown: bool = false) -> void:
 		world.harpoon_reload(tile)
 	_cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.8)
 	await get_tree().create_timer(0.5, false).timeout
+
+
+# ── 곰덫 카드 ─────────────────────────────────────────────
+var _traps := {}        ## 칸 → 놓은 사람 slot (놓은 사람은 걸리지 않음)
+var _trap_marks := {}   ## 칸 → 표시 (덫을 놓은 사람의 화면에만)
+
+
+func _set_trap(p: Dictionary) -> void:
+	# CPU: 하트가 가장 많은 상대가 지나갈 앞길 3 칸째
+	var auto_t := -1
+	var best: Dictionary = {}
+	for q in _others(p):
+		if best.is_empty() or int(q["hearts"]) > int(best["hearts"]):
+			best = q
+	if not best.is_empty():
+		auto_t = int(best["tile"])
+		for k in 3:
+			var nx: Array = world.spaces[auto_t]["next"]
+			if nx.is_empty():
+				break
+			auto_t = int(nx[0])
+	var t: int = await _pick_tile(p, tr("Pick a space to hide the trap!"), auto_t, "48_pick_trap", true)
+	if t < 0:
+		return
+	_traps[t] = int(p["slot"])
+	# 덫 놓은 사람 화면에만 흐릿한 덫 표시
+	if not bool(p["cpu"]) and int(p["slot"]) == GameState.my_slot:
+		var mk := Sprite3D.new()
+		mk.texture = BoardWorld.ICONS["trap"]
+		mk.pixel_size = 0.006
+		mk.modulate = Color(1.0, 0.55, 0.45, 0.75)
+		mk.axis = Vector3.AXIS_Y
+		mk.position = (world.spaces[t]["pos"] as Vector3) + Vector3(0, 0.03, 0)
+		add_child(mk)
+		_trap_marks[t] = mk
+	Audio.play("snap")
+	await get_tree().create_timer(0.4, false).timeout
+
+
+## 덫에 걸림: 쇠 이빨이 철컥 → 하트 -1 + 다음 차례 쉼 (쉬는 동안 덫에 물려 있음)
+func _spring_trap(p: Dictionary, tile: int) -> void:
+	_traps.erase(tile)
+	if _trap_marks.has(tile):
+		(_trap_marks[tile] as Node).queue_free()
+		_trap_marks.erase(tile)
+	var node: Node3D = p["node"]
+	_follow = null
+	_move_camera(node.position + Vector3(0, 0.8, 0), 0.9, 0.5)
+	await get_tree().create_timer(0.5, false).timeout
+	var tr_ := world.bear_trap()
+	var root: Node3D = tr_["root"]
+	root.position = world.spaces[tile]["pos"]
+	root.scale = Vector3.ONE * 1.6
+	add_child(root)
+	shot_hint = "65_trap"
+	var jt := create_tween().set_parallel(true)
+	jt.tween_property(tr_["jaws"][0], "rotation:x", -1.42, 0.07).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_IN)
+	jt.tween_property(tr_["jaws"][1], "rotation:x", 1.42, 0.07).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_IN)
+	await jt.finished
+	Audio.play("snap")
+	_shake_camera(0.5, 0.25)
+	world.bubbles_at(root.position + Vector3(0, 0.3, 0), 14, 0.5, true)
+	p["skip"] = Rules.TRAP_SKIP
+	p["trap_node"] = root
+	await _damage(p, 1)
+	if not bool(p.get("alive", true)) and is_instance_valid(root):
+		root.queue_free()
+
+
+## 덫에 물려 이번 차례를 쉼 → 덫이 풀림
+func _skip_turn(p: Dictionary) -> void:
+	p["skip"] = int(p.get("skip", 0)) - 1
+	_highlight_chip(p)
+	var node: Node3D = p["node"]
+	_follow = null
+	_move_camera(node.position + Vector3(0, 0.8, 0), 1.0, 0.6)
+	await get_tree().create_timer(0.6, false).timeout
+	var mine := not bool(p["cpu"]) and int(p["slot"]) == GameState.my_slot
+	await _banner(tr("YOU SKIP A TURN") if mine else tr("%s SKIPS A TURN") % tr(String(p["name"])), "", 0.9)
+	var root = p.get("trap_node")
+	if int(p["skip"]) <= 0 and root is Node3D and is_instance_valid(root):
+		p.erase("trap_node")
+		Audio.play("creak")
+		var t := create_tween()
+		t.tween_property(root, "scale", Vector3.ONE * 0.01, 0.35).set_delay(0.2)
+		t.tween_callback(root.queue_free)
+		await t.finished
+
+
+# ── 전기뱀장어 칸 ─────────────────────────────────────────────
+## 멈추면 굴 속 뱀장어가 튀어나와 방전: 내 칸 앞뒤 EEL_RANGE 칸씩 (모두 5 칸) 안의 다른 사람 하트 -1
+func _eel_zone(tile: int) -> Array:
+	var seen := {tile: 0}
+	var q := [tile]
+	while not q.is_empty():
+		var a: int = q.pop_front()
+		if int(seen[a]) >= Rules.EEL_RANGE:
+			continue
+		for b in world.spaces[a]["links"]:
+			if not seen.has(int(b)) and world.in_play(int(b)):
+				seen[int(b)] = int(seen[a]) + 1
+				q.append(int(b))
+	return seen.keys()
+
+
+var _fx_rng := RandomNumberGenerator.new()   ## 번개 모양 같은 볼거리만 (게임 결과에 안 씀 · 온라인 순서와 무관)
+
+
+func _eel(p: Dictionary) -> void:
+	var tile := int(p["tile"])
+	var zone := _eel_zone(tile)
+	var victims := []
+	for q in _others(p):
+		if zone.has(int(q["tile"])):
+			victims.append(q)
+	var den: Dictionary = world.eel_dens.get(tile, {})
+	_follow = null
+	_move_camera((world.spaces[tile]["pos"] as Vector3) + Vector3(0, 0.6, 0), 1.7, 0.7)
+	await get_tree().create_timer(0.75, false).timeout
+	# 뱀장어가 몸을 쭉 내밀며 빛을 모음
+	var head_pos: Vector3 = (world.spaces[tile]["pos"] as Vector3) + Vector3(0, 1.2, 0)
+	if not den.is_empty():
+		var body: Node3D = den["body"]
+		var mat: StandardMaterial3D = den["mat"]
+		Audio.play("splash")
+		var lt := create_tween().set_parallel(true)
+		lt.tween_property(body, "scale", Vector3(1.0, 1.15, 1.35), 0.35).set_trans(Tween.TRANS_BACK)
+		lt.tween_property(mat, "emission_energy_multiplier", 3.0, 0.5)
+		await lt.finished
+		head_pos = (den["head"] as Node3D).global_position
+	# 범위 칸들이 파랗게 번쩍
+	var flashes := []
+	for t in zone:
+		var fm := MeshInstance3D.new()
+		var pm := PlaneMesh.new()
+		pm.size = Vector2(BoardWorld.TILE, BoardWorld.TILE)
+		fm.mesh = pm
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		m.albedo_color = Color(0.45, 0.85, 1.0, 0.0)
+		fm.material_override = m
+		fm.position = (world.spaces[t]["pos"] as Vector3) + Vector3(0, 0.03, 0)
+		fm.rotation.y = float(world.spaces[t]["yaw"])
+		add_child(fm)
+		flashes.append(fm)
+		create_tween().tween_property(m, "albedo_color:a", 0.7, 0.25)
+	await get_tree().create_timer(0.3, false).timeout
+	shot_hint = "66_eel_zap"
+	Audio.play("zap")
+	_shake_camera(0.45, 0.5)
+	var glow := OmniLight3D.new()
+	glow.light_color = Color(0.55, 0.85, 1.0)
+	glow.omni_range = 12.0
+	glow.light_energy = 6.0
+	glow.position = head_pos
+	add_child(glow)
+	# 번개: 뱀장어 머리 → 범위 칸마다, 맞는 사람에게는 굵게. 세 번 번쩍임
+	var targets := []
+	for t in zone:
+		targets.append((world.spaces[t]["pos"] as Vector3) + Vector3(0, 0.2, 0))
+	for q in victims:
+		targets.append((q["node"] as Node3D).position + Vector3(0, 0.9, 0))
+	for flick in 3:
+		var bolts := []
+		for k in targets.size():
+			bolts.append(_bolt(head_pos, targets[k], 0.07 if k >= zone.size() else 0.035))
+		for q in victims:
+			var vn: Node3D = q["node"]
+			vn.rotation.z = _fx_rng.randf_range(-0.25, 0.25)
+		await get_tree().create_timer(0.12, false).timeout
+		for b in bolts:
+			b.queue_free()
+		await get_tree().create_timer(0.05, false).timeout
+	for q in victims:
+		(q["node"] as Node3D).rotation.z = 0.0
+	create_tween().tween_property(glow, "light_energy", 0.0, 0.4).finished.connect(glow.queue_free)
+	for fm in flashes:
+		var ft := create_tween()
+		ft.tween_property((fm as MeshInstance3D).material_override, "albedo_color:a", 0.0, 0.4)
+		ft.tween_callback(fm.queue_free)
+	if not den.is_empty():
+		var rt := create_tween().set_parallel(true)
+		rt.tween_property(den["body"], "scale", Vector3.ONE, 0.6).set_trans(Tween.TRANS_SINE)
+		rt.tween_property(den["mat"], "emission_energy_multiplier", 0.0, 0.8)
+	for q in victims:
+		await _damage(q, 1)
+	if victims.is_empty():
+		await get_tree().create_timer(0.5, false).timeout
+
+
+## 번개 한 줄기: 지그재그로 꺾인 빛 막대들 (가는 심 + 바깥 번짐)
+func _bolt(a: Vector3, b: Vector3, w: float) -> Node3D:
+	var root := Node3D.new()
+	add_child(root)
+	var core := StandardMaterial3D.new()
+	core.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	core.albedo_color = Color(0.85, 0.97, 1.0)
+	var halo := StandardMaterial3D.new()
+	halo.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	halo.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	halo.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	halo.albedo_color = Color(0.3, 0.65, 1.0, 0.45)
+	var n := 7
+	var pts := [a]
+	var dir := b - a
+	var side := dir.cross(Vector3.UP).normalized()
+	for k in range(1, n):
+		var f := float(k) / n
+		var off := side * _fx_rng.randf_range(-1.0, 1.0) * 0.35 + Vector3.UP * _fx_rng.randf_range(-0.3, 0.3)
+		pts.append(a + dir * f + off * sin(f * PI) * minf(dir.length() * 0.12, 1.2))
+	pts.append(b)
+	for k in n:
+		var p0: Vector3 = pts[k]
+		var p1: Vector3 = pts[k + 1]
+		var v := p1 - p0
+		var L := maxf(v.length(), 0.01)
+		var bs := Basis(Quaternion(Vector3.UP, v / L))
+		for layer in [[w, core], [w * 3.2, halo]]:
+			var cm := CylinderMesh.new()
+			cm.top_radius = layer[0]
+			cm.bottom_radius = layer[0]
+			cm.height = 1.0
+			cm.radial_segments = 5
+			cm.rings = 1
+			var mi := MeshInstance3D.new()
+			mi.mesh = cm
+			mi.material_override = layer[1]
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mi.transform = Transform3D(bs * Basis.from_scale(Vector3(1, L, 1)), p0 + v * 0.5)
+			root.add_child(mi)
+	return root
+
+
+# ── 흡혈 해파리 카드 ──────────────────────────────────────────
+const JELLY_SCALE := 1.5
+## 고른 사람에게 해파리가 날아가 하트 1 을 빨아 와서 나에게 (방패면 막힘). 내 하트가 가득이면 못 씀
+func _vampire(p: Dictionary) -> void:
+	if int(p["hearts"]) >= Rules.HEARTS_MAX:
+		await _banner(tr("HEARTS FULL"), "", 0.8)
+		return
+	var cands := _others(p)
+	if cands.is_empty():
+		return
+	var target: Dictionary = await _pick_player(p, cands, tr("Pick a player to drain!"), "hearts")
+	var pnode: Node3D = p["node"]
+	var tnode: Node3D = target["node"]
+	var jf := world.jelly()
+	add_child(jf)
+	var a := pnode.position + Vector3(0, 2.2, 0)
+	var b := tnode.position + Vector3(0, 2.0, 0)
+	jf.position = a
+	jf.scale = Vector3.ONE * 0.01
+	var dir := Vector3(b.x - a.x, 0, b.z - a.z).normalized()
+	var side := Vector3(dir.z, 0, -dir.x)
+	var span := Vector2(b.x - a.x, b.z - a.z).length()
+	# 카메라: 처음엔 내 말 곁 → 해파리를 따라 상대 곁으로
+	var off := side * 3.6 - dir * 2.2 + Vector3(0, 1.4, 0)
+	_follow = null
+	_cinematic(a + off, a + Vector3(0, -0.5, 0), 1.0, 0.7)
+	Audio.play("bubbles")
+	create_tween().tween_property(jf, "scale", Vector3.ONE * JELLY_SCALE, 0.4).set_trans(Tween.TRANS_BACK)
+	# 촉수가 물결치듯
+	var swim := create_tween().set_loops()
+	swim.tween_property(jf, "scale", Vector3(1.12, 0.85, 1.12) * JELLY_SCALE, 0.35).set_trans(Tween.TRANS_SINE)
+	swim.tween_property(jf, "scale", Vector3(0.95, 1.08, 0.95) * JELLY_SCALE, 0.35).set_trans(Tween.TRANS_SINE)
+	await get_tree().create_timer(0.7, false).timeout
+	var fly := clampf(span / 14.0, 0.7, 1.8)
+	_cinematic(b + off, b + Vector3(0, -0.7, 0), 1.0, fly)
+	var mt := create_tween()
+	mt.tween_method(func(f: float) -> void: jf.position = a.lerp(b, f) + Vector3(0, sin(f * PI) * 1.2, 0), 0.0, 1.0, fly).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	await mt.finished
+	# 내려앉아 감싸고 빨아들임 (붉게 빛남)
+	shot_hint = "67_vampire"
+	var dn := create_tween()
+	dn.tween_property(jf, "position", tnode.position + Vector3(0, 1.75, 0), 0.3).set_trans(Tween.TRANS_QUAD)
+	await dn.finished
+	Audio.play("portal")
+	var before := int(target["hearts"])
+	await _damage(target, 1)
+	var stolen := int(target["hearts"]) < before
+	if stolen:
+		# 빨간 빛 방울이 해파리를 타고 내 말로
+		var orb := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.16
+		sm.height = 0.32
+		orb.mesh = sm
+		var om := StandardMaterial3D.new()
+		om.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		om.albedo_color = Color(1.0, 0.25, 0.4)
+		orb.material_override = om
+		add_child(orb)
+		var o0 := jf.position
+		var o1 := pnode.position + Vector3(0, 1.2, 0)
+		var ot := create_tween()
+		ot.tween_method(func(f: float) -> void: orb.position = o0.lerp(o1, f) + Vector3(0, sin(f * PI) * 1.5, 0), 0.0, 1.0, fly * 0.8).set_trans(Tween.TRANS_SINE)
+		await ot.finished
+		orb.queue_free()
+		await _heal(p, 1)
+	swim.kill()
+	var gone := create_tween()
+	gone.tween_property(jf, "scale", Vector3.ONE * 0.01, 0.35)
+	gone.tween_callback(jf.queue_free)
+	await gone.finished
+	_cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.8)
+	await get_tree().create_timer(0.4, false).timeout
 
 
 ## 대포 칸: 원하는 상대를 골라 대포를 쏨 → 맞은 상대는 동전 5개를 잃음
@@ -1926,6 +2239,10 @@ func _card_icon(id: String) -> Texture2D:
 			return BoardWorld.ICONS["boss"]
 		"harpoon":
 			return BoardWorld.ICONS["harpoon"]
+		"trap":
+			return BoardWorld.ICONS["trap"]
+		"vampire":
+			return BoardWorld.ICONS["jelly"]
 	return COIN_TEX
 
 
@@ -2079,6 +2396,10 @@ func _apply_card(p: Dictionary, id: String) -> void:
 			await _bait(target)
 		"harpoon":
 			await _harpoon(p, true)
+		"trap":
+			await _set_trap(p)
+		"vampire":
+			await _vampire(p)
 		"trophy_minigame":
 			await _run_minigame(p, true)
 		"trophy_thief":
@@ -2616,11 +2937,14 @@ func _pick_player(p: Dictionary, cands: Array, prompt: String, by: String) -> Di
 
 
 ## 원하는 칸 고르기 (순간이동 카드): 보드 전체를 보여주고 칸을 클릭
-func _pick_tile(p: Dictionary, text: String = "", auto_tile: int = -1, shot: String = "47_pick_tile") -> int:
+func _pick_tile(p: Dictionary, text: String = "", auto_tile: int = -1, shot: String = "47_pick_tile", secret: bool = false) -> int:
 	_follow = null
 	_move_camera(world.overview, world.overview_zoom * 1.06, 1.0)
 	await get_tree().create_timer(1.0, false).timeout
+	# secret: 남이 고르는 칸은 보여 주지 않음 (곰덫)
+	var hide := secret and _ctl(p) != "me"
 	var prompt := _outlined_label(text if text != "" else tr("Click the space you want to warp to!"), 34)
+	prompt.visible = not hide
 	prompt.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	prompt.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	prompt.grow_horizontal = Control.GROW_DIRECTION_BOTH
@@ -2643,7 +2967,8 @@ func _pick_tile(p: Dictionary, text: String = "", auto_tile: int = -1, shot: Str
 	shot_hint = shot
 	if _is_remote(p):
 		var rt := int(await _get_dec(p))
-		_show_pick_marker(rt)
+		if not hide:
+			_show_pick_marker(rt)
 		await get_tree().create_timer(0.6, false).timeout
 		_picked_tile = rt
 	elif _is_auto(p):
@@ -2654,7 +2979,8 @@ func _pick_tile(p: Dictionary, text: String = "", auto_tile: int = -1, shot: Str
 			var keep := _use_aux(p)
 			t = pool[_rng.randi() % pool.size()]
 			_rng = keep
-		_show_pick_marker(t)
+		if not hide:
+			_show_pick_marker(t)
 		await get_tree().create_timer(0.6, false).timeout
 		_picked_tile = t
 	else:

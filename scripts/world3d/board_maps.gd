@@ -153,6 +153,11 @@ static func _sunken_island() -> Dictionary:
 			{"at": Vector2(43, 18), "kind": "harpoon"},
 			{"at": Vector2(-5, 29), "kind": "harpoon"},
 			{"at": Vector2(-8, -28), "kind": "harpoon"},
+			# 전기뱀장어 칸: 멈추면 앞뒤 2칸씩(모두 5칸) 안의 다른 사람에게 감전 → 하트 -1
+			{"at": Vector2(-25, 16), "kind": "eel"},
+			{"at": Vector2(28, 20), "kind": "eel"},
+			{"at": Vector2(-27, -6), "kind": "eel"},
+			{"at": Vector2(24, -28), "kind": "eel"},
 		],
 		"plateaus": [{"c": Vector2(0, -3), "r": Vector2(17, 13), "h": 6.0}, {"c": Vector2(18, -22), "r": Vector2(6.5, 6.0), "h": 3.5}],
 		"chasms": [

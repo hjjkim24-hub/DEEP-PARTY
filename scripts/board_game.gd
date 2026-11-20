@@ -66,6 +66,10 @@ func _game_loop() -> void:
 		for p in _pawns:
 			if not bool(p["alive"]):
 				continue
+			if int(p.get("skip", 0)) > 0:
+				await _skip_turn(p)
+				await _net_sync()
+				continue
 			await _play_turn(p)
 			if _over():
 				break

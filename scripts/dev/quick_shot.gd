@@ -477,6 +477,79 @@ func _run() -> void:
 		print("TUT DONE")
 		get_tree().quit(0)
 		return
+	# attacks: 돌판 칸 모습 + 전기뱀장어 칸 · 곰덫 · 흡혈 해파리
+	if "attacks" in _want:
+		GameState.debug_autoplay = true
+		GameState.selected_mode = GameState.Mode.FREE_FOR_ALL
+		GameState.selected_board = "sunken_island"
+		GameState.players[1] = {"kind": "cpu", "level": 1, "color": 2}
+		GameState.players[2] = {"kind": "cpu", "level": 1, "color": 5}
+		get_tree().change_scene_to_file("res://scenes/board.tscn")
+		var ga: Node = null
+		while ga == null or not ("hold_loop" in ga):
+			await get_tree().process_frame
+			ga = get_tree().current_scene
+		ga.hold_loop = true
+		while not ga._intro_done:
+			await get_tree().process_frame
+		await get_tree().create_timer(3.0).timeout
+		var wa: Node = ga.world
+		var mea: Dictionary = ga._my_pawn()
+		var c1: Dictionary = ga._pawns[1]
+		var c2: Dictionary = ga._pawns[mini(2, ga._pawns.size() - 1)]
+		# 1) 돌판 칸 가까이
+		var st: Vector3 = wa.spaces[wa.start_index]["pos"]
+		ga._cinematic(st + Vector3(4.0, 3.2, 9.0), st + Vector3(0.0, 0.0, 4.5), 1.0, 0.01)
+		await get_tree().create_timer(1.5).timeout
+		await _shot("at_tiles_close")
+		var ch: int = wa.spaces_of_kind("chance")[3]
+		var chp: Vector3 = wa.spaces[ch]["pos"]
+		ga._cinematic(chp + Vector3(1.6, 2.2, 2.4), chp, 1.0, 0.01)
+		await get_tree().create_timer(1.5).timeout
+		await _shot("at_tile_macro")
+		if OS.get_environment("TILESONLY") != "":
+			ga._cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.01)
+			ga._move_camera(wa.overview, wa.overview_zoom * 0.55, 0.01)
+			await get_tree().create_timer(1.5).timeout
+			await _shot("at_tiles_mid")
+			get_tree().quit(0)
+			return
+		# 2) 전기뱀장어: 내 말은 뱀장어 칸, CPU 1 은 2 칸 앞
+		var et: int = wa.spaces_of_kind("eel")[0]
+		mea["tile"] = et
+		(mea["node"] as Node3D).position = ga._spot_on(et, mea)
+		var nt: int = et
+		for k in 2:
+			nt = int(wa.spaces[nt]["links"][0]) if k == 0 else int(wa.spaces[nt]["links"][-1])
+		c1["tile"] = nt
+		(c1["node"] as Node3D).position = ga._spot_on(nt, c1)
+		var dp: Vector3 = (wa.eel_dens[et]["root"] as Node3D).global_position
+		var etp: Vector3 = wa.spaces[et]["pos"]
+		ga._cinematic(dp + (dp - etp).normalized() * 2.0 + Vector3((etp - dp).z, 0, -(etp - dp).x).normalized() * 3.0 + Vector3(0, 2.2, 0), (dp + etp) * 0.5 + Vector3(0, 0.5, 0), 1.0, 0.01)
+		await get_tree().create_timer(1.5).timeout
+		await _shot("at_eel_den")
+		ga._cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.01)
+		ga._eel(mea)
+		await _catch(ga, ["66_eel_zap"], "at_")
+		await get_tree().create_timer(5.0).timeout
+		# 3) 곰덫: CPU 2 가 덫 칸에 멈춤
+		var tt: int = wa.spaces_of_kind("minigame")[5]
+		c2["tile"] = tt
+		(c2["node"] as Node3D).position = ga._spot_on(tt, c2)
+		ga._traps[tt] = 0
+		ga._spring_trap(c2, tt)
+		await _catch(ga, ["65_trap"], "at_")
+		await get_tree().create_timer(0.4).timeout
+		await _shot("at_trap_shut")
+		await get_tree().create_timer(3.0).timeout
+		# 4) 흡혈 해파리
+		mea["hearts"] = 3
+		ga.shot_hint = ""
+		ga._vampire(mea)
+		await _catch(ga, ["67_vampire"], "at_")
+		await get_tree().create_timer(5.0).timeout
+		get_tree().quit(0)
+		return
 	# harpoon: 섬의 작살 칸 (작살포) + 작살 카드(직접 던지기)
 	if "harpoon" in _want:
 		GameState.debug_autoplay = true
