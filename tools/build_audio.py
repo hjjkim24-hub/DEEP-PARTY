@@ -199,6 +199,7 @@ def build_sfx() -> None:
     roar = lowpass(roar, 1800)
     roar = soft_clip(reverb(roar, "big"), 1.6)
     save("roar", roar, -0.5, 0.9)
+    build_kraken()   # 포효는 여기서 더 무섭게 다시 만듦
     # 우르릉: 깊은 곳에서 땅이 울림 (폭발음을 아주 낮게 + 거품)
     rum = mix([(L("25-CC0-bang-sfx/bang_03.ogg", pitch=0.3), 0.0, 1.0),
                (L("25-CC0-bang-sfx/bang_10.ogg", pitch=0.28), 0.25, 0.9),
@@ -218,6 +219,60 @@ def build_sfx() -> None:
                 (L("40-cc0-water-splash-slime-sfx/splash_07.ogg", pitch=0.7, af="atrim=0:0.6"), 0.0, 0.35)])
     rise = soft_clip(norm(trim(rise), -1), 2.0)[: int(1.0 * SR)]
     save("kraken_rise", rise, -1, 0.25)
+
+
+def build_kraken() -> None:
+    """크라켄 등장: 귀엽지 않게 — 더 낮고 거대한 포효 + 웅장하고 어두운 등장 음악"""
+    L = lambda p, **k: load(src("lv", p), **k)
+    # 포효: 짐승 울음을 훨씬 낮게 + 몸통이 울리는 저음 그르렁(직접 합성). 짧고 귀여운 grunt 는 뺌
+    n = int(4.2 * SR)
+    t = np.arange(n) / SR
+    f0 = 44.0 - 8.0 * (t / t[-1])
+    ph = 2 * np.pi * np.cumsum(f0) / SR
+    growl = sum(np.sin(ph * h + h * 0.7) / h for h in range(1, 14))
+    rough = 0.65 + 0.35 * np.sin(2 * np.pi * 9.0 * t + 1.5 * np.sin(2 * np.pi * 2.3 * t))
+    env = np.minimum(1.0, t / 0.45) * np.where(t > 2.4, np.exp(-(t - 2.4) / 0.6), 1.0)
+    rng = np.random.default_rng(3)
+    noise = np.cumsum(rng.standard_normal(n)) * 0.002
+    noise -= np.convolve(noise, np.ones(2205) / 2205, mode="same")
+    body = (growl * rough * 0.5 + noise * 4.0) * env
+    body = np.stack([body, body * 0.96], axis=1).astype(np.float32)
+    body = lowpass(body, 320)
+    roar = mix([(L("80-CC0-creature-sfx-2/roar_05.ogg", pitch=0.34), 0.05, 1.0),
+                (L("80-CC0-creature-sfx-2/roar_04.ogg", pitch=0.30), 0.3, 0.85),
+                (L("80-CC0-creature-SFX/monster_07.ogg", pitch=0.36), 0.15, 0.6),
+                (body, 0.0, 1.1)])
+    roar = lowpass(roar, 1100)
+    roar = soft_clip(reverb(roar, "big"), 1.8)
+    save("roar", roar, -0.5, 1.2)
+
+    # 등장 음악: 웅장한 보스곡 앞부분. 처음엔 물속처럼 먹먹하다가(저역만) 포효·내려침에 맞춰 활짝 열림
+    raw = subprocess.run(["ffmpeg", "-v", "quiet", "-i", os.path.join(FP, "Epic Boss Battle.mp3"), "-t", "26",
+                          "-ac", "2", "-ar", str(SR), "-f", "f32le", "-"], capture_output=True, check=True).stdout
+    x = np.frombuffer(raw, dtype=np.float32).reshape(-1, 2).copy()
+    m = len(x)
+    tt = np.arange(m) / SR
+    cut = np.where(tt < 0.4, 180.0, np.where(tt > 5.4, 16000.0, 180.0 * (16000.0 / 180.0) ** ((tt - 0.4) / 5.0)))
+    a = 1.0 - np.exp(-2 * np.pi * cut / SR)
+    y = np.zeros_like(x)
+    z1 = np.zeros(2, dtype=np.float32)
+    z2 = np.zeros(2, dtype=np.float32)
+    for i in range(m):   # 2단 단극 저역 통과 (주파수가 시간에 따라 올라감)
+        z1 += a[i] * (x[i] - z1)
+        z2 += a[i] * (z1 - z2)
+        y[i] = z2
+    gain = np.clip(0.55 + 0.45 * (tt - 0.4) / 5.0, 0.55, 1.0)
+    y *= gain[:, None]
+    fo = int(5.0 * SR)
+    y[-fo:] *= (np.linspace(1, 0, fo) ** 1.6)[:, None]
+    y[: int(0.3 * SR)] *= np.linspace(0, 1, int(0.3 * SR))[:, None]
+    tmp = os.path.join(MUS_OUT, "_kw.f32")
+    y.astype("<f4").tofile(tmp)
+    subprocess.run(["ffmpeg", "-v", "quiet", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", tmp,
+                    "-af", "loudnorm=I=-14:TP=-1.0:LRA=11", "-ar", str(SR), "-c:a", "libvorbis", "-q:a", "5",
+                    os.path.join(MUS_OUT, "kraken_wake.ogg")], check=True)
+    os.remove(tmp)
+    print("  music kraken_wake  ← Epic Boss Battle (26s, filter sweep)")
 
 
 def build_music() -> None:
@@ -257,5 +312,8 @@ def build_music() -> None:
 
 
 if __name__ == "__main__":
+    if os.environ.get("KRAKEN_ONLY"):
+        build_kraken()
+        sys.exit(0)
     build_sfx()
     build_music()

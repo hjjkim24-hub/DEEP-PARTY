@@ -19,6 +19,7 @@ They were mixed and edited with `tools/build_audio.py`.
 | menu_theme.ogg | Land of Pirates |
 | board_theme.ogg | Aquatic City Vanished |
 | ship_theme.ogg | Evil Incoming |
+| kraken_wake.ogg | Epic Boss Battle (first 26 s, filter sweep) |
 | mg_intro.ogg | Busybody |
 | mg_a.ogg | Going Bananas |
 | mg_c.ogg | Wakka Wakka |

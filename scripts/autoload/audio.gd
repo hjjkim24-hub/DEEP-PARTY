@@ -14,7 +14,9 @@ const TRACKS := {
 	"ship": "res://audio/music/ship_theme.ogg",
 	"mg_intro": "res://audio/music/mg_intro.ogg",
 	"results": "res://audio/music/results.ogg",
+	"kraken_wake": "res://audio/music/kraken_wake.ogg",   ## 크라켄 등장 (한 번만, 반복 없음)
 }
+const ONE_SHOT := ["kraken_wake"]
 ## 미니게임 음악: 게임마다 고유한 곡 audio/music/mg_<id>.ogg (겹치지 않게).
 ## 전용 곡이 없는 새 미니게임만 아래 예비 곡 중 하나를 id 로 골라 씀 (전용 곡들과 겹치지 않는 곡들)
 const MG_TRACKS := ["mg_a", "mg_c", "mg_d", "mg_e", "mg_f"]
@@ -117,7 +119,7 @@ func play_music(fade_time: float = 0.0, track: String = "menu") -> void:
 	var stream := load(path) as AudioStreamOggVorbis
 	if stream == null:
 		return
-	stream.loop = true
+	stream.loop = not (track in ONE_SHOT)
 	_music.stop()
 	_music.stream = stream
 	if fade_time <= 0.05:
@@ -127,6 +129,10 @@ func play_music(fade_time: float = 0.0, track: String = "menu") -> void:
 		_music.volume_db = -40.0
 		_music.play()
 		_fade_music(MUSIC_DB, fade_time)
+
+
+func current_track() -> String:
+	return _track if _music.playing and not _stopping else ""
 
 
 func stop_music(fade_time: float = 0.6) -> void:

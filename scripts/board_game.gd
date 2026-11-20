@@ -1,6 +1,6 @@
 extends "res://scripts/board/board_session.gd"
 ## 진짜 보드 게임 한 판: 크라켄 생존전 (개인전 · 2대2). 로비 → 보드 고르기 → PLAY 로 시작.
-## 각자 하트 3개. 라운드마다 모두 한 번씩 주사위 → 칸 효과. 라운드가 끝날 때마다:
+## 각자 하트 7개. 라운드마다 모두 한 번씩 주사위 → 칸 효과. 라운드가 끝날 때마다:
 ##   내려칠 때가 된 칸(붉게 빛나고 옆에서 촉수가 꿈틀)을 내려침 → 거기 서 있으면 하트 -1
 ##   기한이 끝난 독가시 칸 · 상점 가격 폭등이 풀림
 ##   탈락한 사람은 크라켄의 부하가 되어 다음 라운드에 내려칠 칸을 하나씩 고름
@@ -47,7 +47,6 @@ func _after_intro() -> void:
 	else:
 		# 크라켄은 아직 섬 밑에서 잠들어 있음 → 주사위를 두 번 굴린 뒤 깨어남
 		_move_camera(world.overview, world.overview_zoom, 1.0)
-		await _banner(tr("SOMETHING SLEEPS BELOW..."), tr("The kraken wakes after %d rolls. Grab coins while you can!") % Rules.KRAKEN_WAKE_ROUND, 1.8)
 	await _game_loop()
 
 
@@ -129,6 +128,9 @@ func _kraken_wakes() -> void:
 		return
 	_follow = null
 	var lair := world.kraken_root.position
+	# 보드 음악을 끊고 웅장하고 어두운 등장 음악 (처음엔 물속처럼 먹먹하다가 포효에 맞춰 터짐)
+	await Audio.stop_music(0.8)
+	Audio.play_music(0.0, "kraken_wake")
 	# 판 북쪽 끝에서 올려다보는 연출: 깊은 곳에서 거대한 머리와 눈이 솟아오름
 	var eye := world.kraken_eye_pos()
 	_move_camera(Vector3(lair.x, 6.0, -world.half_d + 2.0), 3.0, 1.6)
@@ -141,18 +143,17 @@ func _kraken_wakes() -> void:
 	Audio.play("roar")
 	_shake_camera(0.6, 0.8)
 	# 촉수들이 판을 콱 움켜쥠
-	await get_tree().create_timer(1.85, false).timeout
-	Audio.play("kraken_rise")
-	await get_tree().create_timer(0.2, false).timeout
+	await get_tree().create_timer(2.05, false).timeout
+	Audio.play("kraken_rumble")
 	Audio.play("kraken_slam")
 	_shake_camera(0.9, 0.9)
 	await get_tree().create_timer(1.6, false).timeout
 	shot_hint = "34_kraken_awakens"
-	await _banner(tr("THE KRAKEN AWAKENS!"), tr("Dodge its tentacles. Last one standing wins!"), 1.8)
+	await _banner(tr("THE KRAKEN AWAKENS!"), "", 1.8)
 	# 연출 카메라에서 판 전체 보기로 (크라켄이 판을 움켜쥔 모습이 한눈에), 그다음 첫 차례로
 	_move_camera(world.overview, world.overview_zoom, 0.01)
 	_cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 1.6)
-	await _banner(tr("EVERY 2 ROUNDS..."), tr("...the kraken takes its turn. Stay alert!"), 1.4)
+	await get_tree().create_timer(1.0, false).timeout
 
 
 ## 깨어나기 전 라운드 끝: 땅이 우르르 · 북쪽 골짜기에서 거품
@@ -167,7 +168,7 @@ func _kraken_stirs() -> void:
 	_shake_camera(0.18, 1.4)
 	for k in 3:
 		world.bubbles_at(Vector3(lair.x + (k - 1) * 3.0, 0.3, -world.half_d + 3.0), 16, 0.7, true)
-	await _banner(tr("THE ISLAND TREMBLES..."), tr("Something huge is waking up."), 1.4)
+	await get_tree().create_timer(1.6, false).timeout
 	_move_camera(world.overview, world.overview_zoom, 1.0)
 	await get_tree().create_timer(0.6, false).timeout
 
@@ -185,6 +186,10 @@ func _kraken_phase(r: int) -> void:
 		_attack_cd = Rules.KRAKEN_ATTACK_EVERY
 		_update_round_label()
 		await _kraken_turn(r)
+		# 첫 차례가 끝나면 등장 음악을 서서히 내리고 원래 음악으로 (배로 끌려갔으면 배 음악이 이미 나옴)
+		if Audio.current_track() == "kraken_wake":
+			await Audio.stop_music(1.5)
+			Audio.play_music(2.0, "board")
 		return
 	# 크라켄의 배 위: 공격 없음. 때가 되면 섬으로 돌아가고, 그때부터 다음 크라켄 차례를 다시 셈
 	if world.on_ship:
@@ -305,7 +310,7 @@ func _expire_effects(r: int) -> void:
 	if _surge_until >= 0 and _surge_until <= r:
 		_surge_until = -1
 		shop_price_mult = 1
-		await _banner(tr("THE MERCHANT CALMS DOWN"), tr("Shop prices are back to normal."), 0.9)
+		await _banner(tr("THE MERCHANT CALMS DOWN"), "", 0.9)
 
 
 ## 크라켄 차례: 행동 하나를 무작위로
@@ -661,7 +666,7 @@ func _kraken_ship(r: int) -> void:
 	_legend_add("cannon")
 	_update_round_label()
 	shot_hint = "60_kraken_ship"
-	await _banner(tr("THE KRAKEN'S SHIP"), tr("Back to the island after %d rounds.") % Rules.SHIP_ROUNDS, 1.6)
+	await _banner(tr("THE KRAKEN'S SHIP"), "", 1.4)
 
 
 ## 배에서 섬으로: 갑판에 포탈이 열려 떨어짐 → 원래 있던 칸 위 하늘에서 내려앉음

@@ -1254,7 +1254,7 @@ func _spawn_trophy() -> void:
 	world.show_trophy(t)
 	Audio.play("start")
 	shot_hint = "40_trophy_spawn"
-	await _banner(tr("A TROPHY APPEARED!"), tr("Pass by and buy it for %d coins!") % Rules.TROPHY_PRICE, 1.4)
+	await _banner(tr("A TROPHY APPEARED!"), "", 1.2)
 
 
 # ── 칸 효과 ──────────────────────────────────────────────────
@@ -1283,7 +1283,7 @@ func _tile_effect(p: Dictionary) -> void:
 		"cannon":
 			await _cannon(p)
 		_:
-			await _banner("...", tr("Nothing happens."), 0.6)
+			await get_tree().create_timer(0.3, false).timeout
 
 
 ## 대포 칸: 원하는 상대를 골라 대포를 쏨 → 맞은 상대는 동전 5개를 잃음
@@ -1385,7 +1385,7 @@ func _kraken_chest(p: Dictionary) -> void:
 		Audio.play("roar")
 		_shake_camera(0.55, 0.45)
 		shot_hint = "62d_chest_kraken"
-		await _banner(tr("THE KRAKEN!"), tr("It takes your bet and bites you."), 1.1)
+		await _banner(tr("THE KRAKEN!"), "", 1.0)
 		await _damage(p, 1)
 
 
@@ -1567,7 +1567,7 @@ func _eliminate(p: Dictionary) -> void:
 	await world.tentacle_drag(node)
 	_refresh_chip(p)
 	var mine := not bool(p["cpu"]) and int(p["slot"]) == GameState.my_slot
-	await _banner(tr("YOU'RE GONE!") if mine else tr("%s IS GONE!") % tr(String(p["name"])), tr("Now you serve the kraken..."), 1.2)
+	await _banner(tr("YOU'RE GONE!") if mine else tr("%s IS GONE!") % tr(String(p["name"])), "", 1.2)
 
 
 ## 화면 흔들기 (촉수가 내려칠 때)
@@ -1650,7 +1650,7 @@ func _run_minigame(lander: Dictionary, trophy: bool) -> void:
 			if q == lander:
 				reward += Rules.MINIGAME_LANDER_BONUS
 		v.add_child(_result_row(k + 1, q, reward, got_trophy))
-	if not trophy and Rules.MINIGAME_LANDER_BONUS > 0:
+	if false:   # 설명 글은 뺌 (보너스는 그대로 들어감)
 		var note := Label.new()
 		note.text = tr("Whoever landed on the space gets +%d bonus coins.") % Rules.MINIGAME_LANDER_BONUS
 		note.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
