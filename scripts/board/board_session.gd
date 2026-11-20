@@ -1037,6 +1037,16 @@ var _item_btn: Button
 var _bag_open := false
 
 
+## 한국어가 글자 중간에서 줄바뀌지 않게: 띄어쓰기 사이 글자들을 '단어 이음표(U+2060)'로 묶음
+static func _keep_words(t: String) -> String:
+	var out := ""
+	for i in t.length():
+		out += t[i]
+		if i + 1 < t.length() and t[i] != " " and t[i + 1] != " " and t[i] != "\n" and t[i + 1] != "\n":
+			out += char(0x2060)
+	return out
+
+
 ## 아이템을 쓴 뒤 다시 주사위 앞으로
 func _back_to_dice(p: Dictionary) -> void:
 	var node: Node3D = p["node"]
@@ -1340,7 +1350,7 @@ func _open_bag(p: Dictionary) -> void:
 			var why := ""
 			if not ok:
 				why = "\n" + tr("Works automatically") if id == "oxygen" else "\n" + tr("Can't use it now")
-			desc.text = tr(String(Rules.ITEMS[id]["text"])) + why)
+			desc.text = _keep_words(tr(String(Rules.ITEMS[id]["text"]))) + why)
 	var done := func() -> void:
 		_bag_open = false
 		var t := create_tween()
@@ -2924,6 +2934,37 @@ func _open_shop(p: Dictionary) -> void:
 	stock.sort_custom(func(a: String, b: String) -> bool: return Rules.ITEM_ORDER.find(a) < Rules.ITEM_ORDER.find(b))
 	# 사진 위에 마우스를 올리면 아래 계산대에 설명
 	var desc_ref := [null]
+	# 설명 말풍선: 마우스를 올린 아이템 바로 위에 뜸
+	var tip := PanelContainer.new()
+	var tsb := StyleBoxFlat.new()
+	tsb.bg_color = Color(0.1, 0.055, 0.02, 0.95)
+	tsb.border_color = Color(0.95, 0.75, 0.4)
+	tsb.set_border_width_all(3)
+	tsb.set_corner_radius_all(14)
+	tsb.content_margin_left = 18
+	tsb.content_margin_right = 18
+	tsb.content_margin_top = 10
+	tsb.content_margin_bottom = 12
+	tsb.shadow_color = Color(0, 0, 0, 0.5)
+	tsb.shadow_size = 10
+	tip.add_theme_stylebox_override("panel", tsb)
+	tip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tip.z_index = 20
+	tip.visible = false
+	var tipv := VBoxContainer.new()
+	tipv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tipv.add_theme_constant_override("separation", 4)
+	tip.add_child(tipv)
+	var tip_t := Label.new()
+	tip_t.add_theme_font_size_override("font_size", 24)
+	tip_t.add_theme_color_override("font_color", Color(1.0, 0.86, 0.5))
+	tipv.add_child(tip_t)
+	var tip_d := Label.new()
+	tip_d.autowrap_mode = TextServer.AUTOWRAP_WORD    # 낱말 단위로만 줄바꿈 (한국어가 글자 중간에서 끊기지 않게)
+	tip_d.custom_minimum_size = Vector2(340, 0)
+	tip_d.add_theme_font_size_override("font_size", 21)
+	tip_d.add_theme_color_override("font_color", Color(1.0, 0.97, 0.9))
+	tipv.add_child(tip_d)
 	var bag_ref := [null]
 	_shop_buys = []
 	var refresh := func() -> void:
@@ -2985,11 +3026,22 @@ func _open_shop(p: Dictionary) -> void:
 		_shop_buys.append([buy, gid, cost])
 		if _shop_buy == null:
 			_shop_buy = buy
+		var tip_x := x + 115.0
+		var tip_y := y
 		var show_desc := func() -> void:
-			if desc_ref[0]:
-				(desc_ref[0] as Label).text = tr(String(it["text"]))
+			tip_t.text = tr(String(it["title"]))
+			tip_d.text = _keep_words(tr(String(it["text"])))
+			tip.size = Vector2.ZERO
+			tip.visible = true
+			await get_tree().process_frame
+			if is_instance_valid(tip):
+				tip.position = Vector2(clampf(tip_x - tip.size.x * 0.5, 0.0, 1100.0 - tip.size.x), tip_y - tip.size.y - 6.0)
+		var hide_desc := func() -> void:
+			tip.visible = false
 		ic.mouse_entered.connect(show_desc)
 		buy.mouse_entered.connect(show_desc)
+		ic.mouse_exited.connect(hide_desc)
+		buy.mouse_exited.connect(hide_desc)
 		buy.pressed.connect(func() -> void:
 			if buy.disabled:
 				return
@@ -3013,6 +3065,7 @@ func _open_shop(p: Dictionary) -> void:
 
 	# 계산대 + 안내 + 닫기
 	stall.add_child(_tex_rect(SHOP_TEX["counter"], Vector2(30, 780), Vector2(1180, 180)))
+	wall_box.add_child(tip)
 	var msg_text := "Point at an item to see what it does"
 	if shop_price_mult > 1:
 		msg_text = "The kraken scared the merchant — prices are doubled!"
@@ -3055,11 +3108,13 @@ func _open_shop(p: Dictionary) -> void:
 	title.text = "SHOP"
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	title.add_theme_font_size_override("font_size", 64)
-	# 나무에 새긴 글씨처럼: 어두운 글씨 + 아래쪽 밝은 테
-	title.add_theme_color_override("font_color", Color(0.2, 0.1, 0.04))
-	title.add_theme_color_override("font_shadow_color", Color(1.0, 0.85, 0.6, 0.35))
+	# 나무 간판 위에 또렷하게: 흰 글씨 + 짙은 갈색 굵은 테두리 + 그림자
+	title.add_theme_color_override("font_color", Color(1.0, 0.98, 0.93))
+	title.add_theme_color_override("font_outline_color", Color(0.16, 0.08, 0.03))
+	title.add_theme_constant_override("outline_size", 16)
+	title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.55))
 	title.add_theme_constant_override("shadow_offset_x", 0)
-	title.add_theme_constant_override("shadow_offset_y", 3)
+	title.add_theme_constant_override("shadow_offset_y", 5)
 	sh.add_child(title)
 
 	var lamps := []

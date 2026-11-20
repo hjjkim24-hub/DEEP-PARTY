@@ -134,7 +134,8 @@ static func _lathe(profile: Array, seg := 32) -> ArrayMesh:
 			var u1 := float(k + 1) / seg
 			var v0 := float(i) / (profile.size() - 1)
 			var v1 := float(i + 1) / (profile.size() - 1)
-			for q in [[p00, u0, v0], [p10, u0, v1], [p11, u1, v1], [p00, u0, v0], [p11, u1, v1], [p01, u1, v0]]:
+			# 윤곽을 아래→위로 주면 바깥을 보는 면이 되도록 감는 순서
+			for q in [[p00, u0, v0], [p11, u1, v1], [p10, u0, v1], [p00, u0, v0], [p01, u1, v0], [p11, u1, v1]]:
 				st.set_uv(Vector2(q[1], q[2]))
 				st.add_vertex(q[0])
 	st.generate_normals()
@@ -254,8 +255,8 @@ static func _shield() -> Node3D:
 
 ## 따개비 하나 (반지름 1 · 높이 1 기준): 넓은 밑동 · 가파른 옆면(7 조각 판) · 꼭대기 분화구
 static func _barnacle_mesh() -> ArrayMesh:
-	return _lathe([Vector2(0.0, 0.6), Vector2(0.22, 0.66), Vector2(0.3, 0.9), Vector2(0.36, 0.98), Vector2(0.42, 0.95),
-		Vector2(0.55, 0.82), Vector2(0.8, 0.5), Vector2(0.97, 0.18), Vector2(1.0, 0.0)], 7)
+	return _lathe([Vector2(1.0, 0.0), Vector2(0.97, 0.18), Vector2(0.8, 0.5), Vector2(0.55, 0.82), Vector2(0.42, 0.95),
+		Vector2(0.36, 0.98), Vector2(0.3, 0.9), Vector2(0.22, 0.66), Vector2(0.0, 0.6)], 7)
 
 
 # ── 추가 주사위: 손때 묻은 상아 주사위 (1 · 2 · 3 눈이 두 번씩), 모서리 둥글게 ─────
@@ -335,7 +336,7 @@ static func _scroll() -> Node3D:
 static func _conch() -> Node3D:
 	var root := Node3D.new()
 	var body := Node3D.new()
-	body.rotation = Vector3(0.0, -0.35, 1.25)     # 해변에 누운 소라: 나선탑은 왼쪽 위, 분홍 입구는 비스듬히
+	body.rotation = Vector3(0.0, 0.25, 1.22)     # 해변에 누운 소라: 나선탑은 왼쪽 위, 분홍 입구는 비스듬히
 	body.position = Vector3(0.1, 0.12, 0)
 	root.add_child(body)
 	var turns := 5.0
@@ -382,7 +383,7 @@ static func _conch() -> Node3D:
 				if inner:
 					quad = [[ua, va], [ub, vb], [ub, va], [ua, va], [ua, vb], [ub, vb]]
 				for q in quad:
-					st.set_color(Color(0.84, 0.52, 0.46) if inner else col_at.call(q[0], q[1]))
+					st.set_color(Color(0.95, 0.6, 0.52) if inner else col_at.call(q[0], q[1]))
 					st.set_uv(Vector2(q[1] / TAU, q[0] / TAU))
 					st.add_vertex(pos_at.call(q[0], q[1], inner))
 		st.generate_normals()
@@ -404,8 +405,12 @@ static func _conch() -> Node3D:
 			m.normal_scale = 0.18
 			m.uv1_scale = Vector3(3, 2, 1)
 		else:
+			# 입구 안쪽: 매끈한 살구빛 자개 — 그늘 속에서도 보이게 은은하게 빛을 머금음
 			m.clearcoat_enabled = true
-			m.clearcoat = 0.3
+			m.clearcoat = 0.5
+			m.emission_enabled = true
+			m.emission = Color(0.85, 0.45, 0.38)
+			m.emission_energy_multiplier = 0.55
 		var mi := MeshInstance3D.new()
 		mi.mesh = st.commit()
 		mi.material_override = m
@@ -432,40 +437,99 @@ static func _conch() -> Node3D:
 	return root
 
 
-# ── 산소통: 노랗게 칠한 강철 잠수통 (칠 벗겨짐) + 크롬 밸브 · 손잡이 + 압력계 + 검은 고무 띠 ─────
+# ── 산소통: 진짜 스쿠버 탱크 — 노란 도장 강철 실린더(둥근 어깨) · 흰 라벨 띠 · 검은 고무 부츠
+##    꼭대기엔 크롬 밸브(검은 손잡이 바퀴) · 1단 레귤레이터에서 나온 호스가 바닥의 압력 게이지로
 static func _oxygen() -> Node3D:
 	var root := Node3D.new()
-	var paint := _grain(Color(0.92, 0.68, 0.08), 0.38, Vector2(2, 2), 0.18, 0.25, 0.25, 61)
-	var prof := [Vector2(0.0, 0.0), Vector2(0.17, 0.0), Vector2(0.19, 0.03), Vector2(0.2, 0.08), Vector2(0.2, 0.72)]
-	for k in 7:
-		var a := PI * 0.5 * (k + 1) / 7.0
-		prof.append(Vector2(0.2 * cos(a) + 0.0, 0.72 + 0.16 * sin(a)))
-	_mi(_lathe(prof, 36), paint, Vector3.ZERO, root)
-	var rubber := _mat(Color(0.06, 0.06, 0.07), 0.8)
-	# 고무 띠: 통 표면에 딱 붙은 얇은 띠 (같은 회전체로 반지름만 아주 조금 크게)
-	for y in [0.18, 0.56]:
-		_mi(_lathe([Vector2(0.2005, y - 0.032), Vector2(0.207, y - 0.026), Vector2(0.207, y + 0.026), Vector2(0.2005, y + 0.032)], 36), rubber, Vector3.ZERO, root)
-	var chrome := _mat(Color(0.86, 0.87, 0.9), 0.12, 1.0)
-	_mi(_cyl(0.05, 0.06, 0.1, 16), chrome, Vector3(0, 0.92, 0), root)
-	_mi(_cyl(0.045, 0.045, 0.16, 16), chrome, Vector3(0, 1.0, 0), root, Basis(Vector3(0, 0, 1), PI * 0.5))
-	_mi(_torus(0.04, 0.07, 20), _mat(Color(0.1, 0.1, 0.12), 0.6), Vector3(0, 1.08, 0), root)
-	# 압력계: 크롬 테 + 흰 판 + 바늘 + 유리
+	var tank := Node3D.new()
+	tank.rotation = Vector3(0, 0.0, 0.0)
+	root.add_child(tank)
+	var paint := _grain(Color(0.95, 0.72, 0.06), 0.32, Vector2(2, 2), 0.12, 0.2, 0.35, 61)
+	paint.clearcoat_enabled = true
+	paint.clearcoat = 0.6
+	paint.clearcoat_roughness = 0.25
+	var R := 0.2
+	var prof := [Vector2(0.0, 0.03), Vector2(0.14, 0.03), Vector2(0.185, 0.05), Vector2(R, 0.1), Vector2(R, 0.74)]
+	for k in 10:   # 둥근 어깨 → 목
+		var a := PI * 0.5 * (k + 1) / 10.0
+		prof.append(Vector2(lerpf(R, 0.06, sin(a)) , 0.74 + 0.15 * sin(a) + 0.0 * k))
+	prof.append(Vector2(0.06, 0.92))
+	prof.append(Vector2(0.05, 0.94))
+	_mi(_lathe(prof, 48), paint, Vector3.ZERO, tank)
+	# 흰 라벨 띠 (OXYGEN · 200 BAR)
+	var label := _mat(Color.WHITE, 0.5)
+	label.albedo_texture = load("res://textures/ui/items/tank_label.png")
+	label.uv1_scale = Vector3(-1, -1, 1)     # 회전체 UV 방향에 맞춰 글씨를 바로 세움
+	var lb := _lathe([Vector2(R + 0.0015, 0.36), Vector2(R + 0.0015, 0.52)], 48)
+	_mi(lb, label, Vector3.ZERO, tank, Basis(Vector3.UP, PI * 0.55))
+	# 검은 고무 부츠 (바닥) + 물 빠지는 구멍
+	var rubber := _grain(Color(0.07, 0.07, 0.08), 0.85, Vector2(4, 4), 0.25, 0.6, 0.0, 62)
+	_mi(_lathe([Vector2(0.0, 0.0), Vector2(R + 0.018, 0.0), Vector2(R + 0.018, 0.13), Vector2(R + 0.006, 0.15)], 8), rubber, Vector3.ZERO, tank, Basis(Vector3.UP, PI / 8))
+	var hole := _mat(Color(0.0, 0.0, 0.0), 1.0)
+	for k in 8:
+		var a := TAU * k / 8 + PI / 8
+		_mi(_cyl(0.015, 0.015, 0.01, 8), hole, Vector3(cos(a) * (R + 0.017), 0.06, sin(a) * (R + 0.017)), tank, Basis(Quaternion(Vector3.UP, Vector3(cos(a), 0, sin(a)))))
+	# 크롬 밸브: 목 나사부 · 몸통 · 출구 · 손잡이 바퀴
+	var chrome := _mat(Color(0.88, 0.89, 0.92), 0.08, 1.0)
+	_mi(_cyl(0.05, 0.055, 0.06, 20), chrome, Vector3(0, 0.97, 0), tank)
+	var vb := BoxMesh.new()
+	vb.size = Vector3(0.1, 0.11, 0.09)
+	_mi(vb, chrome, Vector3(0, 1.05, 0), tank)
+	_mi(_cyl(0.035, 0.035, 0.1, 18), chrome, Vector3(0.09, 1.06, 0), tank, Basis(Vector3(0, 0, 1), PI * 0.5))
+	_mi(_cyl(0.02, 0.02, 0.08, 14), chrome, Vector3(0, 1.14, 0), tank)
+	var knob := _mat(Color(0.05, 0.05, 0.06), 0.55)
+	_mi(_cyl(0.055, 0.055, 0.035, 24), knob, Vector3(0, 1.19, 0), tank)
+	for k in 12:   # 손잡이 바퀴의 미끄럼 방지 돌기
+		var a := TAU * k / 12
+		_mi(_cyl(0.008, 0.008, 0.036, 6), knob, Vector3(cos(a) * 0.056, 1.19, sin(a) * 0.056), tank)
+	# 1단 레귤레이터 (출구에 물린 무광 은색 덩어리)
+	var steel := _mat(Color(0.55, 0.56, 0.58), 0.35, 0.9)
+	_mi(_cyl(0.05, 0.05, 0.09, 20), steel, Vector3(0.18, 1.06, 0), tank, Basis(Vector3(0, 0, 1), PI * 0.5))
+	_mi(_sph(0.045, 0.06, 14), steel, Vector3(0.22, 1.06, 0), tank)
+	# 호스: 레귤레이터에서 늘어져 바닥의 압력 게이지까지 (검은 고무 호스)
+	var hose := _mat(Color(0.06, 0.06, 0.07), 0.6)
+	var p0 := Vector3(0.24, 1.04, 0.0)
+	var c1 := Vector3(0.45, 0.95, 0.05)
+	var c2 := Vector3(0.48, 0.15, 0.25)
+	var p3 := Vector3(0.36, 0.05, 0.36)
+	var prev := p0
+	for k in range(1, 30):
+		var t := float(k) / 29
+		var q := p0 * pow(1 - t, 3) + c1 * 3 * t * pow(1 - t, 2) + c2 * 3 * t * t * (1 - t) + p3 * pow(t, 3)
+		var v := q - prev
+		_mi(_cyl(0.017, 0.017, v.length() * 1.15, 10), hose, prev + v * 0.5, tank, Basis(Quaternion(Vector3.UP, v.normalized())))
+		prev = q
+	# 압력 게이지 (콘솔): 검은 고무 테 · 흰 눈금판 · 빨간 구역 · 바늘 · 유리
 	var g := Node3D.new()
-	g.position = Vector3(0.14, 1.0, 0)
-	g.rotation = Vector3(0, 0, -PI * 0.5)
-	root.add_child(g)
-	_mi(_cyl(0.07, 0.07, 0.04, 24), chrome, Vector3.ZERO, g)
-	_mi(_cyl(0.058, 0.058, 0.005, 24), _mat(Color(0.95, 0.95, 0.92), 0.5), Vector3(0, 0.021, 0), g)
-	var nd := BoxMesh.new()
-	nd.size = Vector3(0.006, 0.004, 0.05)
-	_mi(nd, _mat(Color(0.8, 0.05, 0.05), 0.5), Vector3(0.01, 0.025, 0.012), g, Basis(Vector3.UP, 0.7))
-	_mi(_cyl(0.06, 0.06, 0.004, 24), _glass(Color.WHITE), Vector3(0, 0.026, 0), g)
-	# 긁힌 자국 (칠 벗겨져 쇠가 보임)
-	var bare := _mat(Color(0.55, 0.55, 0.56), 0.4, 0.9)
-	for k in 4:
+	g.position = Vector3(0.36, 0.05, 0.42)
+	g.rotation = Vector3(-1.15, 0.35, 0)
+	tank.add_child(g)
+	_mi(_cyl(0.085, 0.09, 0.05, 28), hose, Vector3.ZERO, g)
+	var face_m := _mat(Color(0.96, 0.96, 0.93), 0.4)
+	_mi(_cyl(0.07, 0.07, 0.004, 28), face_m, Vector3(0, 0.026, 0), g)
+	var red := _mat(Color(0.85, 0.1, 0.08), 0.5)
+	for k in 5:   # 빨간 구역 (아래쪽 끝)
+		var a := -2.2 - k * 0.12
 		var bm := BoxMesh.new()
-		bm.size = Vector3(0.004, 0.04 + k * 0.02, 0.012)
-		_mi(bm, bare, Vector3(cos(k * 1.3) * 0.201, 0.3 + k * 0.08, sin(k * 1.3) * 0.201), root, Basis(Vector3.UP, -k * 1.3))
+		bm.size = Vector3(0.012, 0.003, 0.016)
+		_mi(bm, red, Vector3(cos(a) * 0.055, 0.029, sin(a) * 0.055), g, Basis(Vector3.UP, -a))
+	var tick := _mat(Color(0.1, 0.1, 0.1), 0.5)
+	for k in 9:
+		var a := -2.2 + k * 0.55
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.004, 0.003, 0.014)
+		_mi(bm, tick, Vector3(cos(a) * 0.057, 0.029, sin(a) * 0.057), g, Basis(Vector3.UP, -a + PI * 0.5))
+	var nd := BoxMesh.new()
+	nd.size = Vector3(0.006, 0.004, 0.055)
+	_mi(nd, red, Vector3(0.012, 0.032, -0.012), g, Basis(Vector3.UP, 0.8))
+	_mi(_cyl(0.071, 0.071, 0.004, 28), _glass(Color.WHITE), Vector3(0, 0.034, 0), g)
+	# 쓸린 자국 (칠이 벗겨진 금속)
+	var bare := _mat(Color(0.6, 0.6, 0.62), 0.35, 0.9)
+	for k in 6:
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.003, 0.03 + (k % 3) * 0.025, 0.01)
+		var a := k * 1.05 + 0.3
+		_mi(bm, bare, Vector3(cos(a) * (R + 0.001), 0.22 + k * 0.07, sin(a) * (R + 0.001)), tank, Basis(Vector3.UP, -a) * Basis(Vector3(1, 0, 0), 0.3 * (k % 2)))
 	return root
 
 
