@@ -200,15 +200,17 @@ func _exit_tree() -> void:
 func play_ambience(amb_name: String, db: float = -10.0, fade_time: float = 1.5) -> void:
 	if _amb_tween:
 		_amb_tween.kill()
-	_amb_tween = create_tween()
 	if amb_name == "" or not AMBIENCE.has(amb_name):
+		# 끌 때: 재생 중일 때만 페이드 (빈 트윈을 만들면 오류)
 		if _amb.playing:
+			_amb_tween = create_tween()
 			_amb_tween.tween_property(_amb, "volume_db", -60.0, fade_time)
 			_amb_tween.tween_callback(_amb.stop)
 		return
 	var st := load(AMBIENCE[amb_name]) as AudioStreamWAV
 	if st == null:
 		return
+	_amb_tween = create_tween()
 	st = st.duplicate() as AudioStreamWAV
 	st.loop_mode = AudioStreamWAV.LOOP_FORWARD
 	st.loop_begin = 0
