@@ -23,6 +23,16 @@ const HEART_TEX := preload("res://textures/ui/coop/heart.png")
 const HEART_EMPTY_TEX := preload("res://textures/ui/coop/heart_empty.png")
 const POTION_TEX := preload("res://textures/ui/coop/potion.png")
 const SHIELD_TEX := preload("res://textures/ui/coop/shield.png")
+## 아이템 사진 (tools/render_item_icons.gd 로 3D 모델을 찍은 것)
+const ITEM_TEX := {
+	"potion": preload("res://textures/ui/items/potion.png"),
+	"shield": preload("res://textures/ui/items/shield.png"),
+	"dice": preload("res://textures/ui/items/dice.png"),
+	"scroll": preload("res://textures/ui/items/scroll.png"),
+	"conch": preload("res://textures/ui/items/conch.png"),
+	"oxygen": preload("res://textures/ui/items/oxygen.png"),
+	"net": preload("res://textures/ui/items/net.png"),
+}
 const GOLD := Color("ffcf4a")
 const DICE_ATLAS := preload("res://textures/dice/dice_atlas.png")
 const SHOP_TEX := {
@@ -111,6 +121,7 @@ var _dialog_buttons: Array = []
 var _dialog_panel: Control
 var _dialog_choice := -1
 var _picking_tile := false
+var _pick_allowed: Array = []   ## 비어 있지 않으면 이 칸들만 고를 수 있음 (덫 해체)
 var _picked_tile := -1
 var _hover_tile := -1
 var _pick_marker: MeshInstance3D
@@ -186,6 +197,9 @@ func _setup_pawns() -> void:
 		d["trophies"] = 0
 		d["hearts"] = Rules.HEARTS_START
 		d["shield"] = 0
+		d["items"] = []
+		if OS.is_debug_build() and OS.get_environment("BOARD_TEST_ITEMS") != "":
+			d["items"] = Array(OS.get_environment("BOARD_TEST_ITEMS").split(","))
 		d["alive"] = true
 		d["team"] = ("A" if int(d["slot"]) < 2 else "B") if _team_mode() else ""
 	var spots: Array = world.start_spots(list.size())
@@ -566,6 +580,17 @@ func _build_ui() -> void:
 	_click_hint = _outlined_label("CLICK!", 30)
 	_click_hint.visible = false
 	root.add_child(_click_hint)
+	# [아이템 사용]: 내 차례 · 주사위 굴리기 전에만 보임 (화면 아래 가운데)
+	_item_btn = _glass_button("USE ITEM")
+	_item_btn.custom_minimum_size = Vector2(230, 60)
+	_item_btn.visible = false
+	root.add_child(_item_btn)
+	_item_btn.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_MINSIZE, 36)
+	_item_btn.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_item_btn.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_item_btn.pressed.connect(func() -> void:
+		if _awaiting_roll and not _turn_pawn.is_empty():
+			_open_bag(_turn_pawn))
 	_steps_label = _outlined_label("", 64)
 	_steps_label.visible = false
 	root.add_child(_steps_label)
@@ -797,6 +822,20 @@ func _make_chip(p: Dictionary) -> PanelContainer:
 	sh.visible = false
 	h.add_child(sh)
 	p["shield_icon"] = sh
+	# 가방 (들고 있는 아이템 사진 · 최대 3)
+	var bag := HBoxContainer.new()
+	bag.add_theme_constant_override("separation", 2)
+	bag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for k in Rules.BAG_SIZE:
+		var it := TextureRect.new()
+		it.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		it.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		it.custom_minimum_size = Vector2(26, 26)
+		it.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		it.visible = false
+		bag.add_child(it)
+	h.add_child(bag)
+	p["bag_box"] = bag
 	_refresh_chip(p)
 	return chip
 
@@ -807,6 +846,14 @@ func _refresh_chip(p: Dictionary) -> void:
 			(p[k + "_label"] as Label).text = str(p[k])
 	if p.has("shield_icon"):
 		(p["shield_icon"] as Control).visible = int(p.get("shield", 0)) > 0
+	if p.has("bag_box"):
+		var items: Array = p.get("items", [])
+		var bag: Node = p["bag_box"]
+		for k in bag.get_child_count():
+			var it := bag.get_child(k) as TextureRect
+			it.visible = k < items.size()
+			if k < items.size():
+				it.texture = ITEM_TEX.get(String(items[k]))
 	if p.has("chip") and not bool(p.get("alive", true)):
 		(p["chip"] as Control).modulate = Color(0.55, 0.45, 0.5, 0.75)
 
@@ -830,8 +877,13 @@ func _update_play_ui() -> void:
 		_dice_btn.position = r.position
 		_dice_btn.size = r.size
 		_click_hint.position = Vector2(r.get_center().x - _click_hint.size.x * 0.5, r.position.y - 46.0 + sin(Time.get_ticks_msec() * 0.008) * 6.0)
-	_dice_btn.visible = _awaiting_roll
-	_click_hint.visible = _awaiting_roll
+	_dice_btn.visible = _awaiting_roll and not _bag_open
+	_click_hint.visible = _awaiting_roll and not _bag_open
+	if _item_btn:
+		var n_items := (_turn_pawn.get("items", []) as Array).size() if not _turn_pawn.is_empty() else 0
+		_item_btn.visible = _awaiting_roll and not _bag_open
+		_item_btn.disabled = n_items == 0
+		_item_btn.text = tr("USE ITEM") + " (%d)" % n_items
 	if _steps_label.visible and not _turn_pawn.is_empty():
 		var wp: Vector3 = (_turn_pawn["node"] as Node3D).position + Vector3(0, 3.0, 0)
 		if not _camera.is_position_behind(wp):
@@ -866,25 +918,76 @@ func _play_turn(p: Dictionary, rig: int = 0, forced: Dictionary = {}) -> void:
 	_move_camera(node.position + Vector3(0, 1.3, 0), 1.25, 0.8)
 	await get_tree().create_timer(0.85, false).timeout
 	_dice.show_at(node.position + Vector3(0, DICE_H, 0))
+	# 주사위 굴리기 전: 아이템을 쓸 수 있음 (순간이동서를 쓰면 이번 차례는 이동으로 끝)
 	if _is_remote(p):
-		await _get_dec(p)
+		while true:
+			var d = await _get_dec(p)
+			if typeof(d) == TYPE_STRING and String(d).begins_with("item:"):
+				if await _use_item(p, int(String(d).substr(5))):
+					_dice.hide_dice()
+					_landed = true
+					return
+				await _back_to_dice(p)
+				continue
+			break
 		_dice_hit = true
 	elif _is_auto(p):
 		await get_tree().create_timer(1.0, false).timeout
+		while true:
+			var keep := _use_aux(p)
+			var k := _cpu_pick_item(p)
+			_rng = keep
+			if k < 0:
+				break
+			_put_dec(p, "item:%d" % k)
+			if await _use_item(p, k):
+				_dice.hide_dice()
+				_landed = true
+				return
+			await _back_to_dice(p)
 		_dice_hit = true
 		_put_dec(p, "roll")
 	else:
+		_item_req = -1
 		_awaiting_roll = true
 		while not _dice_hit:
+			if _item_req >= 0:
+				var k := _item_req
+				_item_req = -1
+				_awaiting_roll = false
+				_put_dec(p, "item:%d" % k)
+				if await _use_item(p, k):
+					_dice.hide_dice()
+					_landed = true
+					return
+				await _back_to_dice(p)
+				_awaiting_roll = true
 			await get_tree().process_frame
 		_awaiting_roll = false
 		_put_dec(p, "roll")
-	var n: int = rig if rig > 0 else _rng.randi_range(1, 6)
-	_last_roll = n
+	# 그물에 걸렸으면 이번 주사위는 1~3 만
+	var netted := bool(p.get("netted", false))
+	var n: int = rig if rig > 0 else (_rng.randi_range(1, 3) if netted else _rng.randi_range(1, 6))
 	Audio.play("dice_shake")
 	_pawn_bump(node)
 	await _dice.roll_to(n)
 	Audio.play("dice_land")
+	if netted:
+		_free_net(p)
+	# 추가 주사위 (1~3) 를 한 번 더 굴려 더함
+	if bool(p.get("extra_die", false)):
+		p.erase("extra_die")
+		_steps_label.text = str(n)
+		_steps_label.visible = true
+		_pop(_steps_label)
+		await get_tree().create_timer(0.5, false).timeout
+		var m := _rng.randi_range(1, 3)
+		Audio.play("dice_shake")
+		await _dice.roll_to(m)
+		Audio.play("dice_land")
+		_float_text(p, "+%d" % m, GOLD, ITEM_TEX["dice"])
+		n += m
+	_last_roll = n
 	_steps_left = n
 	_steps_label.text = str(n)
 	_steps_label.visible = true
@@ -925,6 +1028,330 @@ func _play_turn(p: Dictionary, rig: int = 0, forced: Dictionary = {}) -> void:
 	Audio.play("add")
 	world.bubbles_at(node.position + Vector3(0, 0.2, 0), 12, 0.5, true)
 	_landed = true
+
+
+# ── 아이템 (상점에서 사서 가방에) ──────────────────────────────
+var _item_req := -1          ## 가방 창에서 [사용] 을 누른 아이템 번호 (내 차례 주사위 전)
+var _item_btn: Button
+var _bag_open := false
+
+
+## 아이템을 쓴 뒤 다시 주사위 앞으로
+func _back_to_dice(p: Dictionary) -> void:
+	var node: Node3D = p["node"]
+	_follow = null
+	_cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.5)
+	_move_camera(node.position + Vector3(0, 1.3, 0), 1.25, 0.6)
+	await get_tree().create_timer(0.6, false).timeout
+	_dice.show_at(node.position + Vector3(0, DICE_H, 0))
+
+
+func _item_usable(p: Dictionary, id: String) -> bool:
+	match id:
+		"potion":
+			return int(p["hearts"]) < Rules.HEARTS_MAX
+		"shield":
+			return int(p.get("shield", 0)) <= 0
+		"dice":
+			return not bool(p.get("extra_die", false))
+		"oxygen":
+			return false
+		"net":
+			return not _others(p).is_empty()
+	return true
+
+
+## CPU: 쓸 아이템 고르기 (없으면 -1)
+func _cpu_pick_item(p: Dictionary) -> int:
+	var items: Array = p.get("items", [])
+	for k in items.size():
+		var id := String(items[k])
+		if not _item_usable(p, id):
+			continue
+		match id:
+			"potion":
+				if int(p["hearts"]) <= Rules.HEARTS_MAX - 2:
+					return k
+			"shield":
+				if int(p["hearts"]) <= 3:
+					return k
+			"net":
+				return k
+			"conch":
+				for t in _traps:
+					if int(_traps[t]) != int(p["slot"]):
+						return k
+			"dice":
+				if _rng.randf() < 0.5:
+					return k
+	return -1
+
+
+## CPU: 상점에서 살 것 (앞에서부터 돈 · 가방이 되는 만큼)
+func _cpu_shop_wants(p: Dictionary) -> Array:
+	var out := []
+	var items: Array = p.get("items", [])
+	if int(p["hearts"]) <= Rules.HEARTS_MAX - 2:
+		out.append("potion")
+	if int(p.get("shield", 0)) <= 0 and not "shield" in items:
+		out.append("shield")
+	if int(p["coins"]) >= 28 and not "oxygen" in items:
+		out.append("oxygen")
+	if _rng.randf() < 0.4:
+		out.append("net")
+	if _rng.randf() < 0.3:
+		out.append("dice")
+	if _rng.randf() < 0.15:
+		out.append("conch")
+	return out
+
+
+## 아이템 사용 → 이번 차례가 끝나면(순간이동) true
+func _use_item(p: Dictionary, k: int) -> bool:
+	var items: Array = p.get("items", [])
+	if k < 0 or k >= items.size():
+		return false
+	var id := String(items[k])
+	items.remove_at(k)
+	_refresh_chip(p)
+	_dice.hide_dice()
+	await _item_pop(p, id)
+	match id:
+		"potion":
+			Audio.play("bubbles")
+			await _heal(p, 1)
+		"shield":
+			p["shield"] = 1
+			_refresh_chip(p)
+			Audio.play("equip")
+			world.bubbles_at((p["node"] as Node3D).position + Vector3(0, 1.0, 0), 18, 0.6, true)
+			_float_text(p, tr("SHIELD UP!"), Color("bfe9ff"), ITEM_TEX["shield"])
+			await get_tree().create_timer(0.7, false).timeout
+		"dice":
+			p["extra_die"] = true
+			_float_text(p, "+1~3", GOLD, ITEM_TEX["dice"])
+			await get_tree().create_timer(0.6, false).timeout
+		"scroll":
+			var t: int = await _pick_tile(p, tr("Pick a space to teleport to!"))
+			if t >= 0 and t != int(p["tile"]):
+				await _warp_to(p, t)
+			return true
+		"conch":
+			await _conch(p)
+		"net":
+			await _throw_net(p)
+	return false
+
+
+## 쓴 아이템이 말 머리 위로 떠올랐다 사라짐 (진짜 3D 모델)
+func _item_pop(p: Dictionary, id: String) -> void:
+	var node: Node3D = p["node"]
+	var m := ItemModels.make(id)
+	m.scale = Vector3.ONE * 0.05
+	add_child(m)
+	var base := node.position + Vector3(0, 2.3, 0)
+	m.position = base
+	_follow = null
+	_move_camera(node.position + Vector3(0, 1.6, 0), 1.0, 0.5)
+	var t := create_tween()
+	t.tween_property(m, "scale", Vector3.ONE * 0.85, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.parallel().tween_property(m, "rotation:y", TAU * 0.75, 1.2).set_trans(Tween.TRANS_SINE)
+	t.parallel().tween_property(m, "position:y", base.y + 0.35, 1.2).set_trans(Tween.TRANS_SINE)
+	t.tween_property(m, "scale", Vector3.ONE * 0.05, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	t.tween_callback(m.queue_free)
+	Audio.play("equip")
+	await get_tree().create_timer(1.25, false).timeout
+
+
+## 덫 탐지 소라: 숨겨진 덫이 보이고 하나를 골라 해체 (쓴 사람 화면에만 덫 위치 표시)
+func _conch(p: Dictionary) -> void:
+	var found := []
+	for t in _traps:
+		if int(_traps[t]) != int(p["slot"]):
+			found.append(int(t))
+	Audio.play("aura")
+	if found.is_empty():
+		await _banner(tr("NO TRAPS FOUND"), "", 0.9)
+		return
+	var mine := _ctl(p) == "me"
+	if mine:
+		for t in found:
+			if not _trap_marks.has(t):
+				var mk := Sprite3D.new()
+				mk.texture = BoardWorld.ICONS["trap"]
+				mk.pixel_size = 0.006
+				mk.modulate = Color(1.0, 0.4, 0.3, 0.85)
+				mk.axis = Vector3.AXIS_Y
+				mk.position = (world.spaces[t]["pos"] as Vector3) + Vector3(0, 0.03, 0)
+				add_child(mk)
+				_trap_marks[t] = mk
+	_pick_allowed = found
+	var pick: int = await _pick_tile(p, tr("Pick a trap to disarm!"), found[0], "49_pick_disarm", true)
+	_pick_allowed = []
+	if _traps.has(pick):
+		_traps.erase(pick)
+		if _trap_marks.has(pick):
+			(_trap_marks[pick] as Node).queue_free()
+			_trap_marks.erase(pick)
+		Audio.play("snap")
+		if mine:
+			_float_text(p, tr("DISARMED!"), Color("bfe9ff"), BoardWorld.ICONS["trap"])
+		await get_tree().create_timer(0.6, false).timeout
+
+
+## 그물: 상대를 골라 던짐 → 그물이 덮여 다음 주사위는 1~3
+func _throw_net(p: Dictionary) -> void:
+	var cands := _others(p)
+	if cands.is_empty():
+		return
+	var target: Dictionary = await _pick_player(p, cands, tr("Pick a player to catch in the net!"), "hearts")
+	var pnode: Node3D = p["node"]
+	var tnode: Node3D = target["node"]
+	var a := pnode.position + Vector3(0, 1.4, 0)
+	var b := tnode.position + Vector3(0, 0.05, 0)
+	var dir := Vector3(b.x - a.x, 0, b.z - a.z).normalized()
+	var side := Vector3(dir.z, 0, -dir.x)
+	var span := Vector2(b.x - a.x, b.z - a.z).length()
+	var mid := a.lerp(b, 0.5)
+	_follow = null
+	_cinematic(mid + side * (4.0 + span * 0.6) - dir * (1.0 + span * 0.1) + Vector3(0, 2.4 + span * 0.2, 0), mid, 1.0, 0.6)
+	await get_tree().create_timer(0.6, false).timeout
+	var net := ItemModels.spread_net(0.9, 1.6)
+	net.position = a
+	net.scale = Vector3(0.25, 0.25, 0.25)
+	add_child(net)
+	Audio.play("whoosh")
+	var fly := clampf(span / 16.0, 0.5, 1.1)
+	var ft := create_tween()
+	ft.tween_method(func(f: float) -> void:
+		net.position = a.lerp(b + Vector3(0, 0.3, 0), f) + Vector3(0, sin(f * PI) * (1.0 + span * 0.08), 0)
+		net.rotation.y = f * TAU * 1.5
+		net.scale = Vector3.ONE * lerpf(0.25, 1.0, f), 0.0, 1.0, fly).set_trans(Tween.TRANS_SINE)
+	await ft.finished
+	shot_hint = "68_net"
+	Audio.play("splash")
+	var dt := create_tween()
+	dt.tween_property(net, "position", b, 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	dt.parallel().tween_property(net, "scale", Vector3(1.05, 0.9, 1.05), 0.18)
+	await dt.finished
+	_squash(tnode)
+	target["netted"] = true
+	target["net_node"] = net
+	_float_text(target, tr("NET!"), Color("ffe08a"), ITEM_TEX["net"])
+	await get_tree().create_timer(0.9, false).timeout
+	_cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.6)
+
+
+func _free_net(p: Dictionary) -> void:
+	p.erase("netted")
+	var net = p.get("net_node")
+	p.erase("net_node")
+	if net is Node3D and is_instance_valid(net):
+		var t := create_tween()
+		t.tween_property(net, "scale", Vector3.ONE * 0.05, 0.4).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+		t.tween_callback(net.queue_free)
+
+
+## [아이템 사용] → 가방 창: 아이템을 고르고 [사용]
+func _open_bag(p: Dictionary) -> void:
+	if _bag_open:
+		return
+	_bag_open = true
+	var dim := _modal_dim()
+	var panel := _modal_panel(dim, Color(GOLD, 0.8))
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 18)
+	panel.add_child(v)
+	var title := Label.new()
+	title.text = "BAG"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 34)
+	title.add_theme_color_override("font_color", GOLD)
+	v.add_child(title)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_child(row)
+	var desc := Label.new()
+	desc.text = tr("Pick an item")
+	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc.custom_minimum_size = Vector2(600, 56)
+	desc.add_theme_font_size_override("font_size", 19)
+	v.add_child(desc)
+	var btns := HBoxContainer.new()
+	btns.alignment = BoxContainer.ALIGNMENT_CENTER
+	btns.add_theme_constant_override("separation", 20)
+	v.add_child(btns)
+	var use := _glass_button("USE")
+	use.disabled = true
+	use.custom_minimum_size = Vector2(180, 56)
+	btns.add_child(use)
+	var close := _glass_button("CLOSE")
+	close.custom_minimum_size = Vector2(180, 56)
+	close.set_meta("sfx", "back")
+	btns.add_child(close)
+	var sel := [-1]
+	var cells := []
+	var items: Array = p.get("items", [])
+	for k in Rules.BAG_SIZE:
+		var cell := Button.new()
+		cell.toggle_mode = true
+		cell.focus_mode = Control.FOCUS_NONE
+		cell.custom_minimum_size = Vector2(190, 210)
+		cell.add_theme_stylebox_override("normal", _glass(Color(0.02, 0.12, 0.11, 0.85), Color(AQUA, 0.25), 2, 18))
+		cell.add_theme_stylebox_override("hover", _glass(Color(0.04, 0.2, 0.18, 0.9), Color(AQUA, 0.6), 2, 18))
+		cell.add_theme_stylebox_override("pressed", _glass(Color(0.08, 0.28, 0.22, 0.95), Color(GOLD, 1.0), 4, 18))
+		cell.add_theme_stylebox_override("disabled", _glass(Color(0.02, 0.08, 0.08, 0.6), Color(AQUA, 0.1), 1, 18))
+		row.add_child(cell)
+		cells.append(cell)
+		var cv := VBoxContainer.new()
+		cv.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		cv.alignment = BoxContainer.ALIGNMENT_CENTER
+		cv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cell.add_child(cv)
+		if k >= items.size():
+			cell.disabled = true
+			var e := Label.new()
+			e.text = "EMPTY"
+			e.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			e.add_theme_color_override("font_color", Color(1, 1, 1, 0.3))
+			cv.add_child(e)
+			continue
+		var id := String(items[k])
+		var ic := _icon(ITEM_TEX[id], 130)
+		ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		cv.add_child(ic)
+		var nm := Label.new()
+		nm.text = String(Rules.ITEMS[id]["title"])
+		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		nm.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		nm.custom_minimum_size = Vector2(180, 0)
+		nm.add_theme_font_size_override("font_size", 16)
+		cv.add_child(nm)
+		var kk := k
+		cell.pressed.connect(func() -> void:
+			sel[0] = kk
+			for c in cells.size():
+				(cells[c] as Button).set_pressed_no_signal(c == kk)
+			var ok := _item_usable(p, id)
+			use.disabled = not ok
+			var why := ""
+			if not ok:
+				why = "\n" + tr("Works automatically") if id == "oxygen" else "\n" + tr("Can't use it now")
+			desc.text = tr(String(Rules.ITEMS[id]["text"])) + why)
+	var done := func() -> void:
+		_bag_open = false
+		var t := create_tween()
+		t.tween_property(dim, "modulate:a", 0.0, 0.2)
+		t.tween_callback(dim.queue_free)
+	close.pressed.connect(done)
+	use.pressed.connect(func() -> void:
+		if sel[0] >= 0:
+			_item_req = sel[0]
+		done.call())
+	shot_hint = "69_bag"
+	await _show_modal(panel)
 
 
 ## CPU 갈림길: 트로피가 있으면 대개 트로피 쪽으로. 그 밖엔 남은 걸음으로 멈출 칸을 내다보고
@@ -1957,7 +2384,10 @@ func _damage(p: Dictionary, n: int) -> void:
 		world.bubbles_at(node.position + Vector3(0, 1.0, 0), 18, 0.6, true)
 		await get_tree().create_timer(0.7, false).timeout
 		return
-	p["hearts"] = maxi(0, int(p["hearts"]) - n)
+	var oxygen := int(p["hearts"]) - n <= 0 and "oxygen" in (p.get("items", []) as Array)
+	p["hearts"] = maxi(1 if oxygen else 0, int(p["hearts"]) - n)
+	if oxygen:
+		(p["items"] as Array).erase("oxygen")
 	_refresh_chip(p)
 	_pop(p["chip"])
 	Audio.play("remove")
@@ -1967,6 +2397,13 @@ func _damage(p: Dictionary, n: int) -> void:
 	t.tween_property(node, "scale", Vector3(1.3, 0.6, 1.3) * PAWN_SCALE, 0.08)
 	t.tween_property(node, "scale", Vector3.ONE * PAWN_SCALE, 0.3).set_trans(Tween.TRANS_ELASTIC)
 	await get_tree().create_timer(0.8, false).timeout
+	if oxygen:
+		# 산소통: 마지막 하트에서 버팀 (공기 방울이 확 터지며 숨을 돌림)
+		await _item_pop(p, "oxygen")
+		Audio.play("bubbles")
+		world.bubbles_at(node.position + Vector3(0, 1.2, 0), 40, 1.0, true)
+		_float_text(p, tr("OXYGEN!"), Color("ffe08a"), ITEM_TEX["oxygen"])
+		await get_tree().create_timer(0.8, false).timeout
 	if int(p["hearts"]) <= 0:
 		await _eliminate(p)
 
@@ -2455,10 +2892,6 @@ func _spawn_coin_spaces(p: Dictionary, kind: String) -> void:
 ## 들를 때마다 가끔 트로피가 진열됨 (다른 상품은 나중에)
 ## 나무 가게가 문을 여는 화면: 차양이 내려오고 간판이 흔들리고 덧문이 양쪽으로 열려요
 func _open_shop(p: Dictionary) -> void:
-	var has_trophy := _rng.randf() < Rules.SHOP_TROPHY_CHANCE
-	if force_shop_trophy >= 0:
-		has_trophy = force_shop_trophy == 1
-		force_shop_trophy = -1
 	var dim := _modal_dim()
 	dim.color = Color(0, 0.03, 0.03, 0.0)
 	create_tween().tween_property(dim, "color:a", 0.55, 0.25)
@@ -2480,83 +2913,81 @@ func _open_shop(p: Dictionary) -> void:
 	stall.add_child(wall_box)
 	wall_box.add_child(_tex_rect(SHOP_TEX["wall"], Vector2.ZERO, Vector2(1100, 690)))
 	_shop_buy = null
-	# 진열칸 4개 (차양 아래로 다 보이게)
-	# 생존전: 물약(하트 +1) · 따개비 방패 / 그 외: 가끔 트로피
-	var goods := []
-	if survival():
-		goods = [{"id": "potion", "tex": POTION_TEX, "price": Rules.POTION_PRICE * shop_price_mult},
-			{"id": "shield", "tex": SHIELD_TEX, "price": Rules.SHIELD_PRICE * shop_price_mult}]
-	elif has_trophy:
-		goods = [{"id": "trophy", "tex": TROPHY_TEX, "price": Rules.SHOP_TROPHY_PRICE}]
+	# 진열칸 4개: 들를 때마다 아이템 7가지 중 4가지가 무작위로 진열됨 (모두 같은 _rng → 온라인도 같은 진열)
+	var stock: Array = Rules.ITEM_ORDER.duplicate()
+	_shuffle(stock)
+	stock = stock.slice(0, 4)
+	stock.sort_custom(func(a: String, b: String) -> bool: return Rules.ITEM_ORDER.find(a) < Rules.ITEM_ORDER.find(b))
+	# 사진 위에 마우스를 올리면 아래 계산대에 설명
+	var desc_ref := [null]
+	var bag_ref := [null]
 	_shop_buys = []
-	for k in 4:
-		var x := 60.0 + k * 260.0
-		wall_box.add_child(_tex_rect(SHOP_TEX["slot"], Vector2(x, 150), Vector2(200, 205)))
-		var g: Dictionary = goods[k] if k < goods.size() else {}
-		if not g.is_empty():
-			var ic := _icon(g["tex"], 150)
-			ic.position = Vector2(x + 38, 180)
-			ic.size = Vector2(124, 124)
-			wall_box.add_child(ic)
-		else:
-			var q := _outlined_label("?", 84)
-			q.add_theme_color_override("font_color", Color(1.0, 0.86, 0.62, 0.22))
-			q.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0))
-			q.size = Vector2(200, 205)
-			q.position = Vector2(x, 150)
-			q.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			wall_box.add_child(q)
-		# 가격표
-		var tag := _tex_rect(SHOP_TEX["tag"], Vector2(x + 25, 364), Vector2(150, 60))
+	var refresh := func() -> void:
+		var full := (p["items"] as Array).size() >= Rules.BAG_SIZE
+		for bb in _shop_buys:
+			var bt: Button = bb[0]
+			bt.disabled = full or int(p["coins"]) < int(bb[2])
+			bt.text = "BAG FULL" if full else "BUY"
+		if bag_ref[0]:
+			(bag_ref[0] as Label).text = tr("Bag %d/%d") % [(p["items"] as Array).size(), Rules.BAG_SIZE]
+	for k in stock.size():
+		var x := 45.0 + k * 260.0
+		var y := 130.0
+		wall_box.add_child(_tex_rect(SHOP_TEX["slot"], Vector2(x + 15, y), Vector2(200, 190)))
+		var gid: String = stock[k]
+		var it: Dictionary = Rules.ITEMS[gid]
+		var cost: int = int(it["price"]) * shop_price_mult
+		var ic := _icon(ITEM_TEX[gid], 160)
+		ic.position = Vector2(x + 35, y + 14)
+		ic.size = Vector2(160, 160)
+		ic.mouse_filter = Control.MOUSE_FILTER_STOP
+		wall_box.add_child(ic)
+		var nm := Label.new()
+		nm.text = String(it["title"])
+		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		nm.position = Vector2(x, y + 194)
+		nm.size = Vector2(230, 32)
+		nm.add_theme_font_size_override("font_size", 21)
+		nm.add_theme_color_override("font_color", Color(1.0, 0.94, 0.82))
+		nm.add_theme_color_override("font_outline_color", Color(0.2, 0.1, 0.04))
+		nm.add_theme_constant_override("outline_size", 5)
+		wall_box.add_child(nm)
+		var tag := _tex_rect(SHOP_TEX["tag"], Vector2(x + 45, y + 232), Vector2(140, 52))
 		wall_box.add_child(tag)
 		var price := HBoxContainer.new()
 		price.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		price.alignment = BoxContainer.ALIGNMENT_CENTER
-		price.position = Vector2(x + 67, 364)
-		price.size = Vector2(100, 60)
+		price.position = Vector2(x + 75, y + 232)
+		price.size = Vector2(100, 52)
 		price.add_theme_constant_override("separation", 6)
 		wall_box.add_child(price)
+		price.add_child(_icon(COIN_TEX, 24))
 		var pl := Label.new()
-		if not g.is_empty():
-			price.add_child(_icon(COIN_TEX, 28))
-			pl.text = str(g["price"])
-			if shop_price_mult > 1:
-				pl.add_theme_color_override("font_color", Color(0.75, 0.08, 0.06))
-		else:
-			pl.text = "SOON"
-		pl.add_theme_font_size_override("font_size", 24 if not g.is_empty() else 18)
-		if not pl.has_theme_color_override("font_color"):
-			pl.add_theme_color_override("font_color", Color(0.28, 0.16, 0.08))
+		pl.text = str(cost)
+		pl.add_theme_font_size_override("font_size", 22)
+		pl.add_theme_color_override("font_color", Color(0.75, 0.08, 0.06) if shop_price_mult > 1 else Color(0.28, 0.16, 0.08))
 		price.add_child(pl)
-		if not g.is_empty():
-			var buy := _wood_button("BUY", Vector2(180, 60))
-			buy.position = Vector2(x + 10, 438)
-			var cost: int = g["price"]
-			var gid: String = g["id"]
-			buy.disabled = int(p["coins"]) < cost or (gid == "potion" and int(p["hearts"]) >= Rules.HEARTS_MAX)
-			wall_box.add_child(buy)
-			_shop_buys.append([buy, gid, cost])
-			if _shop_buy == null:
-				_shop_buy = buy
-			buy.pressed.connect(func() -> void:
-				if buy.disabled:
-					return
-				_put_dec(p, gid)
-				buy.disabled = true
-				buy.text = "SOLD"
-				_add_coins(p, -cost)
-				match gid:
-					"trophy":
-						_add_trophy(p, 1)
-					"potion":
-						_heal(p, 1)
-					"shield":
-						p["shield"] = int(p.get("shield", 0)) + 1
-						_refresh_chip(p)
-				for bb in _shop_buys:
-					var other: Button = bb[0]
-					if not other.disabled and other.text != "SOLD":
-						other.disabled = int(p["coins"]) < int(bb[2]))
+		var buy := _wood_button("BUY", Vector2(180, 56))
+		buy.position = Vector2(x + 25, y + 296)
+		wall_box.add_child(buy)
+		_shop_buys.append([buy, gid, cost])
+		if _shop_buy == null:
+			_shop_buy = buy
+		var show_desc := func() -> void:
+			if desc_ref[0]:
+				(desc_ref[0] as Label).text = tr(String(it["text"]))
+		ic.mouse_entered.connect(show_desc)
+		buy.mouse_entered.connect(show_desc)
+		buy.pressed.connect(func() -> void:
+			if buy.disabled:
+				return
+			_put_dec(p, gid)
+			_add_coins(p, -cost)
+			(p["items"] as Array).append(gid)
+			_refresh_chip(p)
+			_pop(p["chip"])
+			Audio.play("equip")
+			refresh.call())
 	# 덧문 두 짝
 	var left := _tex_rect(SHOP_TEX["shutter"], Vector2.ZERO, Vector2(550, 690))
 	var right := _tex_rect(SHOP_TEX["shutter"], Vector2(550, 0), Vector2(550, 690))
@@ -2570,15 +3001,25 @@ func _open_shop(p: Dictionary) -> void:
 
 	# 계산대 + 안내 + 닫기
 	stall.add_child(_tex_rect(SHOP_TEX["counter"], Vector2(30, 780), Vector2(1180, 180)))
-	var msg_text := "Potions heal a heart · Shields block one hit" if survival() else "More items are coming soon!"
+	var msg_text := "Point at an item to see what it does"
 	if shop_price_mult > 1:
 		msg_text = "The kraken scared the merchant — prices are doubled!"
-	var msg := _outlined_label(msg_text, 26)
+	var msg := _outlined_label(msg_text, 24)
 	msg.add_theme_color_override("font_color", Color(1.0, 0.95, 0.85))
 	msg.add_theme_color_override("font_outline_color", Color(0.25, 0.12, 0.05))
-	msg.position = Vector2(30, 818)
+	msg.position = Vector2(30, 812)
 	msg.size = Vector2(1180, 40)
+	msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	stall.add_child(msg)
+	desc_ref[0] = msg
+	var bag_l := _outlined_label("", 22)
+	bag_l.add_theme_color_override("font_color", Color(1.0, 0.86, 0.55))
+	bag_l.add_theme_color_override("font_outline_color", Color(0.25, 0.12, 0.05))
+	bag_l.position = Vector2(860, 890)
+	bag_l.size = Vector2(300, 40)
+	stall.add_child(bag_l)
+	bag_ref[0] = bag_l
+	refresh.call()
 	var close := _wood_button("CLOSE", Vector2(250, 74))
 	close.position = Vector2(495, 870)
 	close.set_meta("sfx", "back")
@@ -2650,7 +3091,7 @@ func _open_shop(p: Dictionary) -> void:
 		flick.tween_property(glow, "modulate:a", 0.6, 0.18)
 		flick.tween_property(glow, "modulate:a", 0.5, 0.25)
 	await t.finished
-	shot_hint = "45_shop_trophy" if has_trophy else "45_shop"
+	shot_hint = "45_shop"
 	_shop_p = p
 	if _is_remote(p):
 		# 다른 PC 사람의 쇼핑을 그대로 따라 보여줌
@@ -2667,14 +3108,17 @@ func _open_shop(p: Dictionary) -> void:
 		return
 	if _is_auto(p):
 		await get_tree().create_timer(1.4, false).timeout
-		# CPU: 하트가 모자라면 물약, 아니면 방패
-		var want := "potion" if int(p.get("hearts", 3)) < Rules.HEARTS_MAX else "shield"
-		for bb in _shop_buys:
-			if bb[1] == want or bb[1] == "trophy":
-				var b0: Button = bb[0]
-				if not b0.disabled:
-					b0.pressed.emit()
-					await get_tree().create_timer(0.8, false).timeout
+		var keep := _use_aux(p)
+		var wants := _cpu_shop_wants(p)
+		_rng = keep
+		for want in wants:
+			for bb in _shop_buys:
+				if bb[1] == want:
+					var b0: Button = bb[0]
+					if not b0.disabled:
+						b0.pressed.emit()
+						await get_tree().create_timer(0.8, false).timeout
+					break
 		_close_shop()
 	while _shop_open:
 		await get_tree().process_frame
@@ -3015,6 +3459,8 @@ func _on_pick_input(event: InputEvent) -> void:
 		for i in world.spaces.size():
 			var wp: Vector3 = world.spaces[i]["pos"]
 			if _camera.is_position_behind(wp) or i == world.start_index or not world.in_play(i):
+				continue
+			if not _pick_allowed.is_empty() and not (i in _pick_allowed):
 				continue
 			var d := _camera.unproject_position(wp).distance_to(mm.position)
 			if d < bd:

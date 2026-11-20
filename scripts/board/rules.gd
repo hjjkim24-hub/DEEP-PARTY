@@ -64,8 +64,21 @@ const KRAKEN_SPINES_BASE := 3       ## spines: 독가시 칸 수
 const KRAKEN_SPINES_MAX := 5
 const KRAKEN_EFFECT_ROUNDS := 2     ## spines · surge 가 이어지는 라운드 수
 const KRAKEN_SURGE_MULT := 2        ## surge: 상점 가격 배수
-const POTION_PRICE := 12            ## 상점: 하트 +1
-const SHIELD_PRICE := 8             ## 상점: 다음 피해 한 번 막기
+const POTION_PRICE := 10            ## 상점: 하트 +1
+const SHIELD_PRICE := 5             ## 상점: 다음 피해 한 번 막기
+
+## 상점 아이템: 사서 가방(최대 BAG_SIZE 개)에 넣어 두고, 내 차례에 주사위 굴리기 전 [아이템 사용] 으로 씀
+const BAG_SIZE := 3
+const ITEM_ORDER := ["potion", "shield", "dice", "scroll", "conch", "oxygen", "net"]
+const ITEMS := {
+	"potion": {"price": 10, "title": "POTION", "text": "Use it to get back 1 heart."},
+	"shield": {"price": 5, "title": "BARNACLE SHIELD", "text": "Use it to raise a shield that blocks the next hit. Breaks after one block."},
+	"dice": {"price": 7, "title": "EXTRA DIE", "text": "Use it to roll an extra 1-3 die this turn."},
+	"scroll": {"price": 20, "title": "TELEPORT SCROLL", "text": "Use it to jump to any space right away. You can't roll the dice that turn."},
+	"conch": {"price": 3, "title": "TRAP-FINDER CONCH", "text": "Use it to find hidden bear traps and disarm one of them."},
+	"oxygen": {"price": 20, "title": "OXYGEN TANK", "text": "Just keep it in your bag. When you'd lose your last heart, you stay at 1 heart instead."},
+	"net": {"price": 8, "title": "FISHING NET", "text": "Use it to throw a net over a player. Their next roll is only 1-3."},
+}
 const MINIGAME_WIN_HEAL := 1        ## 미니게임 1등은 하트 +1
 
 ## 찬스 카드 (weight 가 클수록 자주 나옴)
@@ -77,8 +90,6 @@ const CARDS := [
 	{"id": "trap_spaces", "weight": 10, "title": "COIN TRAPS", "text": "Trap spaces (-5 coins) pop up around the board!"},
 	{"id": "pickpocket", "weight": 12, "title": "PICKPOCKET", "text": "Take 5 coins from a player of your choice."},
 	{"id": "warp", "weight": 4, "title": "WARP", "text": "Warp to any space you like!"},
-	{"id": "trophy_minigame", "weight": 4, "title": "TROPHY MINIGAME", "text": "Everyone plays a minigame. The winner gets a trophy!"},
-	{"id": "trophy_thief", "weight": 3, "title": "TROPHY THIEF", "text": "Steal a trophy from a player of your choice!"},
 	{"id": "heal", "weight": 8, "survival": true, "title": "SEA MEDIC", "text": "Get back 1 heart."},
 	{"id": "shield", "weight": 8, "survival": true, "title": "BARNACLE SHIELD", "text": "Blocks the next hit you take."},
 	{"id": "harpoon", "weight": 8, "survival": true, "title": "HARPOON", "text": "Throw a harpoon at a player of your choice. A hit costs them 1 heart."},

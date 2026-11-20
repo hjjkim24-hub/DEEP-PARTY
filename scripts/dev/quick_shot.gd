@@ -477,6 +477,70 @@ func _run() -> void:
 		print("TUT DONE")
 		get_tree().quit(0)
 		return
+	# items: 상점 · 가방 · 그물 · 추가 주사위 · 산소통
+	if "items" in _want:
+		GameState.debug_autoplay = false
+		GameState.selected_mode = GameState.Mode.FREE_FOR_ALL
+		GameState.selected_board = "sunken_island"
+		GameState.my_slot = 0
+		GameState.players = [{"kind": "host", "color": 0}, {"kind": "cpu", "level": 1, "color": 2}, {}, {}]
+		get_tree().change_scene_to_file("res://scenes/board.tscn")
+		var gi: Node = null
+		while gi == null or not ("hold_loop" in gi):
+			await get_tree().process_frame
+			gi = get_tree().current_scene
+		gi.hold_loop = true
+		while not gi._intro_done:
+			await get_tree().process_frame
+		await get_tree().create_timer(3.0).timeout
+		var mi: Dictionary = gi._my_pawn()
+		GameState.debug_autoplay = false
+		mi["cpu"] = false
+		print("SHOPDBG me cpu? slot=", mi["slot"], " pawns=", gi._pawns.size())
+		mi["coins"] = 60
+		gi._refresh_chip(mi)
+		gi._open_shop(mi)
+		await get_tree().create_timer(3.0).timeout
+		await _shot("it_shop")
+		for bb in gi._shop_buys:
+			if bb[1] in ["net", "dice", "oxygen", "potion", "shield", "conch", "scroll"] and (mi["items"] as Array).size() < 2:
+				(bb[0] as Button).pressed.emit()
+		await get_tree().create_timer(0.8).timeout
+		print("SHOPDBG buys=", gi._shop_buys.map(func(b): return [b[1], b[2], (b[0] as Button).disabled]), " items=", mi["items"], " coins=", mi["coins"], " open=", gi._shop_open, " panel=", gi._shop_panel)
+		await _shot("it_shop_full")
+		gi._close_shop()
+		mi["items"] = ["net", "oxygen", "dice"]
+		await get_tree().create_timer(1.0).timeout
+		gi._turn_pawn = mi
+		gi._open_bag(mi)
+		await get_tree().create_timer(1.0).timeout
+		await _shot("it_bag")
+		# 그물 던지기 (CPU 를 두 칸 앞에) → 산소통 버티기
+		get_tree().call_group("x", "x")
+		for c in gi._popup_root.get_children():
+			c.queue_free()
+		gi._bag_open = false
+		if gi._pawns.size() > 1:
+			var cp: Dictionary = gi._pawns[1]
+			var tt: int = int(mi["tile"])
+			for k in 3:
+				tt = int(gi.world.spaces[tt]["next"][0])
+			cp["tile"] = tt
+			(cp["node"] as Node3D).position = gi._spot_on(tt, cp)
+			GameState.debug_autoplay = true
+			gi._use_item(mi, (mi["items"] as Array).find("net"))
+			await _catch(gi, ["68_net"], "it_")
+			await get_tree().create_timer(1.2).timeout
+			await _shot("it_net_on")
+			await get_tree().create_timer(2.0).timeout
+		mi["hearts"] = 1
+		gi._damage(mi, 1)
+		await get_tree().create_timer(1.6).timeout
+		await _shot("it_oxygen")
+		await get_tree().create_timer(2.0).timeout
+		print("ITEMDBG hearts=", mi["hearts"], " items=", mi["items"], " netted=", gi._pawns[-1].get("netted"))
+		get_tree().quit(0)
+		return
 	# attacks: 돌판 칸 모습 + 전기뱀장어 칸 · 곰덫 · 흡혈 해파리
 	if "attacks" in _want:
 		GameState.debug_autoplay = true
