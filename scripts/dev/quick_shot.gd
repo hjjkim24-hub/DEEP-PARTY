@@ -477,6 +477,60 @@ func _run() -> void:
 		print("TUT DONE")
 		get_tree().quit(0)
 		return
+	# harpoon: 섬의 작살 칸 (작살포) + 작살 카드(직접 던지기)
+	if "harpoon" in _want:
+		GameState.debug_autoplay = true
+		GameState.selected_mode = GameState.Mode.FREE_FOR_ALL
+		GameState.selected_board = "sunken_island"
+		GameState.players[1] = {"kind": "cpu", "level": 1, "color": 2}
+		GameState.players[2] = {"kind": "cpu", "level": 1, "color": 5}
+		get_tree().change_scene_to_file("res://scenes/board.tscn")
+		var gh: Node = null
+		while gh == null or not ("hold_loop" in gh):
+			await get_tree().process_frame
+			gh = get_tree().current_scene
+		gh.hold_loop = true
+		while not gh._intro_done:
+			await get_tree().process_frame
+		await get_tree().create_timer(3.0).timeout
+		var wh: Node = gh.world
+		var meh: Dictionary = gh._my_pawn()
+		if OS.get_environment("TILEONLY") != "":
+			var hts: Array = wh.spaces_of_kind("harpoon")
+			for hi in hts.size():
+				var g3: Vector3 = (wh.harpoon_guns[hts[hi]]["root"] as Node3D).global_position
+				var t3: Vector3 = wh.spaces[hts[hi]]["pos"]
+				var sd := Vector3((t3 - g3).z, 0, -(t3 - g3).x).normalized()
+				gh._cinematic(g3 + (g3 - t3).normalized() * 4.0 + sd * 3.0 + Vector3(0, 3.5, 0), (g3 + t3) * 0.5 + Vector3(0, 0.6, 0), 1.0, 0.01)
+				await get_tree().create_timer(1.2).timeout
+				await _shot("hpt_%d" % hi)
+			get_tree().quit(0)
+			return
+		var ht: int = wh.spaces_of_kind("harpoon")[int(OS.get_environment("HT")) if OS.get_environment("HT") != "" else 2]
+		meh["tile"] = ht
+		(meh["node"] as Node3D).position = gh._spot_on(ht, meh)
+		# 상대 하나를 가까이 (8칸쯤 떨어진 곳)
+		var other: Dictionary = gh._pawns[1]
+		var ot: int = ht
+		for k in 6:
+			ot = int(wh.spaces[ot]["next"][0]) if not (wh.spaces[ot]["next"] as Array).is_empty() else ot
+		other["tile"] = ot
+		(other["node"] as Node3D).position = gh._spot_on(ot, other)
+		var hp3: Vector3 = (wh.harpoon_guns[ht]["root"] as Node3D).global_position
+		var tp3: Vector3 = wh.spaces[ht]["pos"]
+		gh._cinematic(hp3 + (hp3 - tp3).normalized() * 3.5 + Vector3(0, 3.0, 0) + Vector3((tp3 - hp3).z, 0, -(tp3 - hp3).x).normalized() * 2.0, (hp3 + tp3) * 0.5 + Vector3(0, 0.8, 0), 1.0, 0.01)
+		await get_tree().create_timer(1.5).timeout
+		await _shot("hp_tile")
+		gh._cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.01)
+		gh._harpoon(meh)
+		await _catch(gh, ["64a_harpoon_aim", "64b_harpoon_hit"], "hp_")
+		await get_tree().create_timer(6.0).timeout
+		gh.shot_hint = ""
+		gh._harpoon(meh, true)
+		await _catch(gh, ["64a_harpoon_aim", "64b_harpoon_hit"], "hpc_")
+		await get_tree().create_timer(4.0).timeout
+		get_tree().quit(0)
+		return
 	# cannon: 크라켄의 배 대포 칸
 	if "cannon" in _want:
 		GameState.debug_autoplay = true

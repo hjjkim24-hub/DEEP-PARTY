@@ -65,6 +65,7 @@ const ICONS := {
 	"boss": preload("res://textures/tiles/icon_boss.png"),
 	"kraken_chest": preload("res://textures/tiles/icon_treasure.png"),
 	"cannon": preload("res://textures/tiles/icon_cannon.png"),
+	"harpoon": preload("res://textures/tiles/icon_harpoon.png"),
 }
 const BORDER_TEX := preload("res://textures/tiles/icon_border.png")
 const CHANCE_CARD_TEX := preload("res://textures/tiles/card_chance.png")
@@ -77,6 +78,7 @@ const TILE_COLORS := {
 	"whirlpool": Color(0.16, 0.48, 0.78), "heal": Color(0.36, 0.8, 0.74), "boss": Color(0.3, 0.06, 0.12),
 	"kraken_chest": Color(0.96, 0.72, 0.2),
 	"cannon": Color(0.3, 0.33, 0.4),
+	"harpoon": Color(0.6, 0.17, 0.15),
 }
 const INK_COLORS := {
 	"plain": Color(1, 1, 1), "chance": Color(1.0, 0.98, 0.9), "minigame": Color(0.95, 0.98, 1.0),
@@ -87,6 +89,7 @@ const INK_COLORS := {
 	"whirlpool": Color(0.9, 0.98, 1.0), "heal": Color(1, 1, 1), "boss": Color(1.0, 0.82, 0.3),
 	"kraken_chest": Color(1.0, 0.97, 0.86),
 	"cannon": Color(1.0, 0.76, 0.42),
+	"harpoon": Color(1.0, 0.93, 0.86),
 }
 ## 범례 순서 + 화면에 보일 이름 (번역 키)
 const KIND_ORDER := ["plain", "chance", "minigame", "portal", "shop"]
@@ -95,6 +98,7 @@ const KIND_NAMES := {
 	"coin_plus": "Lucky +5", "coin_minus": "Trap -5",
 	"treasure": "Treasure", "supply": "Supply Crate", "urchin": "Sea Urchin", "whirlpool": "Whirlpool",
 	"heal": "Air Bubble", "boss": "Kraken's Lair", "kraken_chest": "Kraken's Chest", "cannon": "Cannon",
+	"harpoon": "Harpoon",
 }
 ## 협동 원정 범례 순서
 const COOP_KIND_ORDER := ["plain", "treasure", "supply", "heal", "shop", "urchin", "whirlpool", "boss"]
@@ -3307,6 +3311,127 @@ func _tile_props() -> void:
 				_shop_stall(i)
 			"chance":
 				_chance_card(i)
+			"harpoon":
+				_harpoon_gun(i)
+
+
+## 작살 칸: 옆에 포경선에서 떼어 온 듯한 작살포 (돌 받침 · 나무 기둥 · 돌아가는 쇠 포신 · 장전된 작살 · 밧줄 타래)
+var harpoon_guns := {}   ## 칸 → {"root", "yaw", "barrel", "loaded", "muzzle"} (움직이는 부분은 합치지 않게 붙잡아 둠)
+
+
+func _harpoon_gun(i: int) -> void:
+	var sp: Dictionary = spaces[i]
+	var base: Vector3 = sp["base"]
+	var side := Basis(Vector3.UP, _path_yaw(i)).x
+	var at := base + side * 2.4
+	for sgn in [1.0, -1.0, 1.25, -1.25]:
+		var c: Vector3 = base + side * (2.4 * sgn)
+		if _stall_ok(c, i):
+			at = c
+			break
+	at.y = base.y
+	var root := Node3D.new()
+	root.position = at
+	add_child(root)
+	var stone := _mat(Color(0.5, 0.49, 0.46), 0.92)
+	var wood := _smat(Color(0.4, 0.28, 0.18), "wood", 0.0, 0.2)
+	var iron := _mat(Color(0.2, 0.21, 0.23), 0.42, 0.85)
+	var brass := _mat(Color(0.72, 0.55, 0.28), 0.35, 0.9)
+	var rope := _mat(Color(0.7, 0.6, 0.42), 0.95)
+	# 받침돌 + 나무 기둥 + 쇠띠
+	_mi(_cyl(0.5, 0.62, 0.45, 9), stone, Vector3(0, 0.05, 0), Basis(), root)
+	_mi(_cyl(0.15, 0.18, 1.15, 10), wood, Vector3(0, 0.82, 0), Basis(), root)
+	for y in [0.55, 1.2]:
+		_mi(_cyl(0.19, 0.19, 0.06, 12), iron, Vector3(0, y, 0), Basis(), root)
+	# 밧줄 타래 (받침돌 위에 겹겹이)
+	for k in 3:
+		var tor := TorusMesh.new()
+		tor.inner_radius = 0.24 + k * 0.01
+		tor.outer_radius = 0.33 + k * 0.01
+		tor.rings = 20
+		tor.ring_segments = 8
+		_mi(tor, rope, Vector3(0.05, 0.31 + k * 0.07, 0.02), Basis(Vector3.UP, k * 0.7), root)
+	# 돌아가는 부분: 처음엔 칸 쪽을 겨눔
+	var yaw := Node3D.new()
+	yaw.position = Vector3(0, 1.45, 0)
+	var to_tile := base - at
+	yaw.rotation.y = atan2(to_tile.x, to_tile.z)
+	root.add_child(yaw)
+	_mi(_box(Vector3(0.42, 0.1, 0.34)), iron, Vector3(0, 0.0, 0), Basis(), yaw)
+	for x in [-0.17, 0.17]:
+		_mi(_box(Vector3(0.05, 0.26, 0.16)), iron, Vector3(x, 0.14, 0), Basis(), yaw)
+	var barrel := Node3D.new()
+	barrel.position = Vector3(0, 0.22, 0)
+	yaw.add_child(barrel)
+	var along := Basis(Vector3(1, 0, 0), PI / 2)      # 원기둥(위아래) → 앞뒤(+Z)
+	_mi(_cyl(0.085, 0.12, 1.25, 14), iron, Vector3(0, 0, 0.18), along, barrel)
+	_mi(_cyl(0.11, 0.11, 0.07, 14), brass, Vector3(0, 0, 0.8), along, barrel)
+	_mi(_cyl(0.13, 0.13, 0.1, 14), iron, Vector3(0, 0, -0.42), along, barrel)
+	# 손잡이 (뒤로 뻗은 쇠막대 두 개)
+	for x in [-0.12, 0.12]:
+		_mi(_cyl(0.025, 0.025, 0.55, 6), iron, Vector3(x, -0.04, -0.68), along * Basis(Vector3(1, 0, 0), 0.25), barrel)
+	# 장전된 작살: 포구 밖으로 촉이 나와 있음
+	var loaded := harpoon_mesh(0.7)
+	loaded.position = Vector3(0, 0, 0.95)
+	barrel.add_child(loaded)
+	var muzzle := Node3D.new()
+	muzzle.position = Vector3(0, 0, 0.9)
+	barrel.add_child(muzzle)
+	harpoon_guns[i] = {"root": root, "yaw": yaw, "barrel": barrel, "loaded": loaded, "muzzle": muzzle}
+
+
+## 작살 한 자루 (앞 = +Z): 나무 자루 · 쇠 촉 · 뒤로 젖혀진 미늘. length = 촉에서 끝까지 길이 (m)
+func harpoon_mesh(length: float = 1.6) -> Node3D:
+	var h := Node3D.new()
+	var along := Basis(Vector3(1, 0, 0), PI / 2)
+	var wood := _mat(Color(0.5, 0.36, 0.22), 0.7)
+	var steel := _mat(Color(0.66, 0.68, 0.7), 0.3, 0.9)
+	var shaft := length * 0.78
+	_mi(_cyl(0.04, 0.045, shaft, 8), wood, Vector3(0, 0, -shaft * 0.5), along, h)
+	_mi(_cyl(0.045, 0.045, 0.08, 10), steel, Vector3(0, 0, 0.0), along, h)
+	_mi(_cyl(0.0, 0.085, length * 0.2, 10), steel, Vector3(0, 0, length * 0.1 + 0.04), along, h)
+	# 미늘: 촉 뒤에서 바깥쪽 · 뒤로 젖혀짐 (원뿔 끝이 뒤를 봄)
+	for sgn in [-1.0, 1.0]:
+		_mi(_cyl(0.0, 0.026, 0.2, 6), steel, Vector3(sgn * 0.06, 0, 0.0),
+			Basis(Vector3.UP, -sgn * 0.45) * Basis(Vector3(1, 0, 0), -PI / 2), h)
+	_mi(_cyl(0.05, 0.05, 0.04, 10), steel, Vector3(0, 0, -shaft), along, h)
+	return h
+
+
+## 작살포가 target 을 겨눔 → 포구 위치(월드)를 돌려줌
+func harpoon_aim(tile: int, target: Vector3) -> Vector3:
+	var g: Dictionary = harpoon_guns[tile]
+	var yaw: Node3D = g["yaw"]
+	var root: Node3D = g["root"]
+	var d := target - yaw.global_position
+	var want := atan2(d.x, d.z) - root.rotation.y
+	var goal := yaw.rotation.y + angle_difference(yaw.rotation.y, want)
+	var flat := Vector2(d.x, d.z).length()
+	var pitch := -atan2(d.y, flat) - clampf(flat * 0.004, 0.0, 0.12)
+	Audio.play("creak")
+	var t := create_tween().set_parallel(true)
+	t.tween_property(yaw, "rotation:y", goal, 0.7).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+	t.tween_property(g["barrel"], "rotation:x", pitch, 0.7).set_trans(Tween.TRANS_CUBIC)
+	await t.finished
+	return (g["muzzle"] as Node3D).global_position
+
+
+## 쏨: 장전된 작살이 사라지고(날아가는 건 따로) 포신이 뒤로 튐 + 연기
+func harpoon_fired(tile: int) -> void:
+	var g: Dictionary = harpoon_guns[tile]
+	(g["loaded"] as Node3D).visible = false
+	var b: Node3D = g["barrel"]
+	var rt := create_tween()
+	rt.tween_property(b, "position:z", -0.28, 0.05)
+	rt.tween_property(b, "position:z", 0.0, 0.6).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	bubbles_at((g["muzzle"] as Node3D).global_position, 14, 0.5, true)
+
+
+func harpoon_reload(tile: int) -> void:
+	var l: Node3D = harpoon_guns[tile]["loaded"]
+	l.visible = true
+	l.scale = Vector3.ONE * 0.01
+	create_tween().tween_property(l, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 ## 포탈: 칸 위에 서 있는 빛나는 고리 (말이 그 사이를 지나감) + 반짝이 + 보라 불빛

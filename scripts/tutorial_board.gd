@@ -40,7 +40,7 @@ func _run_tutorial() -> void:
 	_overlay.skipped.connect(_exit_to_menu)
 	var me := _my_pawn()
 
-	await _say({"text": "A giant kraken lurks around this board! Everyone starts with 7 hearts. Lose them all and you're out. The last one standing wins!",
+	await _say({"text": "A giant kraken lurks around this board! Everyone starts with 5 hearts. Lose them all and you're out. The last one standing wins!",
 		"target": func() -> Control: return _chips, "pad": 10.0, "shot": "17b_hud"})
 	await _say({"text": "Drag with the mouse to look around, and roll the mouse wheel to zoom in and out.",
 		"target": func() -> Control: return _screen_marker, "pad": 0.0, "interact": true})

@@ -148,6 +148,11 @@ static func _sunken_island() -> Dictionary:
 			{"at": Vector2(-37, 22), "kind": "shop"},
 			{"at": Vector2(38, -27), "kind": "shop"},
 			{"at": Vector2(-12, 19.5), "kind": "shop"},
+			# 작살 칸: 섬 네 귀퉁이 쪽에 하나씩 (다른 사람을 골라 작살 → 하트 -1)
+			{"at": Vector2(-38, -25), "kind": "harpoon"},
+			{"at": Vector2(43, 18), "kind": "harpoon"},
+			{"at": Vector2(-5, 29), "kind": "harpoon"},
+			{"at": Vector2(-8, -28), "kind": "harpoon"},
 		],
 		"plateaus": [{"c": Vector2(0, -3), "r": Vector2(17, 13), "h": 6.0}, {"c": Vector2(18, -22), "r": Vector2(6.5, 6.0), "h": 3.5}],
 		"chasms": [

@@ -699,6 +699,8 @@ func _build_legend() -> PanelContainer:
 	v.add_child(head)
 	for kind in BoardWorld.KIND_ORDER:
 		_legend_row(v, kind)
+	if not world.spaces_of_kind("harpoon").is_empty():
+		_legend_row(v, "harpoon")
 	return panel
 
 
@@ -1282,8 +1284,120 @@ func _tile_effect(p: Dictionary) -> void:
 			await _kraken_chest(p)
 		"cannon":
 			await _cannon(p)
+		"harpoon":
+			await _harpoon(p)
 		_:
 			await get_tree().create_timer(0.3, false).timeout
+
+
+## 작살: 다른 사람을 골라 작살을 쏨 → 맞으면 하트 -1 (방패가 막음 · 하트가 없는 판이면 동전 -5)
+## 작살 칸이면 옆의 작살포가 돌아가 쏘고, 작살 카드면 내 말이 직접 던짐
+func _harpoon(p: Dictionary, thrown: bool = false) -> void:
+	var cands := _others(p)
+	if cands.is_empty():
+		return
+	var target: Dictionary = await _pick_player(p, cands, tr("Pick a player to harpoon!"), "hearts" if survival() else "coins")
+	var tile := int(p["tile"])
+	var gun := not thrown and world.harpoon_guns.has(tile)
+	var pnode: Node3D = p["node"]
+	var tnode: Node3D = target["node"]
+	var src: Vector3 = (world.harpoon_guns[tile]["muzzle"] as Node3D).global_position if gun else pnode.position + Vector3(0, 1.1, 0)
+	var tpos := tnode.position + Vector3(0, 0.75, 0)
+	var dir := Vector3(tpos.x - src.x, 0, tpos.z - src.z).normalized()
+	var side := Vector3(dir.z, 0, -dir.x)
+	# 옆에서 쏘는 쪽과 맞는 쪽이 한 화면에 다 들어오게 (날아가는 길 전체가 보임)
+	var span := Vector2(tpos.x - src.x, tpos.z - src.z).length()
+	var mid := src.lerp(tpos, 0.5)
+	var eye := mid + side * (4.0 + span * 0.62) - dir * (1.0 + span * 0.12) + Vector3(0, 2.6 + span * 0.22, 0)
+	_follow = null
+	_cinematic(eye, mid + Vector3(0, 0.4, 0), 1.0, 0.75)
+	await get_tree().create_timer(0.8, false).timeout
+	shot_hint = "64a_harpoon_aim"
+	if gun:
+		src = await world.harpoon_aim(tile, tpos)
+		await get_tree().create_timer(0.25, false).timeout
+		world.harpoon_fired(tile)
+		Audio.play("cannon")
+		_shake_camera(0.3, 0.25)
+	else:
+		# 내 말이 상대 쪽으로 돌아서 몸을 뒤로 젖혔다가 휙 던짐
+		var face := atan2(dir.x, dir.z)
+		var wt := create_tween()
+		wt.tween_property(pnode, "rotation:y", pnode.rotation.y + angle_difference(pnode.rotation.y, face), 0.25)
+		wt.tween_property(pnode, "rotation:x", -0.35, 0.22)
+		wt.tween_property(pnode, "rotation:x", 0.25, 0.08)
+		wt.tween_property(pnode, "rotation:x", 0.0, 0.3)
+		await get_tree().create_timer(0.5, false).timeout
+		src = pnode.position + Vector3(0, 1.2, 0) + dir * 0.4
+	Audio.play("whoosh")
+	# 날아가는 작살 + 뒤에 끌려가는 밧줄
+	var hp := world.harpoon_mesh(1.9)
+	add_child(hp)
+	var rope := MeshInstance3D.new()
+	var rm := CylinderMesh.new()
+	rm.top_radius = 0.032
+	rm.bottom_radius = 0.032
+	rm.height = 1.0
+	rm.radial_segments = 6
+	rope.mesh = rm
+	var rmat := StandardMaterial3D.new()
+	rmat.albedo_color = Color(0.86, 0.76, 0.55)
+	rmat.roughness = 0.95
+	rope.material_override = rmat
+	add_child(rope)
+	var dist := src.distance_to(tpos)
+	var fly := clampf(dist / 32.0, 0.3, 0.8)
+	var apex := 0.3 + dist * 0.035
+	var place := func(f: float) -> void:
+		var pos := src.lerp(tpos, f) + Vector3(0, sin(f * PI) * apex, 0)
+		var vel := (tpos - src) + Vector3(0, cos(f * PI) * PI * apex, 0)
+		if vel.length() > 0.01:
+			hp.global_transform = Transform3D(Basis.looking_at(-vel.normalized(), Vector3.UP), pos)
+		var tail := pos - vel.normalized() * 1.1
+		var rv := tail - src
+		var rl := maxf(rv.length(), 0.01)
+		rope.global_transform = Transform3D(Basis(Quaternion(Vector3.UP, rv / rl)) * Basis.from_scale(Vector3(1, rl, 1)), src + rv * 0.5)
+	place.call(0.0)
+	var ft := create_tween()
+	ft.tween_method(place, 0.0, 1.0, fly)
+	await ft.finished
+	shot_hint = "64b_harpoon_hit"
+	Audio.play("thud")
+	Audio.play("splash")
+	_shake_camera(0.45, 0.25)
+	# 맞은 말: 뒤로 휘청
+	var base := _spot_on(int(target["tile"]), target)
+	var hop := create_tween()
+	hop.tween_property(tnode, "position", base + dir * 0.6 + Vector3(0, 0.5, 0), 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	hop.parallel().tween_property(tnode, "rotation:x", 0.5, 0.16)
+	hop.tween_property(tnode, "position", base, 0.3).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	hop.parallel().tween_property(tnode, "rotation:x", 0.0, 0.35)
+	# 작살은 땅에 비스듬히 꽂힘
+	var stuck := Transform3D(Basis.looking_at(-(dir + Vector3(0, -0.7, 0)).normalized(), Vector3.UP), base + dir * 0.9 + Vector3(0, 0.35, 0))
+	create_tween().tween_property(hp, "global_transform", stuck, 0.12)
+	await hop.finished
+	_squash(tnode)
+	if survival():
+		await _damage(target, 1)
+	else:
+		_add_coins(target, -Rules.CANNON_COINS)
+		await get_tree().create_timer(0.8, false).timeout
+	# 밧줄을 감아 작살을 회수
+	var tail0 := hp.global_position
+	var reel := create_tween()
+	reel.tween_method(func(f: float) -> void:
+		var pos := tail0.lerp(src, f)
+		hp.global_position = pos
+		var rv := pos - src
+		var rl := maxf(rv.length(), 0.01)
+		rope.global_transform = Transform3D(Basis(Quaternion(Vector3.UP, rv / rl if rl > 0.02 else Vector3.UP)) * Basis.from_scale(Vector3(1, rl, 1)), src + rv * 0.5), 0.0, 1.0, 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	await reel.finished
+	hp.queue_free()
+	rope.queue_free()
+	if gun:
+		world.harpoon_reload(tile)
+	_cinematic(Vector3.ZERO, Vector3.ZERO, 0.0, 0.8)
+	await get_tree().create_timer(0.5, false).timeout
 
 
 ## 대포 칸: 원하는 상대를 골라 대포를 쏨 → 맞은 상대는 동전 5개를 잃음
@@ -1810,6 +1924,8 @@ func _card_icon(id: String) -> Texture2D:
 			return SHIELD_TEX
 		"bait":
 			return BoardWorld.ICONS["boss"]
+		"harpoon":
+			return BoardWorld.ICONS["harpoon"]
 	return COIN_TEX
 
 
@@ -1961,6 +2077,8 @@ func _apply_card(p: Dictionary, id: String) -> void:
 				return
 			var target: Dictionary = await _pick_player(p, cands, tr("Who do you throw the bait at?"), "hearts")
 			await _bait(target)
+		"harpoon":
+			await _harpoon(p, true)
 		"trophy_minigame":
 			await _run_minigame(p, true)
 		"trophy_thief":
