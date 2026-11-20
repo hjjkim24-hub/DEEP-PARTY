@@ -180,36 +180,82 @@ static func _shield() -> Node3D:
 	root.add_child(face)
 	var wood := _grain(Color(0.4, 0.27, 0.16), 0.85, Vector2(1, 6), 0.45, 1.0, 0.0, 11)
 	_mi(_cyl(0.48, 0.48, 0.06, 40), wood, Vector3.ZERO, face)
-	# 판자 사이 홈
+	# 판자 다섯 장: 이음매 홈이 방패 끝에서 끝까지 (원 모양에 맞춰 길이가 다름)
 	var dark := _mat(Color(0.12, 0.08, 0.05), 0.9)
-	for x in [-0.24, 0.0, 0.24]:
-		var h := 2.0 * sqrt(maxf(0.48 * 0.48 - x * x, 0.0)) - 0.04
+	for x in [-0.288, -0.096, 0.096, 0.288]:
+		var h := 2.0 * sqrt(maxf(0.465 * 0.465 - x * x, 0.0))
 		var bm := BoxMesh.new()
-		bm.size = Vector3(0.012, 0.062, h)
-		_mi(bm, dark, Vector3(x + 0.12, 0.0, 0), face)
+		bm.size = Vector3(0.014, 0.064, h)
+		_mi(bm, dark, Vector3(x, 0.0, 0), face)
 	var iron := _grain(Color(0.33, 0.3, 0.28), 0.55, Vector2(4, 4), 0.4, 0.8, 0.75, 21)
 	_mi(_torus(0.45, 0.52, 48), iron, Vector3.ZERO, face, Basis.from_scale(Vector3(1, 0.5, 1)))
 	_mi(_sph(0.13, 0.12), iron, Vector3(0, 0.03, 0), face)
 	for a in 8:   # 테두리 징
 		var t := TAU * a / 8
 		_mi(_sph(0.022), iron, Vector3(cos(t) * 0.42, 0.04, sin(t) * 0.42), face)
-	# 따개비: 화산 모양 껍데기 무더기 (가장자리 · 아래쪽에 몰림)
-	var shell := _grain(Color(0.7, 0.67, 0.6), 0.85, Vector2(2, 2), 0.3, 0.9, 0.0, 31)
-	var hole := _mat(Color(0.36, 0.3, 0.26), 0.9)
+	# 따개비: 실제처럼 '군락'으로 붙음 — 물에 늘 잠기는 아래쪽 테두리와 판자 이음매를 따라
+	# 가운데에 오래된 큰 것, 바깥으로 갈수록 작은 것이 빽빽하게 서로 기대어 자라고 바깥쪽으로 기움.
+	# 군락 밑에는 갈색 물때 얼룩, 떨어져 나간 자리엔 하얀 밑판 자국
+	var bmesh := _barnacle_mesh()
+	var shells := [_grain(Color(0.6, 0.57, 0.5), 0.9, Vector2(2, 2), 0.35, 1.0, 0.0, 31),
+		_grain(Color(0.5, 0.48, 0.43), 0.9, Vector2(2, 2), 0.4, 1.0, 0.0, 32),
+		_grain(Color(0.68, 0.65, 0.58), 0.85, Vector2(2, 2), 0.3, 1.0, 0.0, 33)]
+	var crater := _mat(Color(0.08, 0.07, 0.06), 0.9)
+	var stain := _mat(Color(0.26, 0.21, 0.13, 0.22), 0.95)
+	stain.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
-	for k in 34:
-		var t := rng.randf_range(-PI * 0.95, PI * 0.15)
-		var r := rng.randf_range(0.18, 0.44)
-		var s := rng.randf_range(0.025, 0.055)
-		var pos := Vector3(cos(t) * r, 0.03 + s * 0.4, sin(t) * r)
-		_mi(_cyl(s * 0.45, s, s * 1.1, 8), shell, pos, face)
-		_mi(_cyl(s * 0.18, s * 0.18, 0.004, 6), hole, pos + Vector3(0, s * 0.56, 0), face)
-	# 초록 물때 얼룩
-	var slime := _mat(Color(0.2, 0.32, 0.18, 0.55), 0.9)
-	slime.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_mi(_cyl(0.3, 0.3, 0.002, 24), slime, Vector3(-0.08, 0.032, -0.14), face, Basis.from_scale(Vector3(1.0, 1, 0.6)))
+	var placed := []
+	# 군락 중심 (얼굴 기준 좌표 x, z: z+ 가 화면 아래쪽). 아래 테두리에 크게, 이음매 따라 작게
+	var colonies := [[Vector2(-0.1, 0.33), 0.17, 0.064], [Vector2(0.2, 0.3), 0.14, 0.058], [Vector2(0.34, 0.08), 0.1, 0.05],
+		[Vector2(-0.33, 0.14), 0.11, 0.05], [Vector2(-0.096, -0.12), 0.07, 0.038], [Vector2(0.096, 0.16), 0.06, 0.034]]
+	for col in colonies:
+		var c: Vector2 = col[0]
+		var R: float = col[1]
+		var big: float = col[2]
+		# 군락 밑 물때
+		for e in 4:
+			var o := Vector2(rng.randf_range(-1, 1), rng.randf_range(-1, 1)) * R * 0.4
+			_mi(_cyl(R * rng.randf_range(0.45, 0.75), R * rng.randf_range(0.45, 0.75), 0.002, 18), stain,
+				Vector3(c.x + o.x, 0.031 + e * 0.0005, c.y + o.y), face, Basis.from_scale(Vector3(1.0, 1.0, rng.randf_range(0.6, 1.0))))
+		var tries := 0
+		var n_here := 0
+		while tries < 900 and n_here < int(R * 260):
+			tries += 1
+			var d := sqrt(rng.randf()) * R
+			var a := rng.randf() * TAU
+			var pos2 := c + Vector2(cos(a), sin(a)) * d
+			if pos2.length() > 0.445 or pos2.length() < 0.15:
+				continue
+			# 가운데일수록 크고, 가장자리로 갈수록 작음 (+ 들쭉날쭉)
+			var sz := big * pow(1.0 - d / R, 0.6) * rng.randf_range(0.7, 1.05) + 0.008
+			var ok := true
+			for q in placed:
+				if pos2.distance_to(q[0]) < (sz + float(q[1])) * 0.78:
+					ok = false
+					break
+			if not ok:
+				continue
+			placed.append([pos2, sz])
+			n_here += 1
+			var lean := (pos2 - c).normalized() * clampf(d / R, 0.0, 1.0) * 0.35 if d > 0.001 else Vector2.ZERO
+			var bs := Basis(Vector3(lean.y, 0, -lean.x).normalized() if lean.length() > 0.01 else Vector3.RIGHT, lean.length()) \
+				* Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(sz, sz * rng.randf_range(0.8, 1.25), sz * rng.randf_range(0.85, 1.0)))
+			_mi(bmesh, shells[rng.randi() % shells.size()], Vector3(pos2.x, 0.03, pos2.y), face, bs)
+			_mi(_cyl(sz * 0.32, sz * 0.32, 0.004, 7), crater, Vector3(pos2.x, 0.03, pos2.y) + bs * Vector3(0, 0.62, 0), face, bs.orthonormalized())
+	# 떨어져 나간 자리: 하얀 밑판 자국 몇 개
+	var scar := _mat(Color(0.88, 0.86, 0.8), 0.8)
+	for k in 5:
+		var a := rng.randf_range(0.2, 2.9)
+		var r := rng.randf_range(0.3, 0.42)
+		_mi(_cyl(0.02, 0.02, 0.002, 10), scar, Vector3(cos(a) * r, 0.031, sin(a) * r), face)
 	return root
+
+
+## 따개비 하나 (반지름 1 · 높이 1 기준): 넓은 밑동 · 가파른 옆면(7 조각 판) · 꼭대기 분화구
+static func _barnacle_mesh() -> ArrayMesh:
+	return _lathe([Vector2(0.0, 0.6), Vector2(0.22, 0.66), Vector2(0.3, 0.9), Vector2(0.36, 0.98), Vector2(0.42, 0.95),
+		Vector2(0.55, 0.82), Vector2(0.8, 0.5), Vector2(0.97, 0.18), Vector2(1.0, 0.0)], 7)
 
 
 # ── 추가 주사위: 손때 묻은 상아 주사위 (1 · 2 · 3 눈이 두 번씩), 모서리 둥글게 ─────
@@ -284,68 +330,105 @@ static func _scroll() -> Node3D:
 	return root
 
 
-# ── 덫 탐지 소라: 뾰족한 나선 꼭대기 · 어깨에 돌기 · 크림색 바탕에 갈색 띠 · 분홍빛 넓은 입구 ─────
+# ── 덫 탐지 소라: 진짜 소라껍데기 (뾰족한 나선탑 · 어깨 돌기 · 넓게 벌어진 분홍 입구)
+##    꼭대기에 묶은 꼰 끈이 늘어져 놋쇠 고리에 이어짐
 static func _conch() -> Node3D:
 	var root := Node3D.new()
 	var body := Node3D.new()
-	body.rotation = Vector3(0.0, 0.0, -1.15)        # 비스듬히 눕힘
-	body.position = Vector3(0.05, 0.3, 0)
+	body.rotation = Vector3(0.0, -0.35, 1.25)     # 해변에 누운 소라: 나선탑은 왼쪽 위, 분홍 입구는 비스듬히
+	body.position = Vector3(0.1, 0.12, 0)
 	root.add_child(body)
-	var prof := [Vector2(0.0, -0.3), Vector2(0.04, -0.26), Vector2(0.07, -0.12), Vector2(0.15, 0.05), Vector2(0.24, 0.22),
-		Vector2(0.28, 0.33), Vector2(0.27, 0.4), Vector2(0.2, 0.47), Vector2(0.15, 0.52), Vector2(0.13, 0.56),
-		Vector2(0.09, 0.6), Vector2(0.075, 0.64), Vector2(0.045, 0.69), Vector2(0.03, 0.72), Vector2(0.0, 0.76)]
-	var g := Gradient.new()
-	g.offsets = PackedFloat32Array([0.0, 0.18, 0.24, 0.42, 0.48, 0.62, 0.66, 0.8, 0.84, 1.0])
-	g.colors = PackedColorArray([Color(0.92, 0.84, 0.7), Color(0.9, 0.8, 0.64), Color(0.6, 0.35, 0.2), Color(0.92, 0.82, 0.66),
-		Color(0.66, 0.4, 0.22), Color(0.93, 0.84, 0.68), Color(0.62, 0.38, 0.22), Color(0.92, 0.83, 0.67), Color(0.7, 0.45, 0.28), Color(0.85, 0.76, 0.62)])
-	var gt := GradientTexture2D.new()
-	gt.gradient = g
-	gt.fill_to = Vector2(0, 1)
-	gt.width = 8
-	gt.height = 128
-	var shell := _mat(Color.WHITE, 0.42)
-	shell.albedo_texture = gt
-	var n := FastNoiseLite.new()
-	n.seed = 9
-	n.frequency = 0.05
-	var nt := NoiseTexture2D.new()
-	nt.width = 256
-	nt.height = 256
-	nt.seamless = true
-	nt.as_normal_map = true
-	nt.bump_strength = 6.0
-	nt.noise = n
-	shell.normal_enabled = true
-	shell.normal_texture = nt
-	shell.normal_scale = 0.6
-	_mi(_lathe(prof, 40), shell, Vector3.ZERO, body)
-	# 꼭대기 나선 골: 아래로 내려갈수록 굵어지는 나선 띠
-	var ridge := _mat(Color(0.84, 0.72, 0.56), 0.5)
-	var steps := 70
-	for k in steps:
-		var t := float(k) / steps
-		var y := 0.74 - t * 0.27
-		var r := lerpf(0.02, 0.15, t) + 0.005
-		var a := t * TAU * 3.2
-		var p0 := Vector3(cos(a) * r, y, sin(a) * r)
-		var t1 := float(k + 1) / steps
-		var a1 := t1 * TAU * 3.2
-		var r1 := lerpf(0.02, 0.15, t1) + 0.005
-		var p1 := Vector3(cos(a1) * r1, 0.74 - t1 * 0.27, sin(a1) * r1)
-		var v := p1 - p0
-		_mi(_cyl(0.008 + t * 0.012, 0.008 + t * 0.012, v.length() * 1.15, 6), ridge, p0 + v * 0.5, body, Basis(Quaternion(Vector3.UP, v.normalized())))
-	# 어깨 돌기
-	for k in 9:
-		var a := TAU * k / 9.0
-		var p := Vector3(cos(a) * 0.27, 0.37, sin(a) * 0.27)
-		_mi(_cyl(0.0, 0.035, 0.09, 8), _mat(Color(0.9, 0.82, 0.68), 0.5), p + p.normalized() * 0.02 + Vector3(0, 0.04, 0), body,
-			Basis(Quaternion(Vector3.UP, (p.normalized() + Vector3(0, 0.9, 0)).normalized())))
-	# 입구: 넓게 벌어진 분홍 입술 + 안쪽 짙은 분홍
-	var lip := _mat(Color(0.95, 0.62, 0.58), 0.22)
-	lip.clearcoat_enabled = true
-	lip.clearcoat = 0.8
-	_mi(_sph(0.5, 1.0, 24), lip, Vector3(0.0, 0.1, 0.16), body, Basis.from_scale(Vector3(0.24, 0.5, 0.1)))
-	_mi(_sph(0.5, 1.0, 20), _mat(Color(0.7, 0.3, 0.33), 0.3), Vector3(0.0, 0.11, 0.2), body, Basis.from_scale(Vector3(0.14, 0.36, 0.05)))
+	var turns := 5.0
+	var U := turns * TAU
+	var b := log(1.8) / TAU          # 한 바퀴에 1.8 배씩 커짐 → 나선탑이 뾰족하게 높이 솟음
+	var su := 140
+	var sv := 28
+	var pos_at := func(u: float, v: float, inner: bool) -> Vector3:
+		var g := exp(b * (u - U))
+		var flare := 1.0 + smoothstep(U - TAU * 0.4, U, u) * 0.12   # 마지막 반 바퀴: 입구가 살짝 벌어짐
+		var R := 0.12 * g
+		var rho := 0.15 * g * flare * (0.97 if inner else 1.0)
+		var cy := 0.9 - 0.85 * g
+		var radial := Vector3(cos(u), 0, sin(u))
+		# 단면: 바깥쪽 위 어깨가 각진 물방울 모양 + 어깨 돌기
+		var bump := 0.0
+		if not inner:
+			# 어깨의 뿔 돌기: 한 바퀴에 여러 개, 아래 큰 몸통일수록 뚜렷
+			bump = maxf(0.0, cos(v - 1.05)) ** 8.0 * (0.12 + 0.6 * maxf(0.0, sin(u * 3.0)) ** 6.0)
+		var rr := rho * (1.0 + bump)
+		return Vector3(0, cy, 0) + radial * (R + rr * cos(v)) + Vector3(0, rr * 1.35 * sin(v), 0)
+	var col_at := func(u: float, v: float) -> Color:
+		var cream := Color(0.86, 0.78, 0.63)
+		var brown := Color(0.6, 0.36, 0.2)
+		# 가는 나선 줄무늬 + 성장선 (얼룩 대신)
+		var cords := smoothstep(0.75, 0.95, sin(v * 16.0))
+		var growth := smoothstep(0.85, 0.98, sin(u * 11.0 + sin(v * 3.0) * 0.6))
+		var c := cream.lerp(brown, cords * 0.35 + growth * 0.4)
+		c = c.lerp(Color(0.86, 0.72, 0.52), smoothstep(0.3, 1.0, sin(v * 2.0 + u * 0.3)) * 0.35)
+		c = c.lerp(Color(0.9, 0.6, 0.52), smoothstep(U - TAU * 0.25, U, u) * smoothstep(-0.2, -1.2, cos(v)))
+		return c
+	for layer in 2:
+		var inner := layer == 1
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var u0 := 0.0 if not inner else U - TAU * 0.55
+		for i in su:
+			var ua := lerpf(u0, U, float(i) / su)
+			var ub := lerpf(u0, U, float(i + 1) / su)
+			for k in sv:
+				var va := TAU * k / sv
+				var vb := TAU * (k + 1) / sv
+				var quad := [[ua, va], [ub, va], [ub, vb], [ua, va], [ub, vb], [ua, vb]]
+				if inner:
+					quad = [[ua, va], [ub, vb], [ub, va], [ua, va], [ua, vb], [ub, vb]]
+				for q in quad:
+					st.set_color(Color(0.84, 0.52, 0.46) if inner else col_at.call(q[0], q[1]))
+					st.set_uv(Vector2(q[1] / TAU, q[0] / TAU))
+					st.add_vertex(pos_at.call(q[0], q[1], inner))
+		st.generate_normals()
+		var m := _mat(Color.WHITE, 0.3 if inner else 0.45)
+		m.vertex_color_use_as_albedo = true
+		if not inner:
+			var n := FastNoiseLite.new()
+			n.seed = 9
+			n.frequency = 0.06
+			var nt := NoiseTexture2D.new()
+			nt.width = 256
+			nt.height = 256
+			nt.seamless = true
+			nt.as_normal_map = true
+			nt.bump_strength = 2.0
+			nt.noise = n
+			m.normal_enabled = true
+			m.normal_texture = nt
+			m.normal_scale = 0.18
+			m.uv1_scale = Vector3(3, 2, 1)
+		else:
+			m.clearcoat_enabled = true
+			m.clearcoat = 0.3
+		var mi := MeshInstance3D.new()
+		mi.mesh = st.commit()
+		mi.material_override = m
+		body.add_child(mi)
+	# 꼰 끈: 나선탑 꼭대기에 감겨서 늘어지다가 놋쇠 고리로
+	var cord := _grain(Color(0.45, 0.3, 0.18), 0.95, Vector2(12, 1), 0.35, 0.8, 0.0, 91)
+	_mi(_torus(0.03, 0.05, 20), cord, Vector3(0, 0.89, 0), body)
+	# 끈과 고리는 바깥(root) 기준: 꼭대기에서 화면 오른쪽 앞으로 늘어져 바닥의 고리로
+	var top := body.transform * Vector3(0, 0.93, 0)
+	var ring_c := Vector3(-0.3, 0.0, 0.3)
+	var p0 := top + Vector3(0.04, 0.0, 0.0)
+	var c1 := top + Vector3(-0.15, 0.1, 0.15)
+	var c2 := ring_c + Vector3(0.0, 0.3, 0.0)
+	var p3 := ring_c + Vector3(-0.02, 0.17, 0.0)
+	var prev := p0
+	for k in range(1, 25):
+		var t := float(k) / 24
+		var q := p0 * pow(1 - t, 3) + c1 * 3 * t * pow(1 - t, 2) + c2 * 3 * t * t * (1 - t) + p3 * pow(t, 3)
+		var v := q - prev
+		_mi(_cyl(0.014, 0.014, v.length() * 1.2, 6), cord, prev + v * 0.5, root, Basis(Quaternion(Vector3.UP, v.normalized())))
+		prev = q
+	var brass := _grain(Color(0.78, 0.6, 0.3), 0.3, Vector2(3, 3), 0.25, 0.4, 1.0, 92)
+	_mi(_torus(0.12, 0.155, 40), brass, ring_c + Vector3(0, 0.02, 0), root, Basis(Vector3(1, 0, 0), PI * 0.5 - 0.15) * Basis(Vector3.UP, 0.0))
 	return root
 
 
@@ -359,8 +442,9 @@ static func _oxygen() -> Node3D:
 		prof.append(Vector2(0.2 * cos(a) + 0.0, 0.72 + 0.16 * sin(a)))
 	_mi(_lathe(prof, 36), paint, Vector3.ZERO, root)
 	var rubber := _mat(Color(0.06, 0.06, 0.07), 0.8)
+	# 고무 띠: 통 표면에 딱 붙은 얇은 띠 (같은 회전체로 반지름만 아주 조금 크게)
 	for y in [0.18, 0.56]:
-		_mi(_torus(0.188, 0.222, 40), rubber, Vector3(0, y, 0), root, Basis.from_scale(Vector3(1, 1.6, 1)))
+		_mi(_lathe([Vector2(0.2005, y - 0.032), Vector2(0.207, y - 0.026), Vector2(0.207, y + 0.026), Vector2(0.2005, y + 0.032)], 36), rubber, Vector3.ZERO, root)
 	var chrome := _mat(Color(0.86, 0.87, 0.9), 0.12, 1.0)
 	_mi(_cyl(0.05, 0.06, 0.1, 16), chrome, Vector3(0, 0.92, 0), root)
 	_mi(_cyl(0.045, 0.045, 0.16, 16), chrome, Vector3(0, 1.0, 0), root, Basis(Vector3(0, 0, 1), PI * 0.5))
@@ -385,30 +469,57 @@ static func _oxygen() -> Node3D:
 	return root
 
 
-# ── 그물 (상점 · 가방): 둘둘 뭉친 밧줄 그물 + 코르크 찌 + 납추 ─────
+# ── 그물 (상점 · 가방): 장대에 널어 말리는 진짜 고기잡이 그물
+##    마름모 그물코 · 주름지며 늘어진 그물 · 위쪽 뜸줄의 코르크 찌 · 아래 발줄의 납추가 바닥에 쌓임
 static func _net_bundle() -> Node3D:
 	var root := Node3D.new()
-	var rope := _grain(Color(0.7, 0.6, 0.42), 0.95, Vector2(10, 1), 0.3, 0.7, 0.0, 71)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 3
-	# 뭉친 그물: 여러 방향으로 기운 고리들
-	for k in 16:
-		var r := rng.randf_range(0.18, 0.32)
-		var b := Basis.from_euler(Vector3(rng.randf_range(0, PI), rng.randf_range(0, PI), rng.randf_range(0, PI)))
-		_mi(_torus(r - 0.012, r + 0.012, 28), rope, Vector3(rng.randf_range(-0.05, 0.05), 0.32 + rng.randf_range(-0.04, 0.04), rng.randf_range(-0.05, 0.05)), root, b.scaled(Vector3(1.15, 0.85, 1.0)))
-	# 매듭 (그물코 교차점)
-	for k in 40:
-		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.8, 1), rng.randf_range(-1, 1)).normalized()
-		_mi(_sph(0.018, 0.03, 8), rope, Vector3(0, 0.32, 0) + d * rng.randf_range(0.2, 0.3), root)
-	# 코르크 찌 + 납추
-	var cork := _grain(Color(0.78, 0.5, 0.25), 0.9, Vector2(3, 3), 0.35, 0.9, 0.0, 72)
-	var paint := _mat(Color(0.8, 0.12, 0.08), 0.6)
-	for k in 3:
-		var a := TAU * k / 3 + 0.4
-		var p := Vector3(cos(a) * 0.3, 0.12 + k * 0.08, sin(a) * 0.3)
-		_mi(_sph(0.07, 0.11), cork, p, root)
-		_mi(_cyl(0.071, 0.071, 0.03, 16), paint, p, root)
-	_mi(_sph(0.05, 0.08, 12), _mat(Color(0.35, 0.36, 0.38), 0.4, 0.8), Vector3(0.05, 0.04, 0.28), root)
+	var rope := _grain(Color(0.68, 0.6, 0.44), 0.95, Vector2(10, 1), 0.3, 0.7, 0.0, 71)
+	var thick := _grain(Color(0.5, 0.4, 0.26), 0.95, Vector2(14, 1), 0.35, 0.8, 0.0, 73)
+	var W := 1.0
+	var H := 0.95
+	# 그물 면: s (가로 0~1) · t (위 0 → 아래 1). 장대에 걸려 아래로 늘어지며 주름, 아래 끝은 바닥에 쌓여 앞으로 접힘
+	var surf := func(s_: float, t: float) -> Vector3:
+		var x := (s_ - 0.5) * W * (1.0 - 0.12 * t)
+		var y := 1.0 - t * H
+		var z := 0.07 * sin(s_ * 5.5 * PI) * (0.3 + t) + 0.05 * sin(s_ * 13.0 + t * 4.0) * t
+		if y < 0.12:
+			z += (0.12 - y) * 1.6
+			y = 0.12 - (0.12 - y) * 0.15
+		return Vector3(x, y, z)
+	var lines := 13
+	var samples := 18
+	for dir in [1.0, -1.0]:
+		for k in range(-lines, lines + 1):
+			var c := float(k) / lines
+			var prev = null
+			for q in samples + 1:
+				var t := float(q) / samples
+				var s_: float = c + dir * t * 0.9 * 0.5 + 0.5 - 0.25 * dir
+				if s_ < 0.0 or s_ > 1.0:
+					prev = null
+					continue
+				var p: Vector3 = surf.call(s_, t)
+				if prev != null:
+					var v: Vector3 = p - prev
+					if v.length() > 0.001:
+						_mi(_cyl(0.006, 0.006, v.length() * 1.05, 4), rope, prev + v * 0.5, root, Basis(Quaternion(Vector3.UP, v.normalized())))
+				prev = p
+	# 장대 (뜸줄이 감김) + 찌
+	var wood := _grain(Color(0.42, 0.3, 0.18), 0.8, Vector2(1, 6), 0.4, 0.8, 0.0, 74)
+	_mi(_cyl(0.03, 0.03, W + 0.35, 12), wood, Vector3(0, 1.02, 0), root, Basis(Vector3(0, 0, 1), PI * 0.5))
+	_mi(_cyl(0.014, 0.014, W, 8), thick, Vector3(0, 0.995, 0.0), root, Basis(Vector3(0, 0, 1), PI * 0.5))
+	var cork := _grain(Color(0.8, 0.5, 0.24), 0.9, Vector2(3, 3), 0.35, 0.9, 0.0, 72)
+	var paint := _mat(Color(0.82, 0.15, 0.08), 0.6)
+	for k in 5:
+		var x := -0.4 + k * 0.2
+		_mi(_cyl(0.045, 0.045, 0.11, 14), cork, Vector3(x, 0.97, 0.03), root, Basis(Vector3(0, 0, 1), PI * 0.5))
+		if k % 2 == 0:
+			_mi(_cyl(0.047, 0.047, 0.03, 14), paint, Vector3(x, 0.97, 0.03), root, Basis(Vector3(0, 0, 1), PI * 0.5))
+	# 발줄 납추 (바닥에 쌓인 그물 끝)
+	var lead := _mat(Color(0.36, 0.37, 0.4), 0.45, 0.7)
+	for k in 6:
+		var p: Vector3 = surf.call(0.08 + k * 0.17, 1.0)
+		_mi(_sph(0.03, 0.05, 10), lead, p + Vector3(0, 0.01, 0.02), root, Basis(Vector3(0, 0, 1), PI * 0.5))
 	return root
 
 
@@ -436,10 +547,10 @@ static func spread_net(radius: float = 0.85, height: float = 1.5) -> Node3D:
 		var f := float(s) / segs
 		var r := radius * sin(f * PI * 0.5)
 		_mi(_torus(r - 0.012, r + 0.012, 40), rope, Vector3(0, height * cos(f * PI * 0.5), 0), root)
-	var cork := _grain(Color(0.78, 0.5, 0.25), 0.9, Vector2(3, 3), 0.35, 0.9, 0.0, 82)
-	var paint := _mat(Color(0.8, 0.12, 0.08), 0.6)
-	for m in range(0, meridians, 2):
-		var p: Vector3 = pt.call(m, segs)
-		_mi(_sph(0.06, 0.09, 10), cork, p, root)
-		_mi(_cyl(0.061, 0.061, 0.025, 12), paint, p, root)
+	# 투망: 둘레에 납추가 촘촘히 달려 펼쳐지며 떨어짐 + 꼭대기에 손잡이 줄
+	var lead := _mat(Color(0.36, 0.37, 0.4), 0.45, 0.7)
+	for m in meridians * 2:
+		var a := TAU * m / (meridians * 2)
+		_mi(_sph(0.04, 0.07, 8), lead, Vector3(cos(a) * radius, 0.0, sin(a) * radius), root)
+	_mi(_cyl(0.015, 0.015, 0.6, 6), rope, Vector3(0, height + 0.3, 0), root)
 	return root

@@ -50,7 +50,7 @@ func _run() -> void:
 		var box := _aabb(m)
 		var c := box.get_center()
 		var r := box.size.length() * 0.5
-		var dist := r / tan(deg_to_rad(cam.fov * 0.5)) * 1.02
+		var dist := r / tan(deg_to_rad(cam.fov * 0.5)) * 0.93
 		var dir := Vector3(0.55, 0.42, 1.0).normalized()
 		cam.look_at_from_position(c + dir * dist, c, Vector3.UP)
 		for f in 6:

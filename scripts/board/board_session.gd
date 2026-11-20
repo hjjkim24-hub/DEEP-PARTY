@@ -2941,20 +2941,28 @@ func _open_shop(p: Dictionary) -> void:
 		var gid: String = stock[k]
 		var it: Dictionary = Rules.ITEMS[gid]
 		var cost: int = int(it["price"]) * shop_price_mult
-		var ic := _icon(ITEM_TEX[gid], 160)
-		ic.position = Vector2(x + 35, y + 14)
-		ic.size = Vector2(160, 160)
+		var ic := _icon(ITEM_TEX[gid], 176)
+		ic.position = Vector2(x + 27, y + 7)
+		ic.size = Vector2(176, 176)
 		ic.mouse_filter = Control.MOUSE_FILTER_STOP
 		wall_box.add_child(ic)
 		var nm := Label.new()
 		nm.text = String(it["title"])
 		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		nm.position = Vector2(x, y + 194)
-		nm.size = Vector2(230, 32)
-		nm.add_theme_font_size_override("font_size", 21)
-		nm.add_theme_color_override("font_color", Color(1.0, 0.94, 0.82))
-		nm.add_theme_color_override("font_outline_color", Color(0.2, 0.1, 0.04))
-		nm.add_theme_constant_override("outline_size", 5)
+		# 이름표: 짙은 나무색 명판 위에 밝은 글씨 (나무 무늬 위에서도 또렷하게)
+		nm.position = Vector2(x + 10, y + 192)
+		nm.size = Vector2(210, 36)
+		nm.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		nm.add_theme_font_size_override("font_size", 22)
+		nm.add_theme_color_override("font_color", Color(1.0, 0.95, 0.84))
+		nm.add_theme_color_override("font_outline_color", Color(0.08, 0.04, 0.01))
+		nm.add_theme_constant_override("outline_size", 6)
+		var plate := StyleBoxFlat.new()
+		plate.bg_color = Color(0.13, 0.07, 0.03, 0.9)
+		plate.border_color = Color(0.55, 0.38, 0.18)
+		plate.set_border_width_all(2)
+		plate.set_corner_radius_all(8)
+		nm.add_theme_stylebox_override("normal", plate)
 		wall_box.add_child(nm)
 		var tag := _tex_rect(SHOP_TEX["tag"], Vector2(x + 45, y + 232), Vector2(140, 52))
 		wall_box.add_child(tag)
@@ -3008,17 +3016,19 @@ func _open_shop(p: Dictionary) -> void:
 	var msg_text := "Point at an item to see what it does"
 	if shop_price_mult > 1:
 		msg_text = "The kraken scared the merchant — prices are doubled!"
-	var msg := _outlined_label(msg_text, 24)
-	msg.add_theme_color_override("font_color", Color(1.0, 0.95, 0.85))
-	msg.add_theme_color_override("font_outline_color", Color(0.25, 0.12, 0.05))
-	msg.position = Vector2(30, 812)
-	msg.size = Vector2(1180, 40)
+	var msg := _outlined_label(msg_text, 30)
+	msg.add_theme_color_override("font_color", Color(1.0, 0.96, 0.86))
+	msg.add_theme_color_override("font_outline_color", Color(0.1, 0.05, 0.02))
+	msg.add_theme_constant_override("outline_size", 10)
+	msg.position = Vector2(30, 806)
+	msg.size = Vector2(1180, 48)
 	msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	stall.add_child(msg)
 	desc_ref[0] = msg
-	var bag_l := _outlined_label("", 22)
-	bag_l.add_theme_color_override("font_color", Color(1.0, 0.86, 0.55))
-	bag_l.add_theme_color_override("font_outline_color", Color(0.25, 0.12, 0.05))
+	var bag_l := _outlined_label("", 28)
+	bag_l.add_theme_color_override("font_color", Color(1.0, 0.88, 0.58))
+	bag_l.add_theme_color_override("font_outline_color", Color(0.1, 0.05, 0.02))
+	bag_l.add_theme_constant_override("outline_size", 9)
 	bag_l.position = Vector2(860, 890)
 	bag_l.size = Vector2(300, 40)
 	stall.add_child(bag_l)

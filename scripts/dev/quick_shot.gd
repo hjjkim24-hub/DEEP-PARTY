@@ -498,7 +498,7 @@ func _run() -> void:
 		ms["coins"] = 18
 		ms["items"] = ["potion"]
 		gs._refresh_chip(ms)
-		gs.force_shop_stock = ["shield", "dice", "conch", "net"]
+		gs.force_shop_stock = ["shield", "conch", "oxygen", "net"]
 		gs._open_shop(ms)
 		await get_tree().create_timer(3.5).timeout
 		# 소라 설명이 계산대에 뜬 상태로
