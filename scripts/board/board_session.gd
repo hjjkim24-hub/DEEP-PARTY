@@ -133,6 +133,7 @@ var rig_card := ""            ## 다음 찬스 카드 id
 var shop_price_mult := 1      ## 상점 가격 배수 (크라켄이 상점을 습격하면 2)
 var rig_minigame := ""        ## 다음 미니게임 id ("" = 랜덤)
 var rig_chest := -1           ## 개발용: 크라켄의 보물상자 결과 (1 = 보물, 0 = 크라켄, -1 = 확률대로)
+var force_shop_stock: Array = []   ## 점검 · 촬영용: 다음 상점 진열을 이걸로
 var force_shop_trophy := -1   ## 1 = 다음 상점에 트로피 꼭 진열, 0 = 꼭 안 함, -1 = 확률대로
 var force_trophy_buy := false ## 튜토리얼: 트로피 살지 물을 때 BUY 만 누를 수 있게
 var shot_hint := ""           ## 자동 스크린샷용: 지금 보여 주는 장면 이름
@@ -2917,6 +2918,9 @@ func _open_shop(p: Dictionary) -> void:
 	var stock: Array = Rules.ITEM_ORDER.duplicate()
 	_shuffle(stock)
 	stock = stock.slice(0, 4)
+	if not force_shop_stock.is_empty():   # 점검 · 촬영용
+		stock = force_shop_stock.duplicate()
+		force_shop_stock = []
 	stock.sort_custom(func(a: String, b: String) -> bool: return Rules.ITEM_ORDER.find(a) < Rules.ITEM_ORDER.find(b))
 	# 사진 위에 마우스를 올리면 아래 계산대에 설명
 	var desc_ref := [null]

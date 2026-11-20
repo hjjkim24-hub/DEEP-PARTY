@@ -477,6 +477,38 @@ func _run() -> void:
 		print("TUT DONE")
 		get_tree().quit(0)
 		return
+	# shopview: 상점 연 화면 한 장 (소라 포함 진열)
+	if "shopview" in _want:
+		GameState.debug_autoplay = false
+		GameState.selected_mode = GameState.Mode.FREE_FOR_ALL
+		GameState.selected_board = "sunken_island"
+		GameState.my_slot = 0
+		GameState.players = [{"kind": "host", "color": 0}, {"kind": "cpu", "level": 1, "color": 2}, {}, {}]
+		get_tree().change_scene_to_file("res://scenes/board.tscn")
+		var gs: Node = null
+		while gs == null or not ("hold_loop" in gs):
+			await get_tree().process_frame
+			gs = get_tree().current_scene
+		gs.hold_loop = true
+		while not gs._intro_done:
+			await get_tree().process_frame
+		await get_tree().create_timer(3.0).timeout
+		var ms: Dictionary = gs._my_pawn()
+		ms["cpu"] = false
+		ms["coins"] = 18
+		ms["items"] = ["potion"]
+		gs._refresh_chip(ms)
+		gs.force_shop_stock = ["shield", "dice", "conch", "net"]
+		gs._open_shop(ms)
+		await get_tree().create_timer(3.5).timeout
+		# 소라 설명이 계산대에 뜬 상태로
+		for bb in gs._shop_buys:
+			if bb[1] == "conch":
+				(bb[0] as Button).mouse_entered.emit()
+		await get_tree().create_timer(0.5).timeout
+		await _shot("shop_view")
+		get_tree().quit(0)
+		return
 	# items: 상점 · 가방 · 그물 · 추가 주사위 · 산소통
 	if "items" in _want:
 		GameState.debug_autoplay = false
