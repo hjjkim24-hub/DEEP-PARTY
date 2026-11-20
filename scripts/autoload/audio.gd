@@ -15,6 +15,7 @@ const TRACKS := {
 	"mg_intro": "res://audio/music/mg_intro.ogg",
 	"results": "res://audio/music/results.ogg",
 	"kraken_wake": "res://audio/music/kraken_wake.ogg",   ## 크라켄 등장 (한 번만, 반복 없음)
+	"mg_hall": "res://audio/music/mg_hall.ogg",           ## 미니게임 모음 (고르는 화면)
 }
 const ONE_SHOT := ["kraken_wake"]
 ## 미니게임 음악: 게임마다 고유한 곡 audio/music/mg_<id>.ogg (겹치지 않게).

@@ -142,9 +142,10 @@ func _alive() -> Array:
 func _attack() -> void:
 	var f := pressure()
 	# 처음엔 하나씩 느긋하게 → 끝으로 갈수록 한꺼번에 · 짧은 경고 · 쉴 틈 없이
-	var count := 1 if f < 0.2 else (2 if f < 0.45 else (3 if f < 0.7 else (4 if f < 0.9 else 5)))
-	var warn := lerpf(1.45, 0.62, f)
-	_next_attack = lerpf(1.8, 0.62, f) + rng.randf_range(-0.12, 0.12)
+	# 후반 난이도 완화: 최대 3 개 · 경고는 넉넉히 · 숨 돌릴 틈
+	var count := 1 if f < 0.3 else (2 if f < 0.7 else 3)
+	var warn := lerpf(1.45, 0.95, f)
+	_next_attack = lerpf(1.8, 1.05, f) + rng.randf_range(-0.12, 0.12)
 	var alive := _alive()
 	if alive.is_empty():
 		return
@@ -154,7 +155,7 @@ func _attack() -> void:
 		if rng.randf() < lerpf(0.75, 0.95, f):
 			var w: Dictionary = alive[(rng.randi() + k) % alive.size()]
 			# 뒤로 갈수록 가는 쪽을 미리 읽고 노림
-			target = (w["pos"] as Vector3) + (w["vel"] as Vector3) * lerpf(0.2, 0.55, f) + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5))
+			target = (w["pos"] as Vector3) + (w["vel"] as Vector3) * lerpf(0.2, 0.35, f) + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5))
 		else:
 			var a := rng.randf() * TAU
 			target = Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.0, RAFT_R - 1.4)
@@ -172,7 +173,7 @@ func _attack() -> void:
 		used.append(ang)
 		_add_stripe(target, Vector3(sin(ang), 0, cos(ang)), warn + k * 0.1)
 		# 후반: 피한 자리에 곧바로 한 번 더 (연타)
-		if f > 0.6 and rng.randf() < lerpf(0.0, 0.45, (f - 0.6) / 0.4):
+		if f > 0.75 and rng.randf() < lerpf(0.0, 0.2, (f - 0.75) / 0.25):
 			var ang2 := ang + rng.randf_range(0.8, 1.4) * (1.0 if rng.randf() < 0.5 else -1.0)
 			if cos(ang2) < -0.25:
 				_add_stripe(target, Vector3(sin(ang2), 0, cos(ang2)), warn + 0.5 + k * 0.1)
@@ -240,12 +241,11 @@ func _hit_ring(ring: Dictionary) -> void:
 		var p := a.lerp(b, (k + 0.5) / 3.0)
 		debris(p + Vector3(0, 0.1, 0), Color(0.42, 0.33, 0.25), 8)
 		splash(p + Vector3(0, 0.1, 0), 12, 0.6)
+	# 촉수가 내리치는 순간 붉은 경고 띠는 바로 사라짐 (화면이 어지럽지 않게)
 	var mark: MeshInstance3D = ring["mark"]
-	var tw := create_tween()
-	tw.tween_interval(0.5)
-	tw.tween_property(mark, "transparency", 1.0, 0.3)
-	tw.tween_callback(mark.queue_free)
-	tw.tween_callback(func() -> void: _rings.erase(ring))
+	if is_instance_valid(mark):
+		mark.queue_free()
+	_rings.erase(ring)
 	if is_client():
 		return
 	for s in walkers:

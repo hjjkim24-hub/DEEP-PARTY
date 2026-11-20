@@ -20,6 +20,7 @@ They were mixed and edited with `tools/build_audio.py`.
 | board_theme.ogg | Aquatic City Vanished |
 | ship_theme.ogg | Evil Incoming |
 | kraken_wake.ogg | Epic Boss Battle (first 26 s, filter sweep) |
+| mg_hall.ogg | Lucky Break |
 | mg_intro.ogg | Busybody |
 | mg_a.ogg | Going Bananas |
 | mg_c.ogg | Wakka Wakka |

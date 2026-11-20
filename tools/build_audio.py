@@ -289,6 +289,7 @@ def build_music() -> None:
         "mg_e": "Funshine",
         "mg_f": "Adventures of Flying Jack",
         "results": "Fanfare X",
+        "mg_hall": "Lucky Break",
         # 미니게임마다 고유한 곡 (분위기에 맞춰)
         "mg_tentacle_dodge": "Action Strike",
         "mg_cannon_volley": "Heroic Adventure",

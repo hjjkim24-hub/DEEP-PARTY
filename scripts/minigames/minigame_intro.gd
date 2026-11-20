@@ -444,18 +444,8 @@ func run() -> void:
 			_cpu_ready_later(int(p["slot"]), _rng.randf_range(0.6, 3.2))
 	while not _all_ready():
 		await get_tree().process_frame
-	Audio.play("start")
-	var go := _label("LET'S GO!", 120, GOLD, 26)
-	go.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	go.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	go.size = Vector2(ARENA.x, 300)
-	go.position = Vector2(0, ARENA.y * 0.5 - 150)
-	go.pivot_offset = go.size * 0.5
-	go.scale = Vector2.ONE * 0.3
-	_arena.add_child(go)
-	var t := create_tween()
-	t.tween_property(go, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	await get_tree().create_timer(1.1, false).timeout
+	# 모두 준비되면 멘트 없이 바로 게임으로 (3 · 2 · 1 · 게임 시작! 은 게임 화면에서)
+	await get_tree().create_timer(0.35, false).timeout
 
 
 func _cpu_ready_later(slot: int, delay: float) -> void:

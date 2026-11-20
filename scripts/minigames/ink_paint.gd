@@ -2,6 +2,7 @@ extends "res://scripts/minigames/minigame_3d.gd"
 ## 먹물 땅따먹기 (마우스로 걷기): 크라켄의 배 갑판 위. 걸어가는 자리마다 내 색 먹물이 칠해져요.
 ## 30초 뒤 가장 넓게 칠한 사람이 승리. 남의 색 위도 덮어 칠할 수 있어요.
 ## 후반엔 크라켄이 검은 먹물 덩이를 뱉어 칠해 둔 땅을 지워 버려요 (갈수록 크게 · 자주).
+## 중간중간 갑판 아무 데나 오리발(잠수용 핀)이 떨어짐 → 주우면 몇 초 동안 빨라짐.
 
 const GRID := 120
 const HALF := 7.2               ## 갑판 반 너비 (정사각형)
@@ -17,11 +18,15 @@ var _blob_t := 6.0
 var _blobs: Array = []
 var _ai := {}
 var _dirty := false
+const BOOST_TIME := 4.0
+var _fins := {}          ## id → {"node", "pos"}
+var _fin_t := 3.0
+var _fin_id := 0
 
 
 func _init() -> void:
 	title = "INK SPLAT"
-	how_to = "Walk to paint the deck in your color! You can paint over other colors too. Watch out - the kraken spits black ink that wipes the deck clean. Biggest area wins!"
+	how_to = "Walk to paint the deck in your color! You can paint over other colors too. Grab swim fins for a burst of speed. Watch out - the kraken spits black ink that wipes the deck clean. Biggest area wins!"
 	goal = "Paint the most deck!"
 	controls = "KEYS"
 	duration = 30.0
@@ -266,6 +271,30 @@ func _tick(delta: float) -> void:
 		for k in steps:
 			_paint_at(last.lerp(pp, float(k + 1) / steps), BRUSH, int(w["p"]["slot"]))
 		w["last_paint"] = pp
+	# 오리발: 방장이 가끔 아무 데나 떨어뜨리고, 밟은 사람이 줍기
+	_fin_t -= delta
+	if _fin_t <= 0.0 and not is_client():
+		_fin_t = rng.randf_range(3.5, 6.0)
+		if _fins.size() < 2:
+			_fin_id += 1
+			var at := Vector3(rng.randf_range(-HALF + 1.0, HALF - 1.0), 0, rng.randf_range(-HALF + 1.0, HALF - 1.0))
+			net_call("_fin_spawn", [_fin_id, at, rng.randf() * TAU])
+	for id in _fins.keys():
+		var f: Dictionary = _fins[id]
+		var fn: Node3D = f["node"]
+		fn.position.y = 0.12 + sin(_t3 * 3.0 + float(id)) * 0.06
+		fn.rotation.y += delta * 1.2
+		if is_client():
+			continue
+		for w in walkers.values():
+			if w["out"]:
+				continue
+			if Vector2((w["pos"] as Vector3).x - (f["pos"] as Vector3).x, (w["pos"] as Vector3).z - (f["pos"] as Vector3).z).length() < 0.95:
+				net_call("_fin_take", [id, int(w["p"]["slot"])])
+				break
+	for w in walkers.values():
+		if float(w.get("boost", 0.0)) > 0.0 and fmod(_t3, 0.12) < delta:
+			splash((w["pos"] as Vector3) + Vector3(0, 0.2, 0), 3, 0.25)
 	var pr := pressure()
 	_blob_t -= delta
 	if _blob_t <= 0.0 and pr > 0.15 and not is_client():
@@ -457,7 +486,109 @@ func _think(delta: float) -> void:
 					bv = v
 					best = c
 			a["goal"] = best
+			# 가까운 오리발이 있으면 주우러 감
+			for f in _fins.values():
+				if pos.distance_to(f["pos"]) < lerpf(2.0, 4.5, sk / 2.0):
+					a["goal"] = f["pos"]
+					break
 		w["target"] = a["goal"]
+
+
+## 오리발 한 켤레 (노란 날 · 검은 고무 발주머니 · 옆 테두리) + 바닥에 은은한 빛 고리
+func _fin_spawn(id: int, at: Vector3, yaw: float) -> void:
+	var root := Node3D.new()
+	root.position = at + Vector3(0, 0.12, 0)
+	root.rotation.y = yaw
+	add_child(root)
+	var blade := StandardMaterial3D.new()
+	blade.albedo_color = Color(1.0, 0.82, 0.1)
+	blade.roughness = 0.35
+	blade.clearcoat_enabled = true
+	blade.clearcoat = 0.5
+	var rubber := StandardMaterial3D.new()
+	rubber.albedo_color = Color(0.06, 0.06, 0.07)
+	rubber.roughness = 0.7
+	for sgn in [-1.0, 1.0]:
+		var fin := Node3D.new()
+		fin.position = Vector3(sgn * 0.2, 0, 0)
+		fin.rotation = Vector3(0, sgn * 0.12, sgn * 0.08)
+		root.add_child(fin)
+		# 날: 발 쪽은 좁고 끝은 넓은 납작한 판 (SurfaceTool 사다리꼴)
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var w0 := 0.1
+		var w1 := 0.17
+		var z0 := 0.1
+		var z1 := 0.72
+		var th := 0.012
+		var top := [Vector3(-w0, th, z0), Vector3(w0, th, z0), Vector3(w1, th + 0.03, z1), Vector3(-w1, th + 0.03, z1)]
+		var bot := [Vector3(-w0, -th, z0), Vector3(w0, -th, z0), Vector3(w1, -th + 0.03, z1), Vector3(-w1, -th + 0.03, z1)]
+		for tri in [[top[0], top[2], top[1]], [top[0], top[3], top[2]], [bot[0], bot[1], bot[2]], [bot[0], bot[2], bot[3]],
+				[top[1], top[2], bot[2]], [top[1], bot[2], bot[1]], [top[3], top[0], bot[0]], [top[3], bot[0], bot[3]], [top[2], top[3], bot[3]], [top[2], bot[3], bot[2]]]:
+			for v in tri:
+				st.add_vertex(v)
+		st.generate_normals()
+		var bm := MeshInstance3D.new()
+		bm.mesh = st.commit()
+		bm.material_override = blade
+		fin.add_child(bm)
+		# 옆 테두리 (검은 고무 날개살)
+		for x in [-1.0, 1.0]:
+			var rail := MeshInstance3D.new()
+			var rb := BoxMesh.new()
+			rb.size = Vector3(0.025, 0.04, 0.62)
+			rail.mesh = rb
+			rail.material_override = rubber
+			rail.position = Vector3(x * 0.135, 0.02, 0.41)
+			rail.rotation.y = -x * 0.11
+			fin.add_child(rail)
+		# 발주머니
+		var pocket := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.5
+		sm.height = 1.0
+		pocket.mesh = sm
+		pocket.material_override = rubber
+		pocket.scale = Vector3(0.22, 0.13, 0.3)
+		pocket.position = Vector3(0, 0.05, 0.0)
+		fin.add_child(pocket)
+	# 바닥 빛 고리
+	var ring := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.55
+	tm.outer_radius = 0.66
+	ring.mesh = tm
+	var rm := StandardMaterial3D.new()
+	rm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rm.albedo_color = Color(0.5, 0.95, 1.0, 0.55)
+	rm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	ring.material_override = rm
+	ring.position = Vector3(at.x, 0.06, at.z)
+	ring.scale = Vector3(1, 0.3, 1)
+	add_child(ring)
+	root.set_meta("ring", ring)
+	root.scale = Vector3.ONE * 0.05
+	create_tween().tween_property(root, "scale", Vector3.ONE * 1.3, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	splash(at + Vector3(0, 0.1, 0), 10, 0.5)
+	_fins[id] = {"node": root, "pos": at}
+
+
+func _fin_take(id: int, s: int) -> void:
+	if not _fins.has(id):
+		return
+	var f: Dictionary = _fins[id]
+	_fins.erase(id)
+	var node: Node3D = f["node"]
+	var ring = node.get_meta("ring")
+	if ring is Node:
+		(ring as Node).queue_free()
+	node.queue_free()
+	if walkers.has(s):
+		var w: Dictionary = walkers[s]
+		w["boost"] = BOOST_TIME
+		float_at((w["pos"] as Vector3) + Vector3(0, 2.2, 0), tr("SPEED UP!"), Color(0.55, 0.95, 1.0), 34)
+	sfx("equip")
+	splash((f["pos"] as Vector3) + Vector3(0, 0.2, 0), 18, 0.7)
 
 
 ## 온라인: 칠한 칸 전체를 가끔 (방장 → 손님, 조금씩 어긋난 걸 맞춤)

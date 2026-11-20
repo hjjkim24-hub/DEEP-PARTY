@@ -12,6 +12,7 @@ const MUSIC := [
 	["Board", "보드", "Aquatic City Vanished"],
 	["Kraken's Ship", "크라켄의 배", "Evil Incoming"],
 	["Kraken Awakens", "크라켄 등장", "Epic Boss Battle"],
+	["Minigame Hall", "미니게임 모음", "Lucky Break"],
 	["Minigame Intro", "미니게임 소개", "Busybody"],
 	["Results", "결과", "Fanfare X"],
 	["Tentacle Dodge", "촉수 피하기", "Action Strike"],

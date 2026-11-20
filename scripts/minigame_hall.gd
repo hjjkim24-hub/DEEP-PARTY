@@ -97,7 +97,7 @@ func _ready() -> void:
 
 	_show_page(0)
 	await get_tree().process_frame
-	Audio.play_music(0.0, "menu")
+	Audio.play_music(0.0, "mg_hall")
 	await _fade_to(0.0, 0.6)
 
 
@@ -439,7 +439,7 @@ func _back_to_picker() -> void:
 	_current = null
 	_ui.visible = true
 	_busy = false
-	Audio.play_music(0.0, "menu")
+	Audio.play_music(0.0, "mg_hall")
 	await _fade_to(0.0, 0.4)
 
 

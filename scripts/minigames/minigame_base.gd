@@ -437,7 +437,7 @@ func _countdown() -> void:
 		Audio.play("tick")
 		await _big_text(k, 0.45)
 	Audio.play("start")
-	_big_text("GO!", 0.35, GOLD)
+	_big_text(tr("GAME START!"), 0.45, GOLD)
 	hint("51_mg_%s_play" % name.to_snake_case())
 
 

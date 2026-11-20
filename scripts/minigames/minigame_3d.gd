@@ -449,6 +449,10 @@ func step_walkers(delta: float) -> void:
 		to.y = 0.0
 		var sp: float = float(w["speed"]) * (0.45 if float(w["slow"]) > 0.0 else 1.0)
 		w["slow"] = maxf(0.0, float(w["slow"]) - delta)
+		# 속도 증가 (색칠 게임의 물살 구슬 등)
+		if float(w.get("boost", 0.0)) > 0.0:
+			sp *= 1.65
+			w["boost"] = maxf(0.0, float(w["boost"]) - delta)
 		var want := Vector3.ZERO
 		if to.length() > 0.15:
 			want = to.normalized() * sp * clampf(to.length() / 0.8, 0.25, 1.0)
