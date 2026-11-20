@@ -2248,7 +2248,7 @@ func _card_icon(id: String) -> Texture2D:
 
 ## 카드가 날아와 뒤집히면 앞면에 내용
 func _card_popup(c: Dictionary) -> void:
-	Audio.play("start")
+	Audio.play("card_draw")
 	var v := get_viewport().get_visible_rect().size
 	var holder := Control.new()
 	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2323,17 +2323,22 @@ func _card_popup(c: Dictionary) -> void:
 	t2.add_theme_font_size_override("font_size", 18)
 	t2.add_theme_color_override("font_color", Color("6a5536"))
 	fv.add_child(t2)
+	# 뒷면이 천천히 올라와 잠깐 멈춤 (두근) → 천천히 뒤집혀 앞면
 	var t := create_tween()
-	t.tween_property(back, "position:y", v.y * 0.5 - size.y * 0.5, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	t.parallel().tween_property(back, "rotation", TAU, 0.45)
-	t.tween_property(back, "scale:x", 0.05, 0.14)
+	t.tween_property(back, "position:y", v.y * 0.5 - size.y * 0.5, 0.8).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	t.parallel().tween_property(back, "rotation", TAU, 0.8).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	t.tween_property(back, "scale", Vector2(1.06, 1.06), 0.35).set_trans(Tween.TRANS_SINE)
+	t.tween_property(back, "scale", Vector2(1.0, 1.0), 0.35).set_trans(Tween.TRANS_SINE)
+	t.tween_interval(0.25)
+	t.tween_callback(func() -> void: Audio.play("card_flip"))
+	t.tween_property(back, "scale:x", 0.05, 0.24).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	t.tween_callback(func() -> void:
 		back.visible = false
 		front.visible = true)
-	t.tween_property(front, "scale:x", 1.0, 0.2).set_trans(Tween.TRANS_BACK)
+	t.tween_property(front, "scale:x", 1.0, 0.32).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	await t.finished
 	shot_hint = "42_card_" + id
-	await get_tree().create_timer(1.9, false).timeout
+	await get_tree().create_timer(2.6, false).timeout
 	var t3 := create_tween()
 	t3.tween_property(holder, "modulate:a", 0.0, 0.3)
 	await t3.finished

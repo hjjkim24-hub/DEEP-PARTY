@@ -477,7 +477,7 @@ func _kraken_card(a: String) -> void:
 		for o in order:
 			deck.move_child(o[1], -1)
 	# 1) 카드들이 가운데에서 둥글게 펼쳐짐
-	Audio.play("card_spin")
+	Audio.play("card_draw")
 	var t0 := create_tween()
 	t0.tween_property(dim, "color:a", 0.55, 0.3)
 	t0.parallel().tween_method(func(f: float) -> void: place.call(-f * 1.2, f), 0.0, 1.0, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -494,7 +494,7 @@ func _kraken_card(a: String) -> void:
 		var slot := int(floor(sp / (TAU / k_n)))
 		if slot != last_slot[0]:
 			last_slot[0] = slot
-			Audio.play("tick"), start, target, 3.0).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+			Audio.play("card_pass", 40), start, target, 3.0).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
 	await spin_t.finished
 	await get_tree().create_timer(0.25, false).timeout
 	# 3) 나머지는 흩어지고, 뽑힌 카드만 앞으로 크게
@@ -569,17 +569,18 @@ func _kraken_card(a: String) -> void:
 	t2.text = _wrap_words(tr(String(data["text"])), t2.get_theme_font("font"), 22, size.x - 64)
 	t2.add_theme_color_override("font_color", Color(0.8, 0.92, 0.84))
 	t2.add_theme_constant_override("line_spacing", 4)
-	# 4) 뒤집힘 + 오라가 확 피어오름
+	# 4) 잠깐 뜸 들였다가 천천히 뒤집힘 + 오라가 웅웅 피어오름
+	await get_tree().create_timer(0.45, false).timeout
 	Audio.play("card_flip")
-	Audio.play("whoosh")
-	_shake_camera(0.3, 0.4)
 	var flip := create_tween()
-	flip.tween_property(pick, "scale:x", 0.05, 0.14)
+	flip.tween_property(pick, "scale:x", 0.05, 0.24).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	flip.tween_callback(func() -> void:
 		pick.visible = false
-		front.visible = true)
-	flip.tween_property(front, "scale:x", 1.0, 0.22).set_trans(Tween.TRANS_BACK)
-	flip.parallel().tween_method(func(f: float) -> void: am.set_shader_parameter("strength", f), 0.0, 1.0, 0.5)
+		front.visible = true
+		Audio.play("aura")
+		_shake_camera(0.25, 0.5))
+	flip.tween_property(front, "scale:x", 1.0, 0.32).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	flip.parallel().tween_method(func(f: float) -> void: am.set_shader_parameter("strength", f), 0.0, 1.0, 0.9)
 	await flip.finished
 	shot_hint = "60_kraken_card_" + a
 	await get_tree().create_timer(2.8, false).timeout

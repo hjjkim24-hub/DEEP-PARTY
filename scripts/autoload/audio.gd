@@ -27,6 +27,7 @@ const SFX_NAMES := [
 	"box_rumble", "box_burst", "box_whoosh", "dice_shake", "dice_land",
 	"cannon", "explode", "whoosh", "portal", "card_spin", "card_flip", "coins", "roar", "thud", "creak",
 	"kraken_rumble", "kraken_slam", "kraken_rise", "zap", "snap",
+	"card_draw", "card_pass", "aura",
 ]
 ## 소리별 음량(dB). 파일은 모두 최고점 -1dB 로 맞춰 두었으니 여기서 크기를 정함. 자주 나는 소리는 작게.
 const SFX_DB := {
@@ -38,6 +39,7 @@ const SFX_DB := {
 	"coins": -7.0, "roar": -1.0, "thud": -6.0, "creak": -9.0,
 	"kraken_rumble": -2.0, "kraken_slam": -2.0, "kraken_rise": -5.0,
 	"zap": -4.0, "snap": -3.0,
+	"card_draw": -5.0, "card_pass": -13.0, "aura": -6.0,
 }
 ## 반복되는 배경 소리 (크라켄의 배 위 바람 등)
 const AMBIENCE := {"wind": "res://audio/sfx/wind.wav"}
