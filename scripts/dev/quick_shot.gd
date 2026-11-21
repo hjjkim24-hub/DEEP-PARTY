@@ -419,6 +419,18 @@ func _run() -> void:
 			await _shot("credits_%s_end" % lang)
 		get_tree().quit(0)
 		return
+	# mainshot: 메인화면 한 장 (한국어)
+	if "mainshot" in _want:
+		Settings.language = "ko"
+		Settings.apply_language()
+		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+		while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
+			await get_tree().process_frame
+		await _wait_idle(get_tree().current_scene, "main", 7.0)
+		await get_tree().create_timer(2.0).timeout
+		await _shot("main_menu")
+		get_tree().quit(0)
+		return
 	if "menus" in _want:
 		await _menus("en")
 		await _menus("ko")
