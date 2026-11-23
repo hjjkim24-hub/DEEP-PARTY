@@ -48,6 +48,7 @@ const HEARTS_MAX := 5               ## 최대 체력은 5 로 고정 (물약으�
 ##            섬으로 돌아온 뒤부터 다음 크라켄 차례까지 다시 셈
 const EEL_RANGE := 2                ## 전기뱀장어 칸: 앞뒤로 이만큼(내 칸 포함 모두 5칸) 감전
 const TRAP_SKIP := 1                ## 곰덫에 걸리면 쉬는 차례 수
+const TRAP_COUNT := 3               ## 곰덫 카드 한 장으로 숨기는 덫 개수
 const KRAKEN_ATTACK_EVERY := 2
 ## 처음 몇 라운드는 크라켄이 잠들어 있음: 모두 주사위를 이만큼 굴린 뒤(그 라운드 끝) 깨어나 바로 첫 차례
 const KRAKEN_WAKE_ROUND := 2
@@ -96,7 +97,7 @@ const CARDS := [
 	{"id": "heal", "weight": 8, "survival": true, "title": "SEA MEDIC", "text": "Get back 1 heart."},
 	{"id": "shield", "weight": 8, "survival": true, "title": "BARNACLE SHIELD", "text": "Blocks the next hit you take."},
 	{"id": "harpoon", "weight": 3, "survival": true, "title": "HARPOON", "text": "Throw a harpoon at a player of your choice. A hit costs them 1 heart."},
-	{"id": "trap", "weight": 7, "survival": true, "title": "BEAR TRAP", "text": "Secretly hide a trap on any space. Whoever stops there loses 1 heart and misses a turn."},
+	{"id": "trap", "weight": 7, "survival": true, "title": "BEAR TRAP", "text": "Secretly hide 3 traps on any spaces. Whoever stops on one loses 1 heart and misses a turn."},
 	{"id": "vampire", "weight": 6, "survival": true, "title": "VAMPIRE JELLY", "text": "Steal 1 heart from a player of your choice. Useless if your hearts are full."},
 	{"id": "bait", "weight": 6, "survival": true, "title": "KRAKEN BAIT", "text": "The kraken will strike next to a player of your choice!"},
 ]

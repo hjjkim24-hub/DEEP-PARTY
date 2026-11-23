@@ -78,6 +78,21 @@ func _mg_shot(id: String, intro_only: bool) -> void:
 	mg.run()
 	if OS.get_environment("BGTEST") != "":
 		mg.env.background_color = Color(1, 0, 1)
+	if OS.get_environment("BIGTRACE") != "":
+		var t0b := Time.get_ticks_msec()
+		var last := ""
+		while Time.get_ticks_msec() - t0b < 6000:
+			await get_tree().process_frame
+			var now := []
+			for l in mg._overlay.get_children():
+				if l is Label and (l as Label).text != "":
+					now.append((l as Label).text)
+			var key := ",".join(now)
+			if key != last:
+				print("BIGTRACE %.2f [%s]" % [(Time.get_ticks_msec() - t0b) / 1000.0, key])
+				last = key
+		get_tree().quit(0)
+		return
 	if OS.get_environment("SHOTS") != "":
 		await get_tree().create_timer(4.0).timeout
 		await _shot("mg_%s_x" % id)

@@ -1860,35 +1860,50 @@ var _trap_marks := {}   ## 칸 → 표시 (덫을 놓은 사람의 화면에만)
 
 
 func _set_trap(p: Dictionary) -> void:
-	# CPU: 하트가 가장 많은 상대가 지나갈 앞길 3 칸째
-	var auto_t := -1
-	var best: Dictionary = {}
-	for q in _others(p):
-		if best.is_empty() or int(q["hearts"]) > int(best["hearts"]):
-			best = q
-	if not best.is_empty():
-		auto_t = int(best["tile"])
-		for k in 3:
-			var nx: Array = world.spaces[auto_t]["next"]
-			if nx.is_empty():
-				break
-			auto_t = int(nx[0])
-	var t: int = await _pick_tile(p, tr("Pick a space to hide the trap!"), auto_t, "48_pick_trap", true)
-	if t < 0:
-		return
-	_traps[t] = int(p["slot"])
-	# 덫 놓은 사람 화면에만 흐릿한 덫 표시
-	if not bool(p["cpu"]) and int(p["slot"]) == GameState.my_slot:
-		var mk := Sprite3D.new()
-		mk.texture = BoardWorld.ICONS["trap"]
-		mk.pixel_size = 0.006
-		mk.modulate = Color(1.0, 0.55, 0.45, 0.75)
-		mk.axis = Vector3.AXIS_Y
-		mk.position = (world.spaces[t]["pos"] as Vector3) + Vector3(0, 0.03, 0)
-		add_child(mk)
-		_trap_marks[t] = mk
-	Audio.play("snap")
-	await get_tree().create_timer(0.4, false).timeout
+	# 덫 3개를 하나씩 골라 숨김 (이미 덫이 있는 칸은 못 고름)
+	# CPU: 하트가 많은 상대부터 돌아가며, 그 상대가 지나갈 앞길 3~5 칸째
+	var foes := _others(p)
+	foes.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["hearts"]) > int(b["hearts"]))
+	var n := Rules.TRAP_COUNT
+	for k in n:
+		var auto_t := -1
+		if not foes.is_empty():
+			var q: Dictionary = foes[k % foes.size()]
+			auto_t = int(q["tile"])
+			for j in 3 + k / foes.size() + (k % 2):
+				var nx: Array = world.spaces[auto_t]["next"]
+				if nx.is_empty():
+					break
+				auto_t = int(nx[0])
+			var guard := 0
+			while _traps.has(auto_t) and guard < 6:
+				var nx2: Array = world.spaces[auto_t]["next"]
+				if nx2.is_empty():
+					break
+				auto_t = int(nx2[0])
+				guard += 1
+		_pick_block = _traps.keys()
+		_pick_quick = k > 0   # 두 번째부터는 카메라가 이미 판 전체를 보고 있음
+		var t: int = await _pick_tile(p, tr("Pick a space to hide the trap! (%d/%d)") % [k + 1, n], auto_t, "48_pick_trap", true)
+		_pick_block = []
+		_pick_quick = false
+		if t < 0:
+			continue
+		_traps[t] = int(p["slot"])
+		# 덫 놓은 사람 화면에만 흐릿한 덫 표시
+		if not bool(p["cpu"]) and int(p["slot"]) == GameState.my_slot and not _trap_marks.has(t):
+			var mk := Sprite3D.new()
+			mk.texture = BoardWorld.ICONS["trap"]
+			mk.pixel_size = 0.006
+			mk.modulate = Color(1.0, 0.55, 0.45, 0.75)
+			mk.axis = Vector3.AXIS_Y
+			mk.position = (world.spaces[t]["pos"] as Vector3) + Vector3(0, 0.03, 0)
+			add_child(mk)
+			_trap_marks[t] = mk
+		Audio.play("snap")
+		if OS.is_debug_build() and OS.get_environment("BOARD_NET_DEBUG") != "":
+			print("TRAPSET slot %d pick %d/%d tile %d traps %s" % [int(p["slot"]), k + 1, n, t, str(_traps.keys())])
+		await get_tree().create_timer(0.3, false).timeout
 
 
 ## 덫에 걸림: 쇠 이빨이 철컥 → 하트 -1 + 다음 차례 쉼 (쉬는 동안 덫에 물려 있음)
@@ -2672,6 +2687,9 @@ func _result_row(rank: int, q: Dictionary, reward: int, trophy: bool) -> HBoxCon
 
 # ── 찬스 카드 ────────────────────────────────────────────────
 func _draw_card(p: Dictionary) -> void:
+	# 시험용: BOARD_TEST_CARD=<카드 id> 면 찬스 카드가 늘 그 카드
+	if rig_card == "" and OS.get_environment("BOARD_TEST_CARD") != "":
+		rig_card = OS.get_environment("BOARD_TEST_CARD")
 	var c: Dictionary = Rules.card(rig_card) if rig_card != "" else Rules.random_card(_rng, survival())
 	rig_card = ""
 	await _card_popup(c)
@@ -3666,10 +3684,15 @@ func _pick_player(p: Dictionary, cands: Array, prompt: String, by: String) -> Di
 
 
 ## 원하는 칸 고르기 (순간이동 카드): 보드 전체를 보여주고 칸을 클릭
+var _pick_block: Array = []   ## 고를 수 없는 칸 (이미 덫을 숨긴 칸 등)
+var _pick_quick := false      ## 연달아 고를 때: 카메라 이동 · 기다림 생략
+
+
 func _pick_tile(p: Dictionary, text: String = "", auto_tile: int = -1, shot: String = "47_pick_tile", secret: bool = false) -> int:
 	_follow = null
-	_move_camera(world.overview, world.overview_zoom * 1.06, 1.0)
-	await get_tree().create_timer(1.0, false).timeout
+	if not _pick_quick:
+		_move_camera(world.overview, world.overview_zoom * 1.06, 1.0)
+		await get_tree().create_timer(1.0, false).timeout
 	# secret: 남이 고르는 칸은 보여 주지 않음 (곰덫)
 	var hide := secret and _ctl(p) != "me"
 	var prompt := _outlined_label(text if text != "" else tr("Click the space you want to warp to!"), 34)
@@ -3703,7 +3726,7 @@ func _pick_tile(p: Dictionary, text: String = "", auto_tile: int = -1, shot: Str
 	elif _is_auto(p):
 		await get_tree().create_timer(1.2, false).timeout
 		var t := auto_tile if auto_tile >= 0 else world.trophy_tile
-		if t < 0 or t == int(p["tile"]):
+		if t < 0 or t == int(p["tile"]) or t in _pick_block:
 			var pool: Array = world.regular_tiles()
 			var keep := _use_aux(p)
 			t = pool[_rng.randi() % pool.size()]
@@ -3741,6 +3764,8 @@ func _on_pick_input(event: InputEvent) -> void:
 			if _camera.is_position_behind(wp) or i == world.start_index or not world.in_play(i):
 				continue
 			if not _pick_allowed.is_empty() and not (i in _pick_allowed):
+				continue
+			if i in _pick_block:
 				continue
 			var d := _camera.unproject_position(wp).distance_to(mm.position)
 			if d < bd:

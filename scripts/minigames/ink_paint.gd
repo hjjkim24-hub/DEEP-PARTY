@@ -509,7 +509,7 @@ func _fin_spawn(id: int, at: Vector3, yaw: float) -> void:
 	var root := Node3D.new()
 	root.position = at + Vector3(0, 0.12, 0)
 	root.rotation.y = yaw
-	add_child(root)
+	world3.add_child(root)
 	var blade := StandardMaterial3D.new()
 	blade.albedo_color = Color(1.0, 0.82, 0.1)
 	blade.roughness = 0.35
@@ -575,7 +575,7 @@ func _fin_spawn(id: int, at: Vector3, yaw: float) -> void:
 	ring.material_override = rm
 	ring.position = Vector3(at.x, 0.06, at.z)
 	ring.scale = Vector3(1, 0.3, 1)
-	add_child(ring)
+	world3.add_child(ring)
 	root.set_meta("ring", ring)
 	# 멀리서도 보이게: 하늘로 솟는 옅은 빛기둥
 	var beam := MeshInstance3D.new()
@@ -595,7 +595,7 @@ func _fin_spawn(id: int, at: Vector3, yaw: float) -> void:
 	beam.material_override = bm
 	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	beam.position = Vector3(at.x, 3.0, at.z)
-	add_child(beam)
+	world3.add_child(beam)
 	ring.set_meta("beam", beam)
 	root.scale = Vector3.ONE * 0.05
 	create_tween().tween_property(root, "scale", Vector3.ONE * 1.7, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
