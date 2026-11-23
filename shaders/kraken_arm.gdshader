@@ -3,7 +3,7 @@ shader_type spatial;
 // 촉수는 로컬 +Y 로 뻗고, +Z 쪽으로 휨. 휘는 각도 θ(u) = pitch + curl·segs·(0.4u + 0.5u²) + 출렁임
 // 빨판: 같은 재질을 쓰는 MultiMesh (UV2.x = 1 인 컵 모양 메쉬). 인스턴스마다 INSTANCE_CUSTOM =
 //   (촉수 위 위치 u, 둘레 각도 — 0 = 배 쪽, 크기 — 그 자리 굵기에 대한 비율). 관과 똑같이 휘어서 늘 촉수에 붙어 있음.
-render_mode blend_mix, depth_draw_always, cull_back, specular_schlick_ggx;
+render_mode blend_mix, depth_draw_opaque, cull_back, specular_schlick_ggx;   // 불투명 (반투명 겹침으로 깨져 보이던 문제)
 #include "res://shaders/kraken_common.gdshaderinc"
 uniform float arm_len = 8.0;
 // 곡선 모드: 메쉬가 이미 원하는 곡선 모양 (크라켄의 배에 걸친 촉수). 관 정점은 UV = (둘레 0..1, 길이 u),
@@ -102,7 +102,7 @@ void fragment() {
 	float al;
 	kraken_skin(q, dot(NORMAL, VIEW), belly, TIME, alb, emi, al);
 	float rimlit = 0.4;
-	float spec = 0.6;
+	float spec = 0.38;
 	if (vsuck > 0.5) {
 		// 빨판: 몸처럼 형광으로 빛나는 테두리(조금 덜 밝게) + 그늘진 안쪽 컵 + 가운데 작은 구멍
 		float rim = smoothstep(0.55, 0.85, vcup);
@@ -114,8 +114,7 @@ void fragment() {
 	}
 	ALBEDO = alb;
 	EMISSION = emi;
-	ALPHA = clamp(al + sk * 0.4, 0.0, 1.0);
-	ROUGHNESS = 0.14 + 0.1 * kn(q * 14.0) + (0.25 - rimlit * 0.6) * vsuck;
+	ROUGHNESS = 0.3 + 0.1 * kn(q * 14.0) + (0.25 - rimlit * 0.6) * vsuck;
 	SPECULAR = spec;
 	RIM = rimlit;
 	RIM_TINT = 0.7;

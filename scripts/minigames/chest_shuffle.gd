@@ -1,13 +1,16 @@
 extends "res://scripts/minigames/minigame_3d.gd"
 ## 보물상자 셔플 (마우스): 황금 진주가 상자 하나에 들어가면, 크라켄 촉수가 상자들을 휙휙 섞어요.
-## 섞기가 끝나면 진주가 든 상자를 클릭! 맞히면 1점. 3판 (판마다 더 빠르고 많이). 동점이면 함께 순위.
+## 섞기가 끝나면 3 초 안에 진주가 든 상자를 클릭! (3 초 동안은 바꿀 수 있고, 내 화면엔 내 선택만 보임 →
+## 3 초가 지나면 잠기고 모두의 선택이 드러남) 맞히면 1점. 4판 (판마다 더 빠르고 많이). 동점이면 함께 순위.
 
-const ROUNDS := 5
-## 판마다: 상자 수 · 섞는 횟수 · 한 번 섞는 시간 · 고를 시간 (마지막 판은 진짜 어렵게)
-const CHESTS_BY_ROUND := [3, 3, 4, 4, 5]
-const SWAPS_BY_ROUND := [5, 7, 9, 12, 16]
-const SWAP_TIME_BY_ROUND := [0.6, 0.48, 0.38, 0.29, 0.21]
-const PICK_TIME_BY_ROUND := [5.0, 4.5, 4.0, 3.5, 3.0]
+const ROUNDS := 4
+## 판마다: 상자 수 · 섞는 횟수 · 한 번 섞는 시간 · 고를 시간 (예전 5판째가 마지막 4판째)
+const CHESTS_BY_ROUND := [3, 3, 4, 5]
+const SWAPS_BY_ROUND := [5, 7, 9, 16]
+const SWAP_TIME_BY_ROUND := [0.6, 0.48, 0.38, 0.21]
+const PICK_TIME_BY_ROUND := [3.0, 3.0, 3.0, 3.0]
+## 상자 수마다 카메라 자리 (5 개도 양 끝까지 화면에 다 들어오게)
+const CAM_BY_COUNT := {3: Vector3(0, 5.2, 7.4), 4: Vector3(0, 5.9, 8.5), 5: Vector3(0, 6.8, 10.2)}
 
 var _chests: Array = []      ## {node, lid, slot(위치 번호)}
 var _slots: Array = []       ## 위치 번호 → Vector3
@@ -16,7 +19,7 @@ var _pearl: MeshInstance3D
 var _phase := "idle"         ## idle · show · shuffle · pick · reveal · done
 var _round := 0
 var _picks := {}             ## slot → 상자 번호
-var _pick_marks: Array = []
+var _pick_marks := {}        ## slot → 표시 구슬
 var _pick_left := 0.0
 var _track := {}             ## CPU 가 믿는 진주 상자 (가끔 놓침)
 var _arms: Array = []
@@ -25,7 +28,7 @@ var _hover := -1
 
 func _init() -> void:
 	title = "CHEST SHUFFLE"
-	how_to = "Watch the golden pearl! The kraken's tentacles shuffle the chests - then click the chest with the pearl. 5 rounds, each one faster!"
+	how_to = "Watch the golden pearl! The kraken's tentacles shuffle the chests - then you have 3 seconds to click the chest with the pearl. You can change your pick until time runs out. 4 rounds, each one faster!"
 	goal = "Most correct picks wins!"
 	controls = "MOUSE"
 	duration = 999.0
@@ -100,7 +103,7 @@ func _build_stage() -> void:
 
 func _make_chest(i: int) -> Dictionary:
 	var c := treasure_chest(1.35, 0.72, 0.92)
-	return {"node": c["root"], "lid": c["lid"], "slot": i}
+	return {"node": c["root"], "lid": c["lid"], "slot": i, "floor": float(c["floor"])}
 
 
 func _layout(n: int) -> void:
@@ -168,15 +171,16 @@ func _play_round() -> void:
 		else:
 			net_tell("_swap_set", [[[a, b]], st])
 		await _swap(a, b, st)
-	# 3) 고르기
+	# 3) 고르기: 3 초 (그동안은 바꿀 수 있음)
 	net_call("_cs_pick", [float(PICK_TIME_BY_ROUND[_round])])
-	while _pick_left > 0.0 and _picks.size() < players.size():
+	while _pick_left > 0.0:
 		await get_tree().process_frame
-	# 안 고른 사람은 무작위
+	# 안 고른 사람은 무작위 → 잠그고 모두의 선택 공개
 	for p in players:
 		if not _picks.has(int(p["slot"])):
 			_choose(int(p["slot"]), rng.randi() % n)
-	await get_tree().create_timer(0.4, false).timeout
+	net_call("_cs_lock", [])
+	await get_tree().create_timer(0.9, false).timeout
 	# 4) 공개
 	net_tell("_cs_reveal", [_pearl_in])
 	await _cs_reveal(_pearl_in)
@@ -187,9 +191,15 @@ func _cs_round(r: int, n: int) -> void:
 	_round = r
 	_layout(n)
 	_picks.clear()
-	for m in _pick_marks:
+	for m in _pick_marks.values():
 		(m as Node3D).queue_free()
 	_pick_marks.clear()
+	# 상자가 많아지면 카메라를 뒤로 (양 끝 상자가 잘리지 않게)
+	var to: Vector3 = CAM_BY_COUNT.get(n, CAM_BY_COUNT[5])
+	var ct := create_tween()
+	ct.tween_method(func(f: float) -> void:
+		cam.position = cam.position.lerp(to, f)
+		cam.look_at(Vector3(0, 0.7, -0.2)), 0.0, 1.0, 0.6).set_trans(Tween.TRANS_SINE)
 	if is_client():
 		_big_text_safe(tr("ROUND %d") % (_round + 1))
 
@@ -220,10 +230,42 @@ func _swap_set(pairs: Array, st: float) -> void:
 	_swapping = false
 
 
+var _count_lbl: Label
+var _count_last := -1
+
+
 func _cs_pick(t: float) -> void:
 	_phase = "pick"
 	_pick_left = t
-	sfx("toast")
+	_count_last = -1
+	if _count_lbl == null:
+		_count_lbl = Label.new()
+		_count_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_count_lbl.add_theme_font_size_override("font_size", 120)
+		_count_lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.55))
+		_count_lbl.add_theme_color_override("font_outline_color", Color(0.1, 0.05, 0.0))
+		_count_lbl.add_theme_constant_override("outline_size", 22)
+		_count_lbl.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+		_count_lbl.position.y += 90
+		_count_lbl.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		_overlay.add_child(_count_lbl)
+	_count_lbl.visible = true
+
+
+## 3 초 끝: 잠그고 모두의 선택을 보여 줌
+func _cs_lock() -> void:
+	_phase = "locked"
+	if _count_lbl:
+		_count_lbl.visible = false
+	for m in _pick_marks.values():
+		(m as Node3D).queue_free()
+	_pick_marks.clear()
+	var stack := {}
+	for s in _picks:
+		var i := int(_picks[s])
+		stack[i] = int(stack.get(i, 0)) + 1
+		_place_mark(int(s), i, int(stack[i]))
+	sfx("tick")
 
 
 ## 진주가 상자 idx 로 들어가는 장면
@@ -234,14 +276,18 @@ func _cs_show(idx: int) -> void:
 	await _open(c, true)
 	_pearl.visible = true
 	var at: Vector3 = (c["node"] as Node3D).position
+	# 열린 상자 위에서 떨어져 → 상자 속 벨벳 쿠션 위에 톡 튀며 안착 (벽을 뚫지 않고 안쪽 공간에 들어감)
+	var rest := at + Vector3(0, float(c.get("floor", 0.15)) + 0.28, 0)
 	_pearl.position = at + Vector3(0, 2.6, 0)
 	var t := create_tween()
-	t.tween_property(_pearl, "position", at + Vector3(0, 0.55, 0), 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	await t.finished
+	t.tween_property(_pearl, "position", rest, 0.75).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
+	await get_tree().create_timer(0.42, false).timeout
 	sfx("coins")
-	await get_tree().create_timer(0.35, false).timeout
-	_pearl.visible = false
+	await t.finished
+	await get_tree().create_timer(0.45, false).timeout
+	# 진주가 든 채로 뚜껑이 닫히고, 다 닫힌 뒤에 숨김
 	await _open(c, false)
+	_pearl.visible = false
 
 
 ## 공개: 진주 상자가 열리고 맞힌 사람 +1 (점수는 방장 것이 기준)
@@ -251,7 +297,7 @@ func _cs_reveal(idx: int) -> void:
 	var win: Dictionary = _chests[_pearl_in]
 	await _open(win, true)
 	_pearl.visible = true
-	_pearl.position = (win["node"] as Node3D).position + Vector3(0, 0.7, 0)
+	_pearl.position = (win["node"] as Node3D).position + Vector3(0, float(win.get("floor", 0.15)) + 0.28, 0)
 	var up := create_tween()
 	up.tween_property(_pearl, "position:y", 1.6, 0.4).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	sfx("start")
@@ -273,7 +319,7 @@ func _big_text_safe(text: String) -> void:
 func _open(c: Dictionary, open: bool) -> void:
 	var lid: Node3D = c["lid"]
 	var t := create_tween()
-	t.tween_property(lid, "rotation:x", -1.5 if open else 0.0, 0.25).set_trans(Tween.TRANS_BACK if open else Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(lid, "rotation:x", -1.85 if open else 0.0, 0.3).set_trans(Tween.TRANS_BACK if open else Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	if open:
 		sfx("creak", 80)
 	else:
@@ -360,6 +406,15 @@ func _tick(delta: float) -> void:
 		m.set_shader_parameter("wave", 0.6 if _phase == "shuffle" else 0.2)
 	if _phase == "pick":
 		_pick_left -= delta
+		# 3 · 2 · 1 카운트 (숫자가 바뀔 때마다 톡)
+		var sec := int(ceil(maxf(_pick_left, 0.0)))
+		if _count_lbl and sec != _count_last:
+			_count_last = sec
+			_count_lbl.text = str(maxi(sec, 1))
+			_count_lbl.pivot_offset = _count_lbl.size * 0.5
+			_count_lbl.scale = Vector2.ONE * 1.35
+			create_tween().tween_property(_count_lbl, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK)
+			sfx("tick")
 		if not is_client():
 			_cpu_picks(delta)
 		_hover_chest()
@@ -370,7 +425,7 @@ func _cpu_picks(_delta: float) -> void:
 		var s := int(p["slot"])
 		if is_human(p) or _picks.has(s):
 			continue
-		if float(PICK_TIME_BY_ROUND[_round]) - _pick_left > 0.6 + float(s) * 0.3:
+		if float(PICK_TIME_BY_ROUND[_round]) - _pick_left > 0.5 + float(s) * 0.25:
 			_choose(s, int(_track[s]))
 
 
@@ -403,8 +458,6 @@ func _gui_input(e: InputEvent) -> void:
 	var mb := e as InputEventMouseButton
 	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
 		return
-	if _picks.has(local_slot()):
-		return
 	var i := _chest_under_mouse()
 	if i >= 0:
 		net_input("pick", [i])
@@ -415,21 +468,28 @@ func _net_input(slot: int, action: String, args: Array) -> void:
 		_choose(slot, int(args[0]))
 
 
-## 고름 (방장이 받아서 모두에게)
+## 고름 (방장이 받아서 모두에게). 3 초 안에는 다시 골라서 바꿀 수 있음
 func _choose(s: int, i: int) -> void:
-	if _picks.has(s) or i < 0 or i >= _chests.size():
+	if _phase != "pick" and _picks.has(s):
+		return
+	if i < 0 or i >= _chests.size() or int(_picks.get(s, -1)) == i:
 		return
 	net_call("_choose_do", [s, i])
 
 
-## 고름: 상자 위에 그 사람 색 구슬이 하나씩 쌓임
+## 고른 기록: 고르는 동안엔 내 화면에 내 선택만 구슬로 보임 (남의 선택은 3 초 뒤 공개)
 func _choose_do(s: int, i: int) -> void:
-	if _picks.has(s):
-		return
 	_picks[s] = i
+	if s == local_slot() and _phase == "pick":
+		if _pick_marks.has(s):
+			(_pick_marks[s] as Node3D).queue_free()
+		_place_mark(s, i, 1)
+		sfx("tick")
+
+
+func _place_mark(s: int, i: int, count: int) -> void:
 	var p := player_by_slot(s)
 	var n: Node3D = _chests[i]["node"]
-	var count := _picks.values().filter(func(v: int) -> bool: return v == i).size()
 	var gem := SphereMesh.new()
 	gem.radius = 0.16
 	gem.height = 0.32
@@ -437,10 +497,9 @@ func _choose_do(s: int, i: int) -> void:
 	m.emission_enabled = true
 	m.emission = Color(p["color"]) * 0.5
 	var mk := add_mesh(gem, m, n.position + Vector3(-0.45 + (count - 1) * 0.3, 1.45, 0.3))
-	_pick_marks.append(mk)
+	_pick_marks[s] = mk
 	mk.scale = Vector3.ONE * 0.01
 	create_tween().tween_property(mk, "scale", Vector3.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	sfx("tick")
 
 
 func _ranking() -> Array:

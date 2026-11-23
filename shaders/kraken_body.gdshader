@@ -1,6 +1,8 @@
 shader_type spatial;
-// 거대 크라켄 몸통 (models/kraken_body.obj). 반투명 형광 초록
-render_mode blend_mix, depth_draw_always, cull_back, specular_schlick_ggx;
+// 거대 크라켄 몸통 (models/kraken_body.obj). 형광 초록 젤리 살.
+// 불투명으로 그림: 반투명이면 몸의 겹친 면 · 판 위 소품과 그리는 순서가 꼬여 군데군데 깨져 보였음.
+// 속이 비치는 느낌은 가장자리 빛(프레넬) + 속 핏줄 빛으로 냄
+render_mode blend_mix, depth_draw_opaque, cull_back, specular_schlick_ggx;
 #include "res://shaders/kraken_common.gdshaderinc"
 varying vec3 lp;
 varying vec3 ln;
@@ -24,9 +26,8 @@ void fragment() {
 	kraken_skin(q, dot(NORMAL, VIEW), belly, TIME, alb, emi, a);
 	ALBEDO = alb;
 	EMISSION = emi;
-	ALPHA = a;
-	ROUGHNESS = 0.16 + 0.12 * kn(q * 14.0);
-	SPECULAR = 0.6;
+	ROUGHNESS = 0.3 + 0.12 * kn(q * 14.0);
+	SPECULAR = 0.4;
 	RIM = 0.4;
 	RIM_TINT = 0.7;
 }

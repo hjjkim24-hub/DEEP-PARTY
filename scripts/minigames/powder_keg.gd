@@ -156,7 +156,7 @@ func _tick(delta: float) -> void:
 	_think(delta)
 	# 든 사람은 조금 느림, 쫓는 게 아니라 쫓기는 쪽은 빠름
 	for s in walkers:
-		walkers[s]["speed"] = 4.6 if s == _holder else 5.0
+		walkers[s]["speed"] = 5.4 if s == _holder else 5.0   # 화약통을 든 사람이 조금 더 빠름 (쫓아가서 넘기기 쉽게)
 	step_walkers(delta)
 	var hw: Dictionary = walkers[_holder]
 	var hp: Vector3 = (hw["node"] as Node3D).global_position

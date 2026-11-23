@@ -22,6 +22,36 @@ var _lift := 0.0
 var _pop := 0.0
 
 
+static var _pool: GradientTexture2D
+static var _light: GradientTexture2D
+
+
+static func _radial(stops: Array) -> GradientTexture2D:
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array(stops.map(func(e: Array) -> float: return e[0]))
+	g.colors = PackedColorArray(stops.map(func(e: Array) -> Color: return e[1]))
+	var t := GradientTexture2D.new()
+	t.width = 256
+	t.height = 256
+	t.fill = GradientTexture2D.FILL_RADIAL
+	t.fill_from = Vector2(0.5, 0.5)
+	t.fill_to = Vector2(0.5, 0.0)
+	t.gradient = g
+	return t
+
+
+static func _pool_tex() -> GradientTexture2D:
+	if _pool == null:
+		_pool = _radial([[0.0, Color(0.0, 0.05, 0.045, 0.34)], [0.45, Color(0.0, 0.05, 0.045, 0.22)], [0.8, Color(0.0, 0.05, 0.045, 0.07)], [1.0, Color(0.0, 0.05, 0.045, 0.0)]])
+	return _pool
+
+
+static func _light_tex() -> GradientTexture2D:
+	if _light == null:
+		_light = _radial([[0.0, Color(0.75, 1.0, 0.92, 0.13)], [0.5, Color(0.6, 0.95, 0.85, 0.06)], [1.0, Color(0.6, 0.95, 0.85, 0.0)]])
+	return _light
+
+
 func _ready() -> void:
 	_t = randf() * 10.0
 	if react_to_mouse:
@@ -50,13 +80,13 @@ func _draw() -> void:
 	var scale_k := (1.0 + ease_lift * 0.03) * pop_s
 
 	if backdrop:
+		# 뒤에 깔리는 어스름 + 위에서 내려오는 은은한 빛 웅덩이: 매끈한 그라데이션 한 장씩 (겹친 원 때문에 생기던 계단 무늬 없음)
 		var c := origin + draw_size * Vector2(0.5, 0.55)
-		var r := maxf(draw_size.x, draw_size.y) * 0.62
-		draw_set_transform(c, 0.0, Vector2(1.0, 0.72))
-		for i in 48:
-			var f := 1.0 - float(i) / 48.0 * 0.7
-			draw_circle(Vector2.ZERO, r * f, Color(0.0, 0.07, 0.06, 0.02))
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		var r := maxf(draw_size.x, draw_size.y) * 0.66
+		draw_texture_rect(_pool_tex(), Rect2(c - Vector2(r, r * 0.72), Vector2(r * 2.0, r * 1.44)), false, Color(1, 1, 1, 1))
+		var lr := r * 0.8
+		var flick := 0.9 + 0.1 * sin(_t * 0.9) * sin(_t * 1.7 + 1.0)
+		draw_texture_rect(_light_tex(), Rect2(c - Vector2(lr, lr * 0.62) + Vector2(0, -draw_size.y * 0.06), Vector2(lr * 2.0, lr * 1.24)), false, Color(1, 1, 1, flick))
 
 	# 그림자: 상자가 뜰수록 연하고 넓게
 	var sh_a := (0.75 if not dim else 0.5) * (1.0 - ease_lift * 0.25 - clampf(rise / draw_size.y, -0.05, 0.1))

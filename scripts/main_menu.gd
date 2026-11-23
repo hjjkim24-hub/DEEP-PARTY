@@ -893,7 +893,15 @@ func _select_board(i: int, with_fx: bool = true) -> void:
 		_board_big.box = data["box"]
 	_board_big.dim = bool(data["locked"])
 	_board_name.text = data["name"]
-	_board_desc.text = data["desc"]
+	# 한글이 단어 한가운데서 줄이 바뀌지 않게 (글자 사이 줄바꿈 금지 문자)
+	_board_desc.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	var dt := tr(String(data["desc"]))
+	var kept := ""
+	for ci in dt.length():
+		kept += dt[ci]
+		if ci + 1 < dt.length() and dt[ci] != " " and dt[ci + 1] != " ":
+			kept += char(0x2060)
+	_board_desc.text = kept
 	for c in _board_tags.get_children():
 		c.queue_free()
 	for tag in data["tags"]:

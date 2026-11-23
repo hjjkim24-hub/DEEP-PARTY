@@ -22,7 +22,134 @@ static func make(id: String) -> Node3D:
 			return _oxygen()
 		"net":
 			return _net_bundle()
+		"coin":
+			return _coin_stack(false)
+		"coin_bad":
+			return _coin_stack(true)
 	return Node3D.new()
+
+
+## 금화 한 닢 (반지름 r, 원점 = 동전 가운데, 납작한 면이 위아래).
+## 앞뒤 = 양각 텍스처(닻 · 밧줄 · 둘레 글자 · 구슬 테, 노멀맵 + 거칠기 맵), 옆면 = 톱니(리딩).
+## 메시 · 재질은 한 번만 만들어 공유 (판 위에 동전이 수십 개 떠도 가벼움). bad = 검게 그을리고 녹슨 저주받은 동전
+static var _coin_cache := {}
+
+static func coin(r: float = 0.3, bad: bool = false) -> Node3D:
+	var root := Node3D.new()
+	var mi := MeshInstance3D.new()
+	mi.mesh = _coin_mesh()
+	mi.set_surface_override_material(0, _coin_mat("face", bad))
+	mi.set_surface_override_material(1, _coin_mat("rim", bad))
+	mi.scale = Vector3.ONE * r
+	root.add_child(mi)
+	return root
+
+
+static func _coin_mat(part: String, bad: bool) -> StandardMaterial3D:
+	var key := part + ("_bad" if bad else "_gold")
+	if _coin_cache.has(key):
+		return _coin_cache[key]
+	var m := StandardMaterial3D.new()
+	var nm := "bad" if bad else "gold"
+	if part == "face":
+		m.albedo_texture = load("res://textures/models/coin_%s_albedo.png" % nm)
+		m.roughness_texture = load("res://textures/models/coin_%s_rough.png" % nm)
+		m.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
+		m.roughness = 1.0
+		m.normal_enabled = true
+		m.normal_texture = load("res://textures/models/coin_normal.png")
+		m.normal_scale = 1.0
+	else:
+		m.albedo_color = Color(0.93, 0.7, 0.3) if not bad else Color(0.2, 0.19, 0.17)
+		m.roughness = 0.3 if not bad else 0.65
+	# 물속 푸른 빛만 비치면 금이 초록빛으로 보여서, 금속감은 조금 낮추고 금빛을 살짝 스스로 냄
+	m.metallic = 0.8 if not bad else 0.55
+	m.metallic_specular = 0.7
+	if not bad:
+		m.emission_enabled = true
+		m.emission = Color(0.55, 0.36, 0.08)
+		m.emission_energy_multiplier = 0.6
+		if part == "face":
+			m.emission_texture = m.albedo_texture
+	_coin_cache[key] = m
+	return m
+
+
+## 반지름 1 · 두께 0.15 동전 메시: 면 0 = 앞뒤 원판(UV 가 텍스처 원에 딱 맞음), 면 1 = 톱니 옆면 + 모서리 깎임
+static func _coin_mesh() -> ArrayMesh:
+	if _coin_cache.has("mesh"):
+		return _coin_cache["mesh"]
+	var am := ArrayMesh.new()
+	var th := 0.075
+	var bev := 0.965   # 면 가장자리가 살짝 안으로 깎여 들어감
+	var seg := 64
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for sgn in [1.0, -1.0]:
+		var n := Vector3(0, sgn, 0)
+		for k in seg:
+			var a0 := TAU * k / seg
+			var a1 := TAU * (k + 1) / seg
+			var tri := [Vector3.ZERO, Vector3(cos(a0) * bev, 0, sin(a0) * bev), Vector3(cos(a1) * bev, 0, sin(a1) * bev)]
+			if sgn > 0:
+				tri = [tri[0], tri[2], tri[1]]
+			for q in tri:
+				var v: Vector3 = q
+				st.set_normal(n)
+				st.set_tangent(Plane(Vector3(1, 0, 0), 1.0 if sgn > 0 else -1.0))
+				# 뒷면은 좌우를 뒤집어 글자가 바로 읽힘
+				st.set_uv(Vector2(0.5 + v.x * 0.5 * sgn * 0.98, 0.5 + v.z * 0.5 * 0.98))
+				st.add_vertex(Vector3(v.x, th * sgn, v.z))
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
+	# 옆면: 톱니 (반지름이 번갈아 1 / 0.985) + 위아래 깎인 모서리
+	var st2 := SurfaceTool.new()
+	st2.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var teeth := 120
+	var ring := []
+	for k in teeth * 2:
+		var a := TAU * k / (teeth * 2)
+		var rr := 1.0 if k % 2 == 0 else 0.982
+		ring.append(Vector2(cos(a), sin(a)) * rr)
+	ring.append(ring[0])
+	var rows := [[bev, th], [1.0, th * 0.62], [1.0, -th * 0.62], [bev, -th]]
+	for i in rows.size() - 1:
+		var ra: Array = rows[i]
+		var rb: Array = rows[i + 1]
+		for k in ring.size() - 1:
+			var c0: Vector2 = ring[k]
+			var c1: Vector2 = ring[k + 1]
+			var sa: float = ra[0]
+			var sb: float = rb[0]
+			# 톱니는 가운데 띠에만, 깎인 모서리는 매끈하게
+			var f0 := c0 if (sa == 1.0) else c0.normalized()
+			var f1 := c1 if (sa == 1.0) else c1.normalized()
+			var g0 := c0 if (sb == 1.0) else c0.normalized()
+			var g1 := c1 if (sb == 1.0) else c1.normalized()
+			var p00 := Vector3(f0.x * sa, ra[1], f0.y * sa)
+			var p01 := Vector3(f1.x * sa, ra[1], f1.y * sa)
+			var p10 := Vector3(g0.x * sb, rb[1], g0.y * sb)
+			var p11 := Vector3(g1.x * sb, rb[1], g1.y * sb)
+			for q in [p00, p01, p11, p00, p11, p10]:
+				st2.set_uv(Vector2(float(k) / ring.size(), float(i) / 3.0))
+				st2.add_vertex(q)
+	st2.generate_normals()
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st2.commit_to_arrays())
+	_coin_cache["mesh"] = am
+	return am
+
+
+static func _coin_stack(bad: bool) -> Node3D:
+	var root := Node3D.new()
+	for k in 3:
+		var c := coin(0.32, bad)
+		c.position = Vector3(k * 0.03 - 0.03, 0.06 + k * 0.055, k * 0.02)
+		c.rotation.y = k * 0.7
+		root.add_child(c)
+	var top := coin(0.32, bad)
+	top.position = Vector3(0.12, 0.42, 0.0)
+	top.rotation = Vector3(1.15, 0.2, 0.0)
+	root.add_child(top)
+	return root
 
 
 # ── 재질 ────────────────────────────────────────────────────

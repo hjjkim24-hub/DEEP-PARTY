@@ -489,7 +489,12 @@ func _process(delta: float) -> void:
 ## 연출 카메라: from 에서 at 을 바라보게 부드럽게 넘어감 (to = 1) / 돌아옴 (to = 0)
 func _cinematic(from: Vector3, at: Vector3, to: float, time: float) -> void:
 	if to > 0.0:
-		_cine_xf = Transform3D(Basis.looking_at(at - from, Vector3.UP), from)
+		var look := at - from
+		if look.length() < 0.01:
+			look = Vector3(0, -0.3, -1)
+		# 바로 위/아래를 보면 UP 과 나란해져 계산이 깨짐 → 그땐 앞쪽을 위로
+		var up := Vector3.UP if absf(look.normalized().y) < 0.98 else Vector3.FORWARD
+		_cine_xf = Transform3D(Basis.looking_at(look, up), from)
 	create_tween().tween_property(self, "_cine", to, time).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
 
 
@@ -1221,6 +1226,8 @@ func _throw_net(p: Dictionary) -> void:
 	var a := pnode.position + Vector3(0, 1.4, 0)
 	var b := tnode.position + Vector3(0, 0.05, 0)
 	var dir := Vector3(b.x - a.x, 0, b.z - a.z).normalized()
+	if Vector2(b.x - a.x, b.z - a.z).length() < 0.2:
+		dir = Vector3(0, 0, 1)   # 같은 칸(크라켄 배 등): 방향이 없으면 카메라가 바로 위에서 내려다봐 시점 계산이 깨짐
 	var side := Vector3(dir.z, 0, -dir.x)
 	var span := Vector2(b.x - a.x, b.z - a.z).length()
 	var mid := a.lerp(b, 0.5)
@@ -1747,6 +1754,8 @@ func _harpoon(p: Dictionary, thrown: bool = false) -> void:
 	var src: Vector3 = (world.harpoon_guns[tile]["muzzle"] as Node3D).global_position if gun else pnode.position + Vector3(0, 1.1, 0)
 	var tpos := tnode.position + Vector3(0, 0.75, 0)
 	var dir := Vector3(tpos.x - src.x, 0, tpos.z - src.z).normalized()
+	if Vector2(tpos.x - src.x, tpos.z - src.z).length() < 0.2:
+		dir = Vector3(0, 0, 1)   # 같은 칸에 있는 상대
 	var side := Vector3(dir.z, 0, -dir.x)
 	# 옆에서 쏘는 쪽과 맞는 쪽이 한 화면에 다 들어오게 (날아가는 길 전체가 보임)
 	var span := Vector2(tpos.x - src.x, tpos.z - src.z).length()
@@ -1794,8 +1803,10 @@ func _harpoon(p: Dictionary, thrown: bool = false) -> void:
 	var place := func(f: float) -> void:
 		var pos := src.lerp(tpos, f) + Vector3(0, sin(f * PI) * apex, 0)
 		var vel := (tpos - src) + Vector3(0, cos(f * PI) * PI * apex, 0)
-		if vel.length() > 0.01:
+		if vel.length() > 0.01 and absf(vel.normalized().y) < 0.98:
 			hp.global_transform = Transform3D(Basis.looking_at(-vel.normalized(), Vector3.UP), pos)
+		elif vel.length() > 0.01:
+			hp.global_transform = Transform3D(Basis.looking_at(-vel.normalized(), Vector3.FORWARD), pos)
 		var tail := pos - vel.normalized() * 1.1
 		var rv := tail - src
 		var rl := maxf(rv.length(), 0.01)
@@ -2096,6 +2107,8 @@ func _vampire(p: Dictionary) -> void:
 	jf.position = a
 	jf.scale = Vector3.ONE * 0.01
 	var dir := Vector3(b.x - a.x, 0, b.z - a.z).normalized()
+	if Vector2(b.x - a.x, b.z - a.z).length() < 0.2:
+		dir = Vector3(0, 0, 1)
 	var side := Vector3(dir.z, 0, -dir.x)
 	var span := Vector2(b.x - a.x, b.z - a.z).length()
 	# 카메라: 처음엔 내 말 곁 → 해파리를 따라 상대 곁으로
@@ -2547,7 +2560,7 @@ func _run_minigame(lander: Dictionary, trophy: bool) -> void:
 			if q == lander:
 				reward += Rules.MINIGAME_LANDER_BONUS
 			_add_coins(q, reward)
-	if survival() and order.size() > 0 and bool(order[0].get("alive", true)):
+	if Rules.MINIGAME_WIN_HEAL > 0 and survival() and order.size() > 0 and bool(order[0].get("alive", true)):
 		await get_tree().create_timer(0.4, false).timeout
 		await _heal(order[0], Rules.MINIGAME_WIN_HEAL)
 	await get_tree().create_timer(0.8, false).timeout
@@ -2695,102 +2708,221 @@ func _card_icon(id: String) -> Texture2D:
 
 
 ## 카드가 날아와 뒤집히면 앞면에 내용
+const CHANCE_BACK := preload("res://textures/ui/cards/chance_back.png")
+const CHANCE_FRONT := preload("res://textures/ui/cards/chance_front.png")
+const CCARD_SIZE := Vector2(440, 640)
+const CCARD_COUNT := 7
+
+
+func _chance_back_card() -> TextureRect:
+	var b := TextureRect.new()
+	b.texture = CHANCE_BACK
+	b.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	b.stretch_mode = TextureRect.STRETCH_SCALE
+	b.size = CCARD_SIZE
+	b.pivot_offset = CCARD_SIZE * 0.5
+	b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return b
+
+
+## 찬스 카드 뽑기 (크라켄 행동 카드처럼): 뒷면 카드들이 둥글게 돌다 느려져 멈춤 → 뽑힌 카드가 앞으로 와 천천히 뒤집힘
+## 카드는 실물처럼: 남색 리넨 천 뒷면에 금박 나침반, 앞면은 바랜 양피지에 금박 테두리 · 잉크로 찍은 그림
 func _card_popup(c: Dictionary) -> void:
-	Audio.play("card_draw")
 	var v := get_viewport().get_visible_rect().size
+	var size := CCARD_SIZE
 	var holder := Control.new()
 	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	holder.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_popup_root.add_child(holder)
-	var size := Vector2(280, 384)
-	var back := TextureRect.new()
-	back.texture = CARD_TEX
-	back.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	back.stretch_mode = TextureRect.STRETCH_SCALE
-	back.size = size
-	back.pivot_offset = size * 0.5
-	back.position = Vector2(v.x * 0.5 - size.x * 0.5, v.y + 40)
-	holder.add_child(back)
-	# 앞면
-	var front := PanelContainer.new()
-	var st := StyleBoxFlat.new()
-	st.bg_color = Color("fff6df")
-	st.border_color = Color("f4b43a")
-	st.set_border_width_all(8)
-	st.set_corner_radius_all(26)
-	st.set_content_margin_all(22)
-	st.shadow_color = Color(0, 0, 0, 0.35)
-	st.shadow_size = 16
-	front.add_theme_stylebox_override("panel", st)
-	front.custom_minimum_size = size
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0.02, 0.03, 0.0)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	holder.add_child(dim)
+	var deck := Control.new()
+	deck.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	deck.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	holder.add_child(deck)
+	var center := v * 0.5
+	var k_n := CCARD_COUNT
+	var chosen := _fx_rng.randi() % k_n
+	var cards: Array[TextureRect] = []
+	for k in k_n:
+		var b := _chance_back_card()
+		deck.add_child(b)
+		cards.append(b)
+	var rx := minf(v.x * 0.3, 520.0)
+	var ry := 70.0
+	var base_scale := 0.6
+	var place := func(spin: float, spread: float) -> void:
+		var order := []
+		for k in k_n:
+			var th := spin + TAU * k / k_n
+			var depth := cos(th)
+			var cd: TextureRect = cards[k]
+			var sc := base_scale * (0.72 + 0.28 * (depth + 1.0) * 0.5)
+			cd.scale = Vector2(sc, sc)
+			cd.position = center + Vector2(sin(th) * rx * spread, cos(th) * ry * spread - 30.0) - size * 0.5
+			cd.rotation = sin(th) * 0.12 * spread
+			cd.modulate = Color(1, 1, 1).darkened(0.45 * (1.0 - (depth + 1.0) * 0.5))
+			order.append([depth, cd])
+		order.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+		for o in order:
+			deck.move_child(o[1], -1)
+	# 1) 펼쳐짐
+	Audio.play("card_draw")
+	var t0 := create_tween()
+	t0.tween_property(dim, "color:a", 0.5, 0.3)
+	t0.parallel().tween_method(func(f: float) -> void: place.call(-f * 1.2, f), 0.0, 1.0, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	await t0.finished
+	# 2) 돌다가 느려져 멈춤 (카드가 스칠 때마다 스윽)
+	var start := -1.2
+	var target := TAU * 4.0 - TAU * chosen / k_n
+	while target - start < TAU * 3.0:
+		target += TAU
+	var last_slot := [int(floor(start / (TAU / k_n)))]
+	var spin_t := create_tween()
+	spin_t.tween_method(func(sp: float) -> void:
+		place.call(sp, 1.0)
+		var slot := int(floor(sp / (TAU / k_n)))
+		if slot != last_slot[0]:
+			last_slot[0] = slot
+			Audio.play("card_pass", 40), start, target, 2.8).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	await spin_t.finished
+	await get_tree().create_timer(0.25, false).timeout
+	# 3) 뽑힌 카드만 앞으로
+	var pick: TextureRect = cards[chosen]
+	var gather := create_tween().set_parallel(true)
+	for k in k_n:
+		if k == chosen:
+			continue
+		var cd: TextureRect = cards[k]
+		gather.tween_property(cd, "modulate:a", 0.0, 0.35)
+		gather.tween_property(cd, "scale", cd.scale * 0.8, 0.35)
+	gather.tween_property(pick, "position", center - size * 0.5, 0.4).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	gather.tween_property(pick, "scale", Vector2.ONE, 0.4).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	gather.tween_property(pick, "rotation", 0.0, 0.4)
+	gather.tween_property(pick, "modulate", Color.WHITE, 0.3)
+	await gather.finished
+	# 앞면: 양피지 + 제목 · 그림 · 설명
+	var front := TextureRect.new()
+	front.texture = CHANCE_FRONT
+	front.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	front.stretch_mode = TextureRect.STRETCH_SCALE
 	front.size = size
 	front.pivot_offset = size * 0.5
-	front.position = Vector2(v.x * 0.5 - size.x * 0.5, v.y * 0.5 - size.y * 0.5)
+	front.position = center - size * 0.5
+	front.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	front.scale = Vector2(0.05, 1.0)
 	front.visible = false
 	holder.add_child(front)
-	var fv := VBoxContainer.new()
-	fv.alignment = BoxContainer.ALIGNMENT_CENTER
-	fv.add_theme_constant_override("separation", 14)
-	front.add_child(fv)
-	var head := Label.new()
-	head.text = "CHANCE CARD!"
-	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	head.add_theme_font_size_override("font_size", 18)
-	head.add_theme_color_override("font_color", Color("c9821c"))
-	fv.add_child(head)
+	var ink := Color(0.13, 0.07, 0.03)
 	var id := String(c["id"])
-	if id in ["warp", "trophy_minigame", "lucky_spaces", "trap_spaces"]:
-		var kinds := {"warp": "portal", "trophy_minigame": "minigame", "lucky_spaces": "coin_plus", "trap_spaces": "coin_minus"}
-		var kind: String = kinds[id]
-		var sw := _kind_swatch(kind, 110)
-		sw.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		fv.add_child(sw)
+	var W := size.x
+	# 머리글 · 제목: 짙은 먹색 + 양피지색 테두리 → 얼룩진 종이 위에서도 또렷
+	var head := _card_label("CHANCE CARD", 18, Color(0.5, 0.32, 0.08), PirateFonts.title(), 0)
+	head.position = Vector2(30, 40)
+	head.size = Vector2(W - 60, 26)
+	front.add_child(head)
+	var t1 := _card_label(String(c["title"]), 40, ink, PirateFonts.title(), 6)
+	t1.position = Vector2(30, 62)
+	t1.size = Vector2(W - 60, 54)
+	front.add_child(t1)
+	# 그림: 카드마다 바닷속 장면을 사진처럼 찍은 삽화 (금테 액자 + 안쪽 그림자)
+	var art_w := W - 72
+	var art_h := roundf(art_w * 2.0 / 3.0)
+	var frame := Panel.new()
+	frame.position = Vector2(36, 124)
+	frame.size = Vector2(art_w, art_h)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var fsb := StyleBoxFlat.new()
+	fsb.bg_color = Color(0.1, 0.08, 0.05)
+	fsb.border_color = Color(0.62, 0.45, 0.16)
+	fsb.set_border_width_all(4)
+	fsb.set_corner_radius_all(6)
+	fsb.shadow_color = Color(0.2, 0.12, 0.04, 0.45)
+	fsb.shadow_size = 5
+	fsb.shadow_offset = Vector2(0, 2)
+	frame.add_theme_stylebox_override("panel", fsb)
+	front.add_child(frame)
+	var art_path := "res://textures/ui/cards/art/%s.png" % id
+	if ResourceLoader.exists(art_path):
+		var art := TextureRect.new()
+		art.texture = load(art_path)
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		art.position = Vector2(4, 4)
+		art.size = frame.size - Vector2(8, 8)
+		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		frame.add_child(art)
 	else:
-		var tex := _card_icon(id)
-		if id == "roll_again":
-			var at := AtlasTexture.new()
-			at.atlas = tex
-			at.region = Rect2(256 * 2, 0, 256, 256)
-			tex = at
-		var ic := _icon(tex, 110)
-		ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		fv.add_child(ic)
-	var t1 := Label.new()
-	t1.text = c["title"]
-	t1.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	t1.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	t1.add_theme_font_size_override("font_size", 30)
-	t1.add_theme_color_override("font_color", Color("3a2a10"))
-	fv.add_child(t1)
-	var t2 := Label.new()
-	t2.text = c["text"]
-	t2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	t2.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	t2.custom_minimum_size = Vector2(size.x - 50, 0)
-	t2.add_theme_font_size_override("font_size", 18)
-	t2.add_theme_color_override("font_color", Color("6a5536"))
-	fv.add_child(t2)
-	# 뒷면이 천천히 올라와 잠깐 멈춤 (두근) → 천천히 뒤집혀 앞면
-	var t := create_tween()
-	t.tween_property(back, "position:y", v.y * 0.5 - size.y * 0.5, 0.8).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	t.parallel().tween_property(back, "rotation", TAU, 0.8).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	t.tween_property(back, "scale", Vector2(1.06, 1.06), 0.35).set_trans(Tween.TRANS_SINE)
-	t.tween_property(back, "scale", Vector2(1.0, 1.0), 0.35).set_trans(Tween.TRANS_SINE)
-	t.tween_interval(0.25)
-	t.tween_callback(func() -> void: Audio.play("card_flip"))
-	t.tween_property(back, "scale:x", 0.05, 0.24).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-	t.tween_callback(func() -> void:
-		back.visible = false
+		var cc := CenterContainer.new()
+		cc.size = frame.size
+		cc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cc.add_child(_icon(_card_icon(id), int(art_h * 0.8)))
+		frame.add_child(cc)
+	# 그림 안쪽 가는 금선 (인쇄된 카드 액자처럼)
+	var inner := Panel.new()
+	inner.position = Vector2(8, 8)
+	inner.size = frame.size - Vector2(16, 16)
+	inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var isb := StyleBoxFlat.new()
+	isb.draw_center = false
+	isb.border_color = Color(0.95, 0.8, 0.45, 0.55)
+	isb.set_border_width_all(1)
+	isb.set_corner_radius_all(3)
+	inner.add_theme_stylebox_override("panel", isb)
+	frame.add_child(inner)
+	# 설명: 밝은 종이 띠 위에 큰 먹 글씨
+	var box := Panel.new()
+	box.position = Vector2(34, 124 + art_h + 16)
+	box.size = Vector2(W - 68, size.y - (124 + art_h + 16) - 46)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bsb := StyleBoxFlat.new()
+	bsb.bg_color = Color(1.0, 0.97, 0.88, 0.62)
+	bsb.border_color = Color(0.55, 0.38, 0.14, 0.55)
+	bsb.set_border_width_all(1)
+	bsb.set_corner_radius_all(8)
+	box.add_theme_stylebox_override("panel", bsb)
+	front.add_child(box)
+	var t2 := _card_label(_keep_words(tr(String(c["text"]))), 25, ink, PirateFonts.body(), 0)
+	t2.autowrap_mode = TextServer.AUTOWRAP_WORD
+	t2.add_theme_constant_override("line_spacing", 4)
+	t2.position = Vector2(12, 6)
+	t2.size = box.size - Vector2(24, 12)
+	box.add_child(t2)
+	# 4) 잠깐 뜸 들였다 천천히 뒤집힘
+	await get_tree().create_timer(0.4, false).timeout
+	Audio.play("card_flip")
+	var flip := create_tween()
+	flip.tween_property(pick, "scale:x", 0.05, 0.26).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	flip.tween_callback(func() -> void:
+		pick.visible = false
 		front.visible = true)
-	t.tween_property(front, "scale:x", 1.0, 0.32).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	await t.finished
+	flip.tween_property(front, "scale:x", 1.0, 0.34).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	await flip.finished
 	shot_hint = "42_card_" + id
 	await get_tree().create_timer(2.6, false).timeout
 	var t3 := create_tween()
 	t3.tween_property(holder, "modulate:a", 0.0, 0.3)
 	await t3.finished
 	holder.queue_free()
+
+## 찬스 카드 글씨: 자동 금박 꾸밈은 끄고, 먹색 + (원하면) 양피지색 테두리
+func _card_label(text: String, fs: int, col: Color, font: Font, outline: int) -> Label:
+	var l := Label.new()
+	l.set_meta("pirate_done", true)
+	l.text = text
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.add_theme_font_override("font", font)
+	l.add_theme_font_size_override("font_size", fs)
+	l.add_theme_color_override("font_color", col)
+	l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
+	l.add_theme_constant_override("outline_size", outline)
+	l.add_theme_color_override("font_outline_color", Color(0.98, 0.93, 0.8))
+	return l
 
 
 func _others(p: Dictionary) -> Array:
@@ -2876,27 +3008,106 @@ func _bait(_target: Dictionary) -> void:
 
 
 ## 찬스 카드: 보드 곳곳에 +5 / -5 동전 칸이 생김
+var _spines := {}             ## 독가시 칸 → {"until": 이 라운드 끝에 풀림, "prev": 원래 칸 변화}
+var _coin_mods := {}   ## 칸 → {"until": 라운드, "prev": 덮어쓰기 전 _tile_mods 값} (행운 · 함정 칸, 시간이 지나면 원래대로)
+
+
+## 행운(+5) · 함정(-5) 칸이 판의 약 30% 에 한꺼번에 생김 — 원래 다른 칸이었어도 덮어씀.
+## 컷씬: 판을 몇 구역으로 나눠 구역마다 카메라가 다가가서 칸들이 차례로 바뀌는 걸 보여 주고, 마지막에 전체
 func _spawn_coin_spaces(p: Dictionary, kind: String) -> void:
 	var pool := []
-	for i in world.regular_tiles():
-		if not _tile_mods.has(i) and i != world.trophy_tile and String(world.spaces[i]["kind"]) != "chance":
-			pool.append(i)
+	for i in world.spaces.size():
+		if not world.in_play(i) or i == world.start_index:
+			continue
+		var kd := String(world.spaces[i]["kind"])
+		if kd in ["start", "junction", "portal"]:
+			continue
+		if String(_tile_mods.get(i, "")) == "urchin" or _traps.has(i):
+			continue
+		pool.append(i)
 	_shuffle(pool)
+	var chosen: Array = pool.slice(0, int(round(pool.size() * Rules.COIN_SPACES_FRACTION)))
+	# 구역 나누기: 판 가운데에서 본 방향으로 5 갈래
+	var center := Vector3.ZERO
+	for i in chosen:
+		center += world.spaces[i]["pos"]
+	center /= maxf(1.0, chosen.size())
+	var groups := {}
+	for i in chosen:
+		var d: Vector3 = (world.spaces[i]["pos"] as Vector3) - center
+		var sector := int(floor((atan2(d.z, d.x) + PI) / TAU * 5.0)) % 5
+		if not groups.has(sector):
+			groups[sector] = []
+		groups[sector].append(i)
 	_follow = null
-	_move_camera(world.overview, world.overview_zoom, 1.0)
-	await get_tree().create_timer(1.05, false).timeout
 	_legend_add(kind)
-	for k in mini(Rules.COIN_SPACES_PER_CARD, pool.size()):
-		var i: int = pool[k]
-		_tile_mods[i] = kind
-		world.set_tile_look(i, kind)
-		Audio.play("toast")
-		await get_tree().create_timer(0.35, false).timeout
-	shot_hint = "44_" + kind
-	await get_tree().create_timer(1.0, false).timeout
+	shot_hint = "44_" + kind + "_start"
+	for sector in range(5):
+		if not groups.has(sector):
+			continue
+		var g: Array = groups[sector]
+		g.sort()
+		var c := Vector3.ZERO
+		for i in g:
+			c += world.spaces[i]["pos"]
+		c /= g.size()
+		var spread := 0.0
+		for i in g:
+			spread = maxf(spread, ((world.spaces[i]["pos"] as Vector3) - c).length())
+		_move_camera(c + Vector3(0, 0.5, 0), clampf(1.4 + spread / 12.0, 1.7, 3.2), 0.75)   # 위에서 넓게 내려다봐 동전 칸이 여러 개 보이게
+		await get_tree().create_timer(0.8, false).timeout
+		for i in g:
+			_set_coin_mod(i, kind)
+			world.bubbles_at((world.spaces[i]["pos"] as Vector3) + Vector3(0, 0.3, 0), 8, 0.5, true)
+			Audio.play("coins" if kind == "coin_plus" else "toast", 60)
+			await get_tree().create_timer(0.07, false).timeout
+		shot_hint = "44_" + kind
+		await get_tree().create_timer(0.55, false).timeout
+	# 마지막: 판 전체
+	_move_camera(world.overview, world.overview_zoom, 1.0)
+	await get_tree().create_timer(1.6, false).timeout
 	focus_on(p, 0.8)
 	await get_tree().create_timer(0.8, false).timeout
 	_follow = p["node"]
+
+
+func _set_coin_mod(i: int, kind: String) -> void:
+	var prev := String(_tile_mods.get(i, ""))
+	if _coin_mods.has(i):
+		prev = String(_coin_mods[i]["prev"])     # 이미 동전 칸이면 처음 원래 모습을 기억
+	_coin_mods[i] = {"until": _round + Rules.COIN_SPACES_ROUNDS, "prev": prev}
+	_tile_mods[i] = kind
+	world.set_tile_look(i, kind)
+
+
+## 기한이 끝난 행운 · 함정 칸을 원래대로
+func _expire_coin_mods(r: int) -> void:
+	var done := []
+	for t in _coin_mods:
+		if int(_coin_mods[t]["until"]) <= r:
+			done.append(t)
+	if done.is_empty():
+		return
+	_follow = null
+	_move_camera(world.overview, world.overview_zoom * 0.8, 0.8)
+	await get_tree().create_timer(0.8, false).timeout
+	for t in done:
+		var prev := String(_coin_mods[t]["prev"])
+		_coin_mods.erase(t)
+		var now := String(_tile_mods.get(t, ""))
+		if now != "coin_plus" and now != "coin_minus":
+			# 그 사이 독가시 같은 다른 효과가 덮였으면, 그 효과가 끝날 때 돌아갈 모습만 바꿔 둠
+			if _spines.has(t):
+				_spines[t]["prev"] = prev
+			continue
+		if prev == "":
+			_tile_mods.erase(t)
+			world.set_tile_look(t, String(world.spaces[t]["kind"]))
+		else:
+			_tile_mods[t] = prev
+			world.set_tile_look(t, prev)
+	Audio.play("toast")
+	await _banner(tr("The lucky and trap spaces fade"), "", 0.9)
 
 
 # ── 상점 ─────────────────────────────────────────────────────

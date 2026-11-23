@@ -23,6 +23,7 @@ const T_FRAME := preload("res://textures/ui/map/frame.png")
 const T_RIBBON := preload("res://textures/ui/map/ribbon.png")
 const INK := Color(0.24, 0.13, 0.06)
 const INK_RED := Color(0.55, 0.13, 0.08)
+const INK_DARK := Color(0.12, 0.06, 0.02)   ## 설명 본문: 얼룩진 양피지 위에서도 또렷하게
 const CREAM := Color(0.98, 0.9, 0.7)
 
 var game_id := ""
@@ -126,6 +127,31 @@ func _label(text: String, size_: int, col: Color = PEARL, outline: int = 0) -> L
 	return l
 
 
+## 한글이 단어 한가운데서 줄바꿈되지 않게 (글자 사이에 줄바꿈 금지 문자)
+static func _keep_words(t: String) -> String:
+	var out := ""
+	for i in t.length():
+		out += t[i]
+		if i + 1 < t.length() and t[i] != " " and t[i + 1] != " " and t[i] != "\n" and t[i + 1] != "\n":
+			out += char(0x2060)
+	return out
+
+
+## 설명이 길어 오른쪽 칸을 넘치면 글씨를 조금씩 줄임 (그래도 24 이하로는 안 줄임)
+func _fit_desc(desc: Label, side: Control) -> void:
+	for k in 4:
+		await get_tree().process_frame
+		if not is_instance_valid(desc):
+			return
+		if side.get_combined_minimum_size().y <= 585.0:
+			return
+		var fs := desc.get_theme_font_size("font_size")
+		if fs <= 24:
+			return
+		desc.add_theme_font_size_override("font_size", fs - 2)
+		desc.add_theme_constant_override("line_spacing", 6)
+
+
 func _ink(text: String, size_: int, col: Color = INK, is_title: bool = false) -> Label:
 	var l := Label.new()
 	l.text = text
@@ -176,10 +202,10 @@ func _build() -> void:
 	title.position = Vector2(0, 86)
 	title.size = Vector2(ARENA.x, 120)
 	_arena.add_child(title)
-	var goal := _label(_info.goal, 30, CREAM, 10)
+	var goal := _label(_info.goal, 36, CREAM, 12)
 	goal.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	goal.position = Vector2(0, 204)
-	goal.size = Vector2(ARENA.x, 44)
+	goal.position = Vector2(0, 200)
+	goal.size = Vector2(ARENA.x, 52)
 	_arena.add_child(goal)
 
 	# 왼쪽: 미리보기 화면 (실제 게임을 CPU들이 자동으로 하는 장면)
@@ -202,7 +228,7 @@ func _build() -> void:
 	var rec := HBoxContainer.new()
 	rec.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	rec.add_theme_constant_override("separation", 10)
-	rec.position = Vector2(150, 330)
+	rec.position = Vector2(130, 283)   # 액자 위 나무틀에 (미리보기 화면 속 점수판을 가리지 않게)
 	_arena.add_child(rec)
 	_rec_dot = Panel.new()
 	_rec_dot.custom_minimum_size = Vector2(20, 20)
@@ -210,7 +236,12 @@ func _build() -> void:
 	_rec_dot.add_theme_stylebox_override("panel", _box(Color("ff4d5e"), Color.WHITE, 0, 10))
 	rec.add_child(_rec_dot)
 	rec.add_child(_label("PREVIEW", 24, PEARL, 8))
-	_restart_demo()
+	# 렉 줄이기: 미리보기 화면은 해상도를 조금 낮추고(액자 안 작은 화면이라 차이 거의 없음) 그림자 줄임,
+	# 소개 화면이 먼저 부드럽게 뜬 뒤 몇 프레임 지나서 미리보기 게임을 만듦 (한 프레임에 다 만들면 멈칫)
+	_demo_vp.scaling_3d_scale = 0.75
+	_demo_vp.msaa_3d = Viewport.MSAA_DISABLED
+	_demo_vp.positional_shadow_atlas_size = 1024
+	_start_demo_later()
 
 	# 오른쪽: 하는 방법 + 조작법
 	var side := VBoxContainer.new()
@@ -219,43 +250,35 @@ func _build() -> void:
 	side.size = Vector2(650, 585)
 	side.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_arena.add_child(side)
-	var parch := _tex_box(T_PARCH, Vector4(90, 90, 90, 90), Vector4(52, 44, 52, 40))
+	var parch := _tex_box(T_PARCH, Vector4(90, 90, 90, 90), Vector4(60, 44, 66, 40))
 	var how := PanelContainer.new()
 	how.add_theme_stylebox_override("panel", parch)
 	how.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	side.add_child(how)
-	var how_in := Control.new()
-	how_in.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	how.add_child(how_in)
+	var how_in := how   # 나침반 · 글씨 모두 양피지 안쪽에 바로 (글 길이에 맞춰 양피지가 늘어남)
 	# 지도 그림: 오른쪽 아래 나침반 + 점선 뱃길 + 붉은 X
 	var comp := TextureRect.new()
 	comp.texture = T_COMPASS
 	comp.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	comp.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	comp.modulate = Color(1, 1, 1, 0.55)
+	comp.modulate = Color(1, 1, 1, 0.14)   # 글씨 뒤에 깔리므로 아주 옅게
 	comp.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	comp.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-	comp.offset_left = -170
-	comp.offset_top = -170
-	comp.offset_right = 10
-	comp.offset_bottom = 10
+	comp.custom_minimum_size = Vector2(150, 150)
+	comp.size_flags_horizontal = Control.SIZE_SHRINK_END
+	comp.size_flags_vertical = Control.SIZE_SHRINK_END
 	how_in.add_child(comp)
-	var path := Control.new()
-	path.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	path.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	path.draw.connect(func() -> void: _draw_map_path(path))
-	path.resized.connect(path.queue_redraw)
-	how_in.add_child(path)
+	# (점선 뱃길 · X 표시는 설명 글씨와 겹쳐 읽기 어려워서 뺌)
 	var hv := VBoxContainer.new()
 	hv.add_theme_constant_override("separation", 12)
-	hv.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	hv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	how_in.add_child(hv)
 	hv.add_child(_ink("How to Play", 40, INK_RED, true))
-	var desc := _ink(_info.how_to, 28)
+	var desc := _ink(_keep_words(tr(_info.how_to)), 30, INK_DARK)
+	desc.auto_translate = false
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	desc.custom_minimum_size = Vector2(540, 0)
-	desc.add_theme_constant_override("line_spacing", 6)
+	desc.add_theme_constant_override("line_spacing", 9)
+	_fit_desc.call_deferred(desc, side)
 	hv.add_child(desc)
 	var ctrl := PanelContainer.new()
 	ctrl.add_theme_stylebox_override("panel", _tex_box(T_PARCH, Vector4(90, 90, 90, 90), Vector4(52, 34, 52, 34)))
@@ -269,18 +292,18 @@ func _build() -> void:
 	cv.add_child(ch)
 	if _info.controls == "MOUSE" or _info.controls == "MOUSE_MOVE":
 		ch.add_child(_mouse_icon())
-		var t := _ink("Click with the left mouse button" if _info.controls == "MOUSE" else "Move the mouse - your pawn walks to it", 26)
+		var t := _ink("Click with the left mouse button" if _info.controls == "MOUSE" else "Move the mouse - your pawn walks to it", 28, INK_DARK)
 		t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		t.custom_minimum_size = Vector2(400, 0)
 		ch.add_child(t)
 	else:
 		ch.add_child(_keys_icon(["W", "A", "S", "D"]))
-		var or_l := _ink("or", 24, Color(INK, 0.7))
+		var or_l := _ink("or", 26, Color(INK, 0.9))
 		or_l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		ch.add_child(or_l)
 		ch.add_child(_keys_icon(["↑", "←", "↓", "→"]))
-		var t2 := _ink("Move", 26)
+		var t2 := _ink("Move", 30, INK_DARK)
 		t2.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		ch.add_child(t2)
 
@@ -326,7 +349,7 @@ func _player_card(p: Dictionary) -> Control:
 	v.add_theme_constant_override("separation", 2)
 	h.add_child(v)
 	v.add_child(_ink(p["name"], 34, INK, true))
-	var status := _ink("WAITING...", 22, Color(INK, 0.6))
+	var status := _ink("WAITING...", 24, Color(INK, 0.85))
 	v.add_child(status)
 	# 준비되면 찍히는 붉은 도장
 	var stamp := Control.new()
@@ -466,6 +489,14 @@ func _process(delta: float) -> void:
 
 
 ## 미리보기: 같은 미니게임을 작은 화면에서 자동으로 계속
+func _start_demo_later() -> void:
+	for k in 3:
+		await get_tree().process_frame
+	await get_tree().create_timer(0.25).timeout
+	if is_inside_tree():
+		_restart_demo()
+
+
 func _restart_demo() -> void:
 	if is_instance_valid(_demo):
 		_demo.queue_free()

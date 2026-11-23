@@ -153,6 +153,34 @@ func _make_boat(p: Dictionary, z: float) -> Dictionary:
 		mi.scale = Vector3(1.0, 1.0, 0.35)
 	anchor.position = Vector3(0.2, SEA_Y - 0.3, z)
 	anchor.scale = Vector3.ONE * 1.3
+	# 이름표: 배 바로 밑 물속에 (내 배는 크게 "▼ 나" + 빛 고리) — 수면 위가 안 보여도 내 배를 바로 찾게
+	var mine := is_local(p)
+	var tag := Label3D.new()
+	tag.text = ("▼ " + tr("YOU")) if mine else String(p["name"])
+	tag.font_size = 64 if mine else 44
+	tag.outline_size = 14
+	tag.modulate = Color(p["color"]).lightened(0.35)
+	tag.outline_modulate = Color(0, 0, 0, 0.85)
+	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	tag.no_depth_test = true
+	tag.fixed_size = false
+	tag.pixel_size = 0.006
+	tag.position = Vector3(0, SEA_Y - 0.95, z)
+	root.add_child(tag)
+	if mine:
+		var halo := MeshInstance3D.new()
+		var tm := TorusMesh.new()
+		tm.inner_radius = 1.45
+		tm.outer_radius = 1.6
+		halo.mesh = tm
+		var hm := StandardMaterial3D.new()
+		hm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		hm.albedo_color = Color(Color(p["color"]).lightened(0.4), 0.7)
+		hm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		halo.material_override = hm
+		halo.position = Vector3(0, SEA_Y - 0.12, z)
+		halo.scale = Vector3(1.0, 0.3, 0.6)
+		root.add_child(halo)
 	# 사슬 (닻 ↔ 배)
 	# 사슬: 고리를 엇갈려 꿴 쇠사슬 (길이에 맞춰 고리 수를 바꿈)
 	var chain := MultiMeshInstance3D.new()
@@ -257,8 +285,7 @@ func _round_setup(r: int, speed: float, current: float, target_r: float, target_
 	_marker.scale = Vector3.ONE * _target_r
 	if is_client():
 		_big_text(tr("ROUND %d") % (_round + 1), 0.6)
-	if absf(_current) > 0.1:
-		float_at(Vector3(0, 4.0, 0), ("≫ " + tr("Current")) if _current > 0 else (tr("Current") + " ≪"), Color(0.6, 0.95, 1.0), 40)
+	_show_current()
 	for s in _boats:
 		var b: Dictionary = _boats[s]
 		var st: Array = starts.get(s, [1.0, -11.0])
@@ -351,8 +378,40 @@ func _drop(s: int) -> void:
 	splash(Vector3(float(b["x"]), SEA_Y, float(b["z"])), 16, 0.6)
 
 
+var _edge_lbl: Label
+
+
+## 내 배가 화면 밖이면 화면 가장자리에 "◀ 나" 화살표
+func _edge_marker() -> void:
+	var me := local_slot()
+	if not _boats.has(me) or _phase != "sail":
+		if _edge_lbl:
+			_edge_lbl.visible = false
+		return
+	var b: Dictionary = _boats[me]
+	var wp := Vector3(float(b["x"]), SEA_Y - 0.6, float(b["z"]))
+	var sp := cam.unproject_position(wp)
+	var size := Vector2(vp.size)
+	var off := sp.x < 40.0 or sp.x > size.x - 40.0
+	if _edge_lbl == null:
+		_edge_lbl = Label.new()
+		_edge_lbl.add_theme_font_size_override("font_size", 40)
+		_edge_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+		_edge_lbl.add_theme_constant_override("outline_size", 10)
+		_overlay.add_child(_edge_lbl)
+	_edge_lbl.visible = off
+	if off:
+		var p := player_by_slot(me)
+		_edge_lbl.add_theme_color_override("font_color", Color(p["color"]).lightened(0.35))
+		var left := sp.x < 40.0
+		_edge_lbl.text = ("◀ " + tr("YOU")) if left else (tr("YOU") + " ▶")
+		var scale := get_viewport().get_visible_rect().size.x / size.x
+		_edge_lbl.position = Vector2(24.0 if left else get_viewport().get_visible_rect().size.x - _edge_lbl.size.x - 24.0, clampf(sp.y * scale, 120.0, 600.0))
+
+
 func _tick(delta: float) -> void:
 	_t3 += delta
+	_edge_marker()
 	for s in _boats:
 		var b: Dictionary = _boats[s]
 		var node: Node3D = b["node"]
@@ -437,6 +496,96 @@ func _tick(delta: float) -> void:
 				mmc.set_instance_transform(k, Transform3D(bas.scaled(Vector3(1.0, 1.0, 1.0)) * Basis().scaled(Vector3(1.0, 1.0, 1.7)), top + y * f))
 		else:
 			mmc.visible_instance_count = 0
+
+
+# ── 해류 세기 표시 ───────────────────────────────────────────
+## 화면 위쪽 패널: 방향 화살표 개수 + 세기 막대 + 말(약함 · 보통 · 강함). 물속엔 해류 따라 흐르는 부유물
+var _cur_panel: PanelContainer
+var _cur_lbl: Label
+var _cur_bar: ProgressBar
+var _flow: CPUParticles3D
+
+
+func _show_current() -> void:
+	var c := _current
+	var mag := absf(c)
+	var word := "No current"
+	var arrows := 0
+	if mag >= 0.1:
+		arrows = clampi(int(ceil(mag / 0.6)), 1, 4)
+		word = "Weak current" if mag < 0.8 else ("Medium current" if mag < 1.6 else "Strong current")
+	if _cur_panel == null:
+		_cur_panel = PanelContainer.new()
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.02, 0.1, 0.14, 0.82)
+		sb.border_color = Color(0.5, 0.9, 1.0, 0.8)
+		sb.set_border_width_all(2)
+		sb.set_corner_radius_all(14)
+		sb.content_margin_left = 22
+		sb.content_margin_right = 22
+		sb.content_margin_top = 8
+		sb.content_margin_bottom = 10
+		_cur_panel.add_theme_stylebox_override("panel", sb)
+		_cur_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+		_cur_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		_cur_panel.position.y += 96
+		_overlay.add_child(_cur_panel)
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 4)
+		_cur_panel.add_child(v)
+		_cur_lbl = Label.new()
+		_cur_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_cur_lbl.add_theme_font_size_override("font_size", 30)
+		_cur_lbl.add_theme_color_override("font_color", Color(0.7, 0.97, 1.0))
+		_cur_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+		_cur_lbl.add_theme_constant_override("outline_size", 8)
+		v.add_child(_cur_lbl)
+		_cur_bar = ProgressBar.new()
+		_cur_bar.show_percentage = false
+		_cur_bar.custom_minimum_size = Vector2(300, 14)
+		_cur_bar.max_value = 2.4
+		var fill := StyleBoxFlat.new()
+		fill.bg_color = Color(0.45, 0.9, 1.0)
+		fill.set_corner_radius_all(7)
+		var bg := StyleBoxFlat.new()
+		bg.bg_color = Color(1, 1, 1, 0.12)
+		bg.set_corner_radius_all(7)
+		_cur_bar.add_theme_stylebox_override("fill", fill)
+		_cur_bar.add_theme_stylebox_override("background", bg)
+		v.add_child(_cur_bar)
+	var arrow_s := ""
+	for k in arrows:
+		arrow_s += ("▶" if c > 0 else "◀")
+	_cur_lbl.text = (arrow_s + "  " + tr(word) + "  " + arrow_s) if arrows > 0 else tr(word)
+	_cur_bar.value = mag
+	_cur_panel.modulate.a = 0.0
+	create_tween().tween_property(_cur_panel, "modulate:a", 1.0, 0.3)
+	# 물속 부유물이 해류 세기만큼 흘러감
+	if _flow == null:
+		_flow = CPUParticles3D.new()
+		_flow.amount = 90
+		_flow.lifetime = 6.0
+		_flow.preprocess = 6.0
+		_flow.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		_flow.emission_box_extents = Vector3(16, 2.6, 3.0)
+		_flow.position = Vector3(0, 3.0, 0)
+		_flow.gravity = Vector3.ZERO
+		_flow.spread = 6.0
+		_flow.local_coords = false
+		var qm := QuadMesh.new()
+		qm.size = Vector2(0.5, 0.04)
+		var mm := StandardMaterial3D.new()
+		mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		mm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mm.albedo_color = Color(0.8, 0.95, 1.0, 0.35)
+		qm.material = mm
+		_flow.mesh = qm
+		world3.add_child(_flow)
+	_flow.emitting = mag >= 0.1
+	_flow.direction = Vector3(signf(c) if c != 0.0 else 1.0, 0, 0)
+	_flow.initial_velocity_min = mag * 1.4 + 0.2
+	_flow.initial_velocity_max = mag * 1.8 + 0.3
 
 
 ## 온라인: 배 자리 보정 (방장 → 손님)

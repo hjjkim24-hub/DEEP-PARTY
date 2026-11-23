@@ -1,6 +1,6 @@
 extends "res://scripts/minigames/minigame_3d.gd"
 ## 보물 줍기 (마우스): 바닷속 모래밭 한가운데 크라켄의 보물상자가 들썩이며 보물을 뿜어요.
-## 말은 마우스 쪽으로 걸어가요. 동전 1 · 진주 2 · 보석 5점. 크라켄 먹물 구름 속에선 느려져요. 30초.
+## 동전 1 · 진주 2 · 보석 5점. 크라켄 먹물 구름 속에선 느려져요(검은 경고가 먼저 뜸). 30초.
 
 const SandShader := preload("res://shaders/mg_sand.gdshader")
 const SandAlbedo := preload("res://textures/seabed/sand_albedo.png")
@@ -18,8 +18,6 @@ var _items: Array = []     ## {node, pos, kind, flying, from, to, t, fly}
 var _inks: Array = []      ## {node, pos, vel, r, life}
 var _burst_t := 1.2
 var _ink_t := 6.0
-var _slam_t := 99.0
-var _stripes: Array = []   ## 후반 촉수 내려치기 {a, b, t_hit, mark}
 var _stun := {}            ## slot → 남은 기절 시간
 var _elapsed := 0.0
 var _ai := {}
@@ -100,6 +98,26 @@ func _build_chest() -> void:
 	heap.height = 0.5
 	var hm := add_mesh(heap, gold, Vector3(0, 0.95, 0), Basis(), _chest)
 	hm.scale = Vector3(1.05, 0.7, 0.62)
+	# 금화 더미 위에 진짜 동전들 (양각 금화) + 진주 몇 알이 흩어져 반짝
+	var crng := RandomNumberGenerator.new()
+	crng.seed = 77
+	for k in 16:
+		var a := crng.randf() * TAU
+		var rr := sqrt(crng.randf())
+		var px := cos(a) * rr * 0.72
+		var pz := sin(a) * rr * 0.4
+		var py := 0.95 + 0.27 * sqrt(maxf(0.0, 1.0 - rr * rr)) + 0.01
+		var c3 := ItemModels.coin(0.11)
+		c3.position = Vector3(px, py, pz)
+		c3.rotation = Vector3(crng.randf_range(-0.5, 0.5), crng.randf() * TAU, crng.randf_range(-0.5, 0.5))
+		_chest.add_child(c3)
+	var pm := std_mat(Color(0.95, 0.93, 0.88), 0.12, 0.1)
+	pm.rim_enabled = true
+	for k in 3:
+		var ps := SphereMesh.new()
+		ps.radius = 0.07
+		ps.height = 0.14
+		add_mesh(ps, pm, Vector3(-0.35 + k * 0.33, 1.12 + (k % 2) * 0.05, 0.08 * (k - 1)), Basis(), _chest)
 	_lid.rotation.x = -0.35
 
 
@@ -197,19 +215,6 @@ func _tick(delta: float) -> void:
 	if _ink_t <= 0.0 and _elapsed > lerpf(5.0, 1.0, heat) and not is_client():
 		_spawn_ink()
 		_ink_t = lerpf(5.5, 1.3, pr) * rng.randf_range(0.8, 1.2)
-	# 후반: 크라켄 촉수가 모래를 뚫고 나와 말을 노리고 내려침 (맞으면 기절 + 보물을 흘림)
-	if pr > 0.4 and not is_client():
-		_slam_t = minf(_slam_t, 1.0)
-		_slam_t -= delta
-		if _slam_t <= 0.0:
-			_slam()
-			_slam_t = lerpf(2.4, 0.75, (pr - 0.4) / 0.6) * rng.randf_range(0.85, 1.15)
-	for st in _stripes.duplicate():
-		if _elapsed >= float(st["t_hit"]):
-			_stripes.erase(st)
-			_slam_hit(st)
-			if not is_client():
-				_slam_judge(st)
 	for s in _stun.keys():
 		_stun[s] = float(_stun[s]) - delta
 		var w: Dictionary = walkers[s]
@@ -344,84 +349,6 @@ func _collect_do(id: int, s: int) -> void:
 			break
 
 
-# ── 후반 촉수 ───────────────────────────────────────────────
-func _slam() -> void:
-	var alive := walkers.values()
-	if alive.is_empty():
-		return
-	var w: Dictionary = alive[rng.randi() % alive.size()]
-	var pr := pressure()
-	var target: Vector3 = (w["pos"] as Vector3) + (w["vel"] as Vector3) * lerpf(0.2, 0.5, pr)
-	var a := rng.randf_range(1.85, 4.43)
-	var out := Vector3(sin(a), 0, cos(a))
-	var length := 8.0
-	var root := target + out * (length * 0.42)
-	var dir := -out
-	var a0 := root + dir * length * 0.12
-	var a1 := root + dir * length * 0.74
-	a0.y = 0.0
-	a1.y = 0.0
-	var warn := lerpf(1.2, 0.7, pr)
-	net_call("_slam_do", [root, dir, length, a0, a1, warn])
-
-
-func _slam_do(root: Vector3, dir: Vector3, length: float, a0: Vector3, a1: Vector3, warn: float) -> void:
-	var mark := rect_mark(a0, a1, 1.6, null, 0.03)
-	_stripes.append({"a": a0, "b": a1, "t_hit": _elapsed + warn, "mark": mark})
-	slam_tentacle(Vector3(root.x, 0, root.z), dir, length, warn, 0.0)
-	sfx("tick", 60)
-
-
-func _slam_hit(st: Dictionary) -> void:
-	sfx("kraken_slam", 90)
-	shake(0.4)
-	var mark: MeshInstance3D = st["mark"]
-	var tw := create_tween()
-	tw.tween_interval(0.4)
-	tw.tween_property(mark, "transparency", 1.0, 0.25)
-	tw.tween_callback(mark.queue_free)
-
-
-## 방장: 내려친 자리에 있던 사람 → 기절 + 보물 흘림
-func _slam_judge(st: Dictionary) -> void:
-	for s in walkers:
-		var w: Dictionary = walkers[s]
-		var pos: Vector3 = w["pos"]
-		var q := Vector3(pos.x, 0, pos.z)
-		var cl := Geometry3D.get_closest_point_to_segment(q, st["a"], st["b"])
-		if in_rect(pos, st["a"], st["b"], 1.6, 0.25):
-			var lost := mini(int(scores[s]), 3)
-			var push := (q - cl).normalized() * 6.0 if q.distance_to(cl) > 0.05 else Vector3(1, 0, 0) * 6.0
-			var drops := []
-			for k in lost:
-				var a := rng.randf() * TAU
-				var to := pos + Vector3(cos(a), 0, sin(a)) * rng.randf_range(1.2, 2.4)
-				var flat := Vector2(to.x, to.z)
-				if flat.length() > ARENA_R - 0.5:
-					flat = flat.normalized() * (ARENA_R - 0.5)
-				drops.append([_next_item, Vector3(flat.x, 0.12, flat.y)])
-				_next_item += 1
-			net_call("_stunned", [int(s), pos, push, lost, drops])
-
-
-func _stunned(s: int, pos: Vector3, push: Vector3, lost: int, drops: Array) -> void:
-	var w: Dictionary = walkers[s]
-	_stun[s] = 1.1
-	if not is_client():
-		scores[s] = int(scores[s]) - lost
-	if net == "host":
-		net_push(s, push)
-	w["push"] = push
-	sfx("thud")
-	if is_local(w["p"]):
-		shake(0.4)
-	if lost > 0:
-		float_at(pos + Vector3(0, 2.0, 0), "-%d" % lost, Color(1.0, 0.45, 0.4), 44)
-		# 잃은 보물은 둘레에 흩어짐 (다시 주울 수 있음)
-		for dr in drops:
-			_spawn_item(int(dr[0]), "coin", pos + Vector3(0, 0.6, 0), dr[1], 0.6)
-
-
 # ── 먹물 ─────────────────────────────────────────────────────
 func _spawn_ink() -> void:
 	var a := rng.randf() * TAU
@@ -463,19 +390,42 @@ func _ink_do(start: Vector3, vel: Vector3, rad: float, amount: int) -> void:
 	world3.add_child(p)
 	p.emission_sphere_radius = rad * 0.7
 	p.amount = amount
-	_inks.append({"node": p, "pos": start, "vel": vel, "r": rad, "life": 10.0})
+	# 검은 경고: 먹물이 들어오는 자리에 1.4초 먼저 검은 원 → 그 뒤엔 구름 아래 검은 그림자가 따라다님 (어디가 느려지는지)
+	var entry := start + vel.normalized() * (rad + 1.2)
+	var warn := danger_ring(Vector3(entry.x, 0.03, entry.z), rad)
+	(warn.material_override as ShaderMaterial).set_shader_parameter("col", Color(0.02, 0.02, 0.03))
+	(warn.material_override as ShaderMaterial).set_shader_parameter("edge_col", Color(0.35, 0.32, 0.4))
+	var wt := create_tween()
+	wt.tween_interval(1.4)
+	wt.tween_property(warn, "transparency", 1.0, 0.3)
+	wt.tween_callback(warn.queue_free)
+	var shadow := danger_ring(Vector3(start.x, 0.025, start.z), rad)
+	var smat := shadow.material_override as ShaderMaterial
+	smat.set_shader_parameter("col", Color(0.0, 0.0, 0.0))
+	smat.set_shader_parameter("edge_col", Color(0.18, 0.16, 0.22))
+	smat.set_shader_parameter("strength", 0.75)
+	_inks.append({"node": p, "pos": start, "vel": vel, "r": rad, "life": 10.0, "shadow": shadow, "wait": 1.4})
 	sfx("bubbles", 200)
 
 
 func _update_inks(delta: float) -> void:
 	for ink in _inks.duplicate():
+		# 경고가 뜨는 동안은 바깥에서 대기
+		if float(ink.get("wait", 0.0)) > 0.0:
+			ink["wait"] = float(ink["wait"]) - delta
+			continue
 		ink["pos"] = (ink["pos"] as Vector3) + (ink["vel"] as Vector3) * delta
 		ink["life"] = float(ink["life"]) - delta
 		var p: CPUParticles3D = ink["node"]
 		p.position = (ink["pos"] as Vector3) + Vector3(0, 0.6, 0)
+		var sh: MeshInstance3D = ink.get("shadow")
+		if is_instance_valid(sh):
+			sh.position = Vector3((ink["pos"] as Vector3).x, 0.025, (ink["pos"] as Vector3).z)
 		if float(ink["life"]) <= 0.0 or Vector2((ink["pos"] as Vector3).x, (ink["pos"] as Vector3).z).length() > ARENA_R + 3.0:
 			p.emitting = false
 			_inks.erase(ink)
+			if is_instance_valid(sh):
+				sh.queue_free()
 			get_tree().create_timer(2.5).timeout.connect(p.queue_free)
 
 
@@ -510,9 +460,6 @@ func _think(delta: float) -> void:
 			var v := float(KINDS[it["kind"]]["pts"]) / (d + 1.5)
 			if _in_ink(to, 0.3):
 				v *= 0.4
-			for st in _stripes:
-				if in_rect(to, st["a"], st["b"], 1.6, 0.6):
-					v *= lerpf(0.6, 0.05, sk / 2.0)
 			# 다른 말이 더 가까우면 덜 끌림
 			for o in walkers.values():
 				if o != w and (o["pos"] as Vector3).distance_to(to) < d * 0.6:

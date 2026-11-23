@@ -137,6 +137,7 @@ static func _sunken_island() -> Dictionary:
 			{"pts": [H, Vector3(11, 2, -25), Vector3(6, 0, -29), JN], "wiggle": 0.6},
 		],
 		"fill": ["minigame", "plain", "minigame", "chance", "minigame", "plain", "chance", "minigame", "plain", "minigame"],
+		"extra_shops": 12,                ## 상점 칸을 4 배로 (기본 4 + 12)
 		"specials": [
 			{"at": Vector2(-46, 8), "kind": "portal", "pair": 0},
 			{"at": Vector2(46, -13), "kind": "portal", "pair": 0},
@@ -148,6 +149,7 @@ static func _sunken_island() -> Dictionary:
 			{"at": Vector2(-37, 22), "kind": "shop"},
 			{"at": Vector2(38, -27), "kind": "shop"},
 			{"at": Vector2(-12, 19.5), "kind": "shop"},
+			# (아래 extra_shops 로 상점을 12 개 더: 모두 16 개 — 예전의 4 배)
 			# 작살 칸: 섬 네 귀퉁이 쪽에 하나씩 (다른 사람을 골라 작살 → 하트 -1)
 			{"at": Vector2(-38, -25), "kind": "harpoon"},
 			{"at": Vector2(43, 18), "kind": "harpoon"},

@@ -8,7 +8,13 @@ uniform float glow = 0.0;          // 공격 직전 확 달아오름
 uniform float pattern_scale = 1.0;
 uniform float opacity = 0.82;
 
-float kh(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+// sin() 해시는 좌표가 커지면 정밀도가 깨져 네모난 얼룩(깨진 픽셀)이 생김 → sin 없는 해시로
+float kh(vec3 p) {
+	p = mod(p, 1024.0);
+	vec3 p3 = fract(p * 0.1031);
+	p3 += dot(p3, p3.zyx + 31.32);
+	return fract((p3.x + p3.y) * p3.z);
+}
 float kn(vec3 p) {
 	vec3 i = floor(p);
 	vec3 f = fract(p);
@@ -31,15 +37,18 @@ void kraken_skin(vec3 q, float nv, float belly, float t, out vec3 alb, out vec3 
 	float fres = pow(1.0 - clamp(nv, 0.0, 1.0), 2.2);
 	float n1 = kfbm(q * 1.3);
 	float vn = veins(q * 1.6);
-	float spots = smoothstep(0.8, 0.86, kn(q * 5.0 + 17.0)) * (1.0 - belly);
+	// 반점: 가장자리를 부드럽게 (딱딱하게 끊긴 얼룩처럼 보이지 않게)
+	float spots = smoothstep(0.74, 0.92, kn(q * 5.0 + 17.0)) * (1.0 - belly);
 	float breathe = 0.55 + 0.45 * sin(t * 1.4 + n1 * 7.0);
 	// 속(어둡고 깊은 초록) → 가장자리(형광)
+	// 속이 비치는 젤리 느낌 (불투명이라도): 정면은 깊은 초록, 가장자리로 갈수록 밝게
 	vec3 body = mix(deep, neon * 0.55, 0.25 + 0.35 * n1);
+	body = mix(body * 0.75, body * 1.15, fres);
 	body = mix(body, vec3(0.6, 0.85, 0.35), belly * 0.35);
 	alb = mix(body, vein_col * 0.5, vn * 0.6);
 	emi = (neon * fres * 0.9
 		+ vein_col * vn * (0.35 + 0.25 * breathe)
-		+ vec3(0.55, 1.0, 0.2) * spots * breathe * 0.9) * bio
+		+ vec3(0.55, 1.0, 0.2) * spots * breathe * 0.45) * bio
 		+ neon * glow * (0.6 + fres);
 	// 가운데는 속이 비치고 가장자리 · 핏줄은 진함
 	alpha = clamp(mix(opacity * 0.7, 1.0, fres) + vn * 0.25 + spots * 0.3, 0.0, 1.0);

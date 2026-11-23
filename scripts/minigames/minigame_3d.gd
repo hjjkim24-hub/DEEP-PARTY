@@ -1333,66 +1333,134 @@ func jelly(p: Vector3, c: Color) -> void:
 
 ## 보물상자 (널빤지 몸통 · 쇠띠 · 모서리 쇠 · 자물쇠판 · 둥근 뚜껑). 크기 w × h × d, 돌려줌 {root, lid}
 func treasure_chest(w: float, h: float, d: float, parent: Node3D = null) -> Dictionary:
+	## 속이 빈 진짜 상자: 널빤지 네 벽 + 바닥 + 붉은 벨벳 안감 · 쿠션 (뚜껑을 열면 안이 보이고 물건이 쏙 들어감)
 	var root := Node3D.new()
 	(parent if parent else world3).add_child(root)
-	var cols := [Color(0.55, 0.34, 0.19), Color(0.6, 0.38, 0.21), Color(0.5, 0.31, 0.17)]
-	var iron := std_mat(Color(0.32, 0.3, 0.28), 0.45, 0.55)
+	var cols := [Color(0.5, 0.31, 0.17), Color(0.56, 0.35, 0.19), Color(0.46, 0.28, 0.15)]
+	var iron := std_mat(Color(0.26, 0.25, 0.24), 0.5, 0.7)
 	var gold := std_mat(Color(0.92, 0.7, 0.3), 0.28, 0.95)
-	# 몸통: 가로 널 여러 장
+	var t := clampf(w * 0.05, 0.04, 0.09)     # 널 두께
 	var rows := 4
-	for k in rows:
-		var m := wood_mat(cols[k % 3], Vector3(1, 0, 0), 0.25)
-		box(Vector3(w, h / rows - 0.012, d), m, Vector3(0, h / rows * (k + 0.5), 0), Basis(), root)
-	# 쇠띠 (세로) · 모서리 쇠
+	var gap := 0.008
+	# 앞 · 뒤 벽 (가로 널) — 널마다 색 · 높이가 조금씩 달라 손으로 짠 느낌
+	for sz: float in [-1.0, 1.0]:
+		for k in rows:
+			var m := wood_mat(cols[(k + (1 if sz > 0 else 0)) % 3], Vector3(1, 0, 0), 0.22)
+			var ph := h / rows - gap
+			box(Vector3(w, ph, t), m, Vector3(0, h / rows * (k + 0.5), sz * (d * 0.5 - t * 0.5)),
+				Basis(Vector3(1, 0, 0), sz * 0.008 * (k % 2)), root)
+	# 양 옆 벽 (앞뒤 벽 사이에 끼움)
+	for sx: float in [-1.0, 1.0]:
+		for k in rows:
+			var m := wood_mat(cols[(k + 2) % 3], Vector3(0, 0, 1), 0.22)
+			box(Vector3(t, h / rows - gap, d - t * 2.0), m, Vector3(sx * (w * 0.5 - t * 0.5), h / rows * (k + 0.5), 0), Basis(), root)
+	# 바닥판
+	box(Vector3(w, t, d), wood_mat(cols[2], Vector3(1, 0, 0), 0.3), Vector3(0, t * 0.5, 0), Basis(), root)
+	# 안감: 짙은 붉은 벨벳 (벽 안쪽 + 바닥) + 가운데 도톰한 쿠션
+	var velvet := std_mat(Color(0.26, 0.03, 0.045), 1.0)
+	velvet.rim_enabled = true
+	velvet.rim = 0.35
+	velvet.rim_tint = 0.8
+	var iw := w - t * 2.0 - 0.01
+	var idp := d - t * 2.0 - 0.01
+	box(Vector3(iw, 0.02, idp), velvet, Vector3(0, t + 0.01, 0), Basis(), root)
+	for sz: float in [-1.0, 1.0]:
+		box(Vector3(iw, h - t - 0.03, 0.012), velvet, Vector3(0, t + (h - t) * 0.5 - 0.015, sz * (idp * 0.5)), Basis(), root)
+	for sx: float in [-1.0, 1.0]:
+		box(Vector3(0.012, h - t - 0.03, idp), velvet, Vector3(sx * (iw * 0.5), t + (h - t) * 0.5 - 0.015, 0), Basis(), root)
+	var cush := SphereMesh.new()
+	cush.radius = 0.5
+	cush.height = 1.0
+	cush.radial_segments = 24
+	cush.rings = 12
+	var cm := add_mesh(cush, velvet, Vector3(0, t + 0.04, 0), Basis(), root)
+	cm.scale = Vector3(iw * 0.92, 0.1, idp * 0.88)
+	# 윗테: 입구를 두르는 얇은 쇠테 (뚜껑이 닫힐 때 맞닿는 자리)
+	for sz: float in [-1.0, 1.0]:
+		box(Vector3(w + 0.012, 0.03, t + 0.012), iron, Vector3(0, h - 0.015, sz * (d * 0.5 - t * 0.5)), Basis(), root)
+	for sx: float in [-1.0, 1.0]:
+		box(Vector3(t + 0.012, 0.03, d), iron, Vector3(sx * (w * 0.5 - t * 0.5), h - 0.015, 0), Basis(), root)
+	# 바깥 쇠띠: 앞 · 뒤 · 옆을 감싸는 얇은 띠 (속은 비워 둠)
 	for x: float in [-w * 0.32, w * 0.32]:
-		box(Vector3(w * 0.07, h + 0.02, d + 0.03), iron, Vector3(x, h * 0.5, 0), Basis(), root)
+		for sz: float in [-1.0, 1.0]:
+			box(Vector3(w * 0.07, h + 0.01, 0.014), iron, Vector3(x, h * 0.5, sz * (d * 0.5 + 0.007)), Basis(), root)
+		box(Vector3(w * 0.07, 0.014, d + 0.03), iron, Vector3(x, -0.002, 0), Basis(), root)
+	# 모서리 쇠 (ㄱ자 꺾쇠: 앞면 + 옆면 두 장)
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
-			box(Vector3(w * 0.09, h + 0.03, w * 0.09), iron, Vector3(sx * (w * 0.5 - w * 0.035), h * 0.5, sz * (d * 0.5 - w * 0.035)), Basis(), root)
-	# 리벳
+			box(Vector3(w * 0.1, h + 0.02, 0.016), iron, Vector3(sx * (w * 0.5 - w * 0.05 + 0.004), h * 0.5, sz * (d * 0.5 + 0.008)), Basis(), root)
+			box(Vector3(0.016, h + 0.02, w * 0.1), iron, Vector3(sx * (w * 0.5 + 0.008), h * 0.5, sz * (d * 0.5 - w * 0.05 + 0.004)), Basis(), root)
+	# 리벳 (쇠띠 · 모서리마다)
 	var rv := SphereMesh.new()
-	rv.radius = w * 0.016
-	rv.height = w * 0.032
+	rv.radius = w * 0.014
+	rv.height = w * 0.028
 	rv.radial_segments = 8
 	rv.rings = 4
 	for x: float in [-w * 0.32, w * 0.32]:
 		for k in 3:
-			add_mesh(rv, iron, Vector3(x, h * (0.2 + k * 0.3), d * 0.5 + 0.018), Basis(), root)
+			add_mesh(rv, iron, Vector3(x, h * (0.2 + k * 0.3), d * 0.5 + 0.016), Basis(), root)
+	for sx: float in [-1.0, 1.0]:
+		for k in 2:
+			add_mesh(rv, iron, Vector3(sx * (w * 0.5 - w * 0.05), h * (0.25 + k * 0.5), d * 0.5 + 0.018), Basis(), root)
+	# 옆 손잡이 (쇠고리)
+	for sx: float in [-1.0, 1.0]:
+		var ring := TorusMesh.new()
+		ring.inner_radius = w * 0.05
+		ring.outer_radius = w * 0.068
+		ring.rings = 16
+		ring.ring_segments = 8
+		add_mesh(ring, iron, Vector3(sx * (w * 0.5 + 0.03), h * 0.6, 0), Basis(Vector3(0, 0, 1), PI / 2), root)
+		box(Vector3(0.02, h * 0.14, w * 0.16), iron, Vector3(sx * (w * 0.5 + 0.012), h * 0.66, 0), Basis(), root)
 	# 자물쇠판 + 열쇠구멍
-	box(Vector3(w * 0.16, h * 0.32, 0.03), gold, Vector3(0, h * 0.7, d * 0.5 + 0.02), Basis(), root)
-	box(Vector3(w * 0.025, h * 0.1, 0.02), std_mat(Color(0.02, 0.02, 0.02), 0.9), Vector3(0, h * 0.66, d * 0.5 + 0.035), Basis(), root)
-	# 뚜껑 (뒤 경첩, 반원통: 널 + 쇠띠)
+	box(Vector3(w * 0.16, h * 0.3, 0.025), gold, Vector3(0, h * 0.72, d * 0.5 + 0.02), Basis(), root)
+	box(Vector3(w * 0.022, h * 0.09, 0.02), std_mat(Color(0.02, 0.02, 0.02), 0.9), Vector3(0, h * 0.68, d * 0.5 + 0.032), Basis(), root)
+	# 뚜껑 (뒤 경첩, 반원통: 널 + 쇠띠). 반원 아래쪽은 비워 둠 → 열면 상자 속이 훤히 보임
 	var lid := Node3D.new()
 	lid.position = Vector3(0, h, -d * 0.5)
 	root.add_child(lid)
 	var rr := d * 0.5
-	var planks := 6
+	var flat := 0.62   # 반원통을 납작하게
+	var planks := 7
+	var arc := func(r: float, a: float) -> Vector3: return Vector3(0, sin(a) * r * flat, d * 0.5 - cos(a) * r)
 	for k in planks:
 		var a0 := PI * k / planks
 		var a1 := PI * (k + 1) / planks
-		var am := (a0 + a1) * 0.5
-		var pos := Vector3(0, sin(am) * rr * 0.62, d * 0.5 - cos(am) * rr)
+		var p0: Vector3 = arc.call(rr, a0)
+		var p1: Vector3 = arc.call(rr, a1)
+		var dv := p1 - p0
 		var m := wood_mat(cols[(k + 1) % 3], Vector3(1, 0, 0), 0.25)
-		var nrm := Vector2(-cos(am), sin(am) * 0.62).normalized()   # (z, y) 바깥쪽
-		box(Vector3(w, 0.05, rr * (a1 - a0) * 1.04), m, pos, Basis(Vector3(1, 0, 0), atan2(nrm.x, nrm.y)), lid)
-	# 뚜껑 양끝 마구리 (나무) + 쇠띠 둘
+		var ang := atan2(dv.y, dv.z)
+		# 널은 바깥쪽으로 두께만큼 밀어 냄 (안쪽 면이 원호에 맞음)
+		var outn := Vector3(0, cos(ang), -sin(ang))
+		box(Vector3(w, t * 0.8, dv.length() + 0.012), m, (p0 + p1) * 0.5 + outn * t * 0.4, Basis(Vector3(1, 0, 0), -ang), lid)
+		# 안쪽 벨벳 (열었을 때 보이는 면)
+		box(Vector3(w - t * 2.0, 0.01, dv.length() + 0.004), velvet, (p0 + p1) * 0.5 - outn * 0.008, Basis(Vector3(1, 0, 0), -ang), lid)
+		# 쇠띠 둘 (널 위에 덧댐)
+		for x: float in [-w * 0.32, w * 0.32]:
+			box(Vector3(w * 0.07, 0.016, dv.length() + 0.014), iron, (p0 + p1) * 0.5 + outn * (t * 0.8 + 0.008), Basis(Vector3(1, 0, 0), -ang), lid).position.x = x
+	# 양끝 마구리: 반원(위쪽만) 나무판
 	var cap_m := wood_mat(cols[2], Vector3(0, 1, 0), 0.25)
-	for x: float in [-w * 0.5 + 0.03, w * 0.5 - 0.03]:
-		var cap := CylinderMesh.new()
-		cap.top_radius = rr * 0.98
-		cap.bottom_radius = rr * 0.98
-		cap.height = 0.06
-		cap.radial_segments = 24
-		add_mesh(cap, cap_m, Vector3(x, 0, d * 0.5), Basis(Vector3(0, 0, 1), PI / 2), lid).scale = Vector3(0.62, 1.0, 1.0)
-	for x: float in [-w * 0.32, w * 0.32]:
-		var band := CylinderMesh.new()
-		band.top_radius = rr * 1.03
-		band.bottom_radius = rr * 1.03
-		band.height = w * 0.06
-		band.radial_segments = 24
-		var bm := add_mesh(band, iron, Vector3(x, 0, d * 0.5), Basis(Vector3(0, 0, 1), PI / 2), lid)
-		bm.scale = Vector3(0.64, 1.0, 1.0)
-	return {"root": root, "lid": lid, "gold": gold}
+	for sx: float in [-1.0, 1.0]:
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var seg := 16
+		for k in seg:
+			var q0: Vector3 = arc.call(rr + t * 0.8, PI * k / seg)
+			var q1: Vector3 = arc.call(rr + t * 0.8, PI * (k + 1) / seg)
+			var c := Vector3(0, 0, d * 0.5)
+			for tri in [[c, q0, q1], [c, q1, q0]]:   # 양면
+				for v in tri:
+					st.add_vertex(v)
+		st.generate_normals()
+		var cap := add_mesh(st.commit(), cap_m, Vector3(sx * (w * 0.5 - t * 0.5), 0, 0), Basis(), lid)
+		cap.scale = Vector3(1, 1, 1)
+		# 마구리 두께: 같은 반원을 조금 안쪽에 한 장 더
+		add_mesh(cap.mesh, cap_m, Vector3(sx * (w * 0.5 - t), 0, 0), Basis(), lid)
+	# 뚜껑 아래 테 (앞쪽 가장자리 쇠테)
+	box(Vector3(w + 0.01, 0.025, 0.03), iron, Vector3(0, 0.012, d - 0.01), Basis(), lid)
+	var hasp := box(Vector3(w * 0.09, h * 0.24, 0.02), gold, Vector3(0, -h * 0.06, d + 0.012), Basis(), lid)
+	hasp.name = "Hasp"
+	return {"root": root, "lid": lid, "gold": gold, "floor": t + 0.08, "velvet": velvet}
 
 
 ## 굵기가 변하는 촉수를 점들(pts)을 지나는 곡선으로 (보드 · 배와 같은 셰이더, 빨판은 belly 쪽). parent 기준 좌표

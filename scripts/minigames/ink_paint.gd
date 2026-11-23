@@ -276,8 +276,18 @@ func _tick(delta: float) -> void:
 	if _fin_t <= 0.0 and not is_client():
 		_fin_t = rng.randf_range(3.5, 6.0)
 		if _fins.size() < 2:
+			# 사람들한테서 떨어진 빈 곳에 (발밑에 바로 생기지 않게)
+			var at := Vector3.ZERO
+			for tries in 14:
+				at = Vector3(rng.randf_range(-HALF + 1.0, HALF - 1.0), 0, rng.randf_range(-HALF + 1.0, HALF - 1.0))
+				var ok := true
+				for w in walkers.values():
+					if Vector2((w["pos"] as Vector3).x - at.x, (w["pos"] as Vector3).z - at.z).length() < 3.5:
+						ok = false
+						break
+				if ok:
+					break
 			_fin_id += 1
-			var at := Vector3(rng.randf_range(-HALF + 1.0, HALF - 1.0), 0, rng.randf_range(-HALF + 1.0, HALF - 1.0))
 			net_call("_fin_spawn", [_fin_id, at, rng.randf() * TAU])
 	for id in _fins.keys():
 		var f: Dictionary = _fins[id]
@@ -293,8 +303,8 @@ func _tick(delta: float) -> void:
 				net_call("_fin_take", [id, int(w["p"]["slot"])])
 				break
 	for w in walkers.values():
-		if float(w.get("boost", 0.0)) > 0.0 and fmod(_t3, 0.12) < delta:
-			splash((w["pos"] as Vector3) + Vector3(0, 0.2, 0), 3, 0.25)
+		if float(w.get("boost", 0.0)) > 0.0 and fmod(_t3, 0.3) < delta:
+			splash((w["pos"] as Vector3) + Vector3(0, 0.1, 0), 2, 0.12)
 	var pr := pressure()
 	_blob_t -= delta
 	if _blob_t <= 0.0 and pr > 0.15 and not is_client():
@@ -488,7 +498,7 @@ func _think(delta: float) -> void:
 			a["goal"] = best
 			# 가까운 오리발이 있으면 주우러 감
 			for f in _fins.values():
-				if pos.distance_to(f["pos"]) < lerpf(2.0, 4.5, sk / 2.0):
+				if pos.distance_to(f["pos"]) < lerpf(1.2, 3.2, sk / 2.0):
 					a["goal"] = f["pos"]
 					break
 		w["target"] = a["goal"]
@@ -567,8 +577,29 @@ func _fin_spawn(id: int, at: Vector3, yaw: float) -> void:
 	ring.scale = Vector3(1, 0.3, 1)
 	add_child(ring)
 	root.set_meta("ring", ring)
+	# 멀리서도 보이게: 하늘로 솟는 옅은 빛기둥
+	var beam := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.35
+	cm.bottom_radius = 0.55
+	cm.height = 6.0
+	cm.cap_top = false
+	cm.cap_bottom = false
+	beam.mesh = cm
+	var bm := StandardMaterial3D.new()
+	bm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	bm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	bm.albedo_color = Color(0.45, 0.9, 1.0, 0.22)
+	beam.material_override = bm
+	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	beam.position = Vector3(at.x, 3.0, at.z)
+	add_child(beam)
+	ring.set_meta("beam", beam)
 	root.scale = Vector3.ONE * 0.05
-	create_tween().tween_property(root, "scale", Vector3.ONE * 1.3, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	create_tween().tween_property(root, "scale", Vector3.ONE * 1.7, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	sfx("toast")
 	splash(at + Vector3(0, 0.1, 0), 10, 0.5)
 	_fins[id] = {"node": root, "pos": at}
 
@@ -581,6 +612,9 @@ func _fin_take(id: int, s: int) -> void:
 	var node: Node3D = f["node"]
 	var ring = node.get_meta("ring")
 	if ring is Node:
+		var beam = (ring as Node).get_meta("beam") if (ring as Node).has_meta("beam") else null
+		if beam is Node:
+			(beam as Node).queue_free()
 		(ring as Node).queue_free()
 	node.queue_free()
 	if walkers.has(s):

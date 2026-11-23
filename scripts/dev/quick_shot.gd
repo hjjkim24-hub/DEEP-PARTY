@@ -15,6 +15,8 @@ func _ready() -> void:
 			_dir = a.substr("--shots-dir=".length())
 		elif a.begins_with("--quick-shot="):
 			_want = a.substr("--quick-shot=".length()).split(",", false)
+		elif a.begins_with("--lang="):
+			TranslationServer.set_locale(a.substr("--lang=".length()))
 	DirAccess.make_dir_recursive_absolute(_dir)
 	get_tree().create_timer(600.0, true, false, true).timeout.connect(func() -> void:
 		print("QUICK SHOT TIMEOUT")
@@ -82,11 +84,17 @@ func _mg_shot(id: String, intro_only: bool) -> void:
 		get_tree().quit(0)
 		return
 	var k := 0
-	while is_instance_valid(mg) and Time.get_ticks_msec() - t0 < 60000:
-		await get_tree().create_timer(3.2).timeout
+	var every := float(OS.get_environment("MGEVERY")) if OS.get_environment("MGEVERY") != "" else 3.2
+	var limit := int(OS.get_environment("MGLIMIT")) if OS.get_environment("MGLIMIT") != "" else 60000
+	if OS.get_environment("MGSTART") != "":
+		await get_tree().create_timer(float(OS.get_environment("MGSTART"))).timeout
+	while is_instance_valid(mg) and Time.get_ticks_msec() - t0 < limit:
+		await get_tree().create_timer(every).timeout
 		await _shot("mg_%s_%02d" % [id, k])
 		k += 1
 		if not mg.playing and k > 3:
+			break
+		if OS.get_environment("MGCOUNT") != "" and k >= int(OS.get_environment("MGCOUNT")):
 			break
 	print("MG ranking: ", mg._ranking().map(func(p: Dictionary) -> String: return p["name"]))
 
@@ -417,6 +425,94 @@ func _run() -> void:
 			m._credits_text.scroll_to_line(m._credits_text.get_line_count() - 60)
 			await get_tree().create_timer(0.5).timeout
 			await _shot("credits_%s_end" % lang)
+		get_tree().quit(0)
+		return
+	# krakenview: 판 위 크라켄을 깨워서 몸통 · 판을 쥔 촉수를 가까이서 여러 각도로
+	if "krakenview" in _want:
+		GameState.debug_autoplay = false
+		GameState.selected_mode = GameState.Mode.FREE_FOR_ALL
+		GameState.selected_board = "sunken_island"
+		GameState.my_slot = 0
+		GameState.players = [{"kind": "host", "color": 0}, {"kind": "cpu", "level": 1, "color": 2}, {}, {}]
+		get_tree().change_scene_to_file("res://scenes/board.tscn")
+		var gk: Node = null
+		while gk == null or not ("hold_loop" in gk):
+			await get_tree().process_frame
+			gk = get_tree().current_scene
+		gk.hold_loop = true
+		while not gk._intro_done:
+			await get_tree().process_frame
+		var wk: Node = gk.world
+		await wk.kraken_awaken()
+		await get_tree().create_timer(2.0).timeout
+		var ep: Vector3 = wk.kraken_eye_pos()
+		gk._cinematic(ep + Vector3(0, 4.0, 26.0), ep + Vector3(0, -2.0, 0), 1.0, 0.01)
+		await get_tree().create_timer(1.5).timeout
+		await _shot("kv_face")
+		gk._cinematic(ep + Vector3(14.0, 2.0, 14.0), ep + Vector3(0, -3.0, 0), 1.0, 0.01)
+		await get_tree().create_timer(1.5).timeout
+		await _shot("kv_side")
+		for k in [0, 2, 5]:
+			var c: Dictionary = wk.kraken_coils[k]
+			var hp: Vector3 = c["hit"]
+			var d: Vector3 = c["dir"]
+			gk._cinematic(hp - d * 4.0 + Vector3(d.z, 0, -d.x) * 9.0 + Vector3(0, 5.0, 0), hp - d * 4.0 + Vector3(0, 2.0, 0), 1.0, 0.01)
+			await get_tree().create_timer(1.5).timeout
+			await _shot("kv_coil_%d" % k)
+		get_tree().quit(0)
+		return
+	# boardsel: 보드 고르기 화면 한 장 (한국어)
+	if "boardsel" in _want:
+		Settings.language = "ko"
+		Settings.apply_language()
+		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+		while get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu":
+			await get_tree().process_frame
+		var m: Node = get_tree().current_scene
+		await _wait_idle(m, "main", 7.0)
+		GameState.players = [{"kind": "host", "color": 0}, {"kind": "cpu", "level": 1, "color": 2}, {}, {}]
+		m._open_board_select()
+		await _wait_idle(m, "board")
+		await get_tree().create_timer(1.5).timeout
+		await _shot("boardsel")
+		get_tree().quit(0)
+		return
+	# cards: 찬스 카드 뽑기(도는 중 · 앞면) + 행운 칸 컷씬
+	if "cards" in _want:
+		GameState.debug_autoplay = false
+		GameState.selected_mode = GameState.Mode.FREE_FOR_ALL
+		GameState.selected_board = "sunken_island"
+		GameState.my_slot = 0
+		GameState.players = [{"kind": "host", "color": 0}, {"kind": "cpu", "level": 1, "color": 2}, {}, {}]
+		Settings.language = "ko"
+		Settings.apply_language()
+		get_tree().change_scene_to_file("res://scenes/board.tscn")
+		var gc: Node = null
+		while gc == null or not ("hold_loop" in gc):
+			await get_tree().process_frame
+			gc = get_tree().current_scene
+		gc.hold_loop = true
+		while not gc._intro_done:
+			await get_tree().process_frame
+		await get_tree().create_timer(3.0).timeout
+		var mc: Dictionary = gc._my_pawn()
+		var cid := OS.get_environment("CARD") if OS.get_environment("CARD") != "" else "shield"
+		gc._card_popup(load("res://scripts/board/rules.gd").card(cid))
+		await get_tree().create_timer(1.6).timeout
+		await _shot("cc_spin")
+		await _catch(gc, ["42_card_" + cid], "cc_")
+		await get_tree().create_timer(0.5).timeout
+		await _shot("cc_front")
+		await get_tree().create_timer(3.5).timeout
+		var done := [false]
+		(func() -> void:
+			await gc._spawn_coin_spaces(mc, "coin_plus")
+			done[0] = true).call()
+		await _catch(gc, ["44_coin_plus"], "cc_")
+		while not done[0]:
+			await get_tree().process_frame
+		await _shot("cc_coins_all")
+		print("COINDBG mods=", gc._coin_mods.size(), " shops=", gc.world.spaces_of_kind("shop").size(), " tiles=", gc.world.spaces.size())
 		get_tree().quit(0)
 		return
 	# mainshot: 메인화면 한 장 (한국어)

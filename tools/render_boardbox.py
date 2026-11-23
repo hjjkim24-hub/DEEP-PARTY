@@ -69,15 +69,18 @@ def water(size, sand_from=0.62):
     bot = np.array([5, 50, 46], np.float32)
     t = y[..., None]
     col = np.where(t < 0.5, lerp(top, mid, t / 0.5), lerp(mid, bot, (t - 0.5) / 0.5))
+    # 수면에서 일렁이는 빛 무늬: 부드럽고 옅게 (딱딱한 줄무늬처럼 보이지 않게 흐림)
     c = np.sin(x * 33 + np.sin(y * 19) * 2.2) * np.sin(y * 29 + np.sin(x * 14) * 2.5)
-    c = np.clip(c, 0, 1) ** 3
-    col += (c * np.clip(1 - y * 2.0, 0, 1))[..., None] * np.array([80, 130, 110], np.float32)
+    c = np.clip(c, 0, 1) ** 2
+    c = np.asarray(Image.fromarray((c * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(S * 0.006)), np.float32) / 255.0
+    col += (c * np.clip(1 - y * 2.0, 0, 1))[..., None] * np.array([40, 66, 56], np.float32)
+    # 빛줄기: 넓고 은은하게, 끝으로 갈수록 자연스럽게 사라짐 (경계가 칼같이 끊기지 않게)
     ang = np.arctan2(x - 0.3, y + 0.4)
     rays = 0.0
-    for k, w, a in ((0.02, 0.03, 1.0), (0.18, 0.045, 0.8), (0.36, 0.03, 0.7), (0.55, 0.05, 0.6), (0.72, 0.03, 0.5)):
+    for k, w, a in ((0.02, 0.07, 0.8), (0.2, 0.09, 0.6), (0.4, 0.07, 0.5), (0.6, 0.1, 0.45)):
         rays = rays + a * np.exp(-((ang - k) / w) ** 2)
-    rays *= np.clip(1.1 - y * 1.25, 0, 1)
-    col += rays[..., None] * np.array([55, 105, 90], np.float32)
+    rays *= np.clip(1.0 - y * 1.3, 0, 1) ** 1.5
+    col += rays[..., None] * np.array([30, 60, 52], np.float32)
     sand = np.array([86, 150, 116], np.float32)
     rip = 0.5 + 0.5 * np.sin(y * 140 + np.sin(x * 11) * 3.0)
     k = np.clip((y - sand_from) / 0.2, 0, 1) ** 1.4

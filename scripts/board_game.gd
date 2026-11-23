@@ -11,11 +11,11 @@ const BOARD_TITLES := {"sunken_island": "SUNKEN ISLAND"}
 
 var rig_kraken := ""          ## 다음 크라켄 행동 ("" = 무작위)
 var hold_loop := false        ## 개발용: 크라켄 등장 뒤 게임을 진행하지 않음 (장면 촬영용)
+var _last_act := ""          ## 바로 전 크라켄 행동 (연속으로 같은 게 안 나오게)
 var _kraken_awake := false   ## 처음 KRAKEN_WAKE_ROUND 라운드 동안은 잠들어 있음
 var _attack_cd := Rules.KRAKEN_ATTACK_EVERY   ## 크라켄 차례까지 남은 라운드 (이번 라운드 포함)
 var _attacks := 0             ## 지금까지 크라켄 차례 수 (공격이 점점 거세짐)
 var _strike_due := {}         ## 칸 → 이 라운드가 끝날 때 내려침
-var _spines := {}             ## 독가시 칸 → {"until": 이 라운드 끝에 풀림, "prev": 원래 칸 변화}
 var _surge_until := -1        ## 이 라운드 끝에 상점 가격이 돌아옴
 var _ship_until := -1         ## 이 라운드 끝에 크라켄의 배에서 섬으로 돌아옴
 
@@ -311,6 +311,7 @@ func _expire_effects(r: int) -> void:
 			Audio.play("toast")
 			await get_tree().create_timer(0.15, false).timeout
 		await _banner(tr("The poison spines fade"), "", 0.9)
+	await _expire_coin_mods(r)
 	if _surge_until >= 0 and _surge_until <= r:
 		_surge_until = -1
 		shop_price_mult = 1
@@ -320,9 +321,19 @@ func _expire_effects(r: int) -> void:
 ## 크라켄 차례: 행동 하나를 무작위로
 func _kraken_turn(r: int) -> void:
 	_attacks += 1
-	var acts: Array = Rules.KRAKEN_ACTIONS
+	# 같은 행동이 두 번 연속 나오지 않음 · 상점 대혼란이 이어지는 동안은 대혼란 제외
+	var acts: Array = []
+	for x in Rules.KRAKEN_ACTIONS:
+		if x == _last_act:
+			continue
+		if x == "surge" and _surge_until >= 0:
+			continue
+		acts.append(x)
+	if acts.is_empty():
+		acts = Rules.KRAKEN_ACTIONS.duplicate()
 	var a: String = rig_kraken if rig_kraken != "" else String(acts[_rng.randi() % acts.size()])
 	rig_kraken = ""
+	_last_act = a
 	_follow = null
 	# 크라켄이 몸을 일으키며 으르렁
 	_move_camera(world.overview, world.overview_zoom * 0.85, 0.9)
@@ -349,9 +360,9 @@ const KRAKEN_CARDS := {
 	"spines": {"title": "POISON SPINES", "art": preload("res://textures/ui/kraken/art_spines.png"),
 		"text": "Turns random spaces into poison spine spaces that instantly hurt players who land on them."},
 	"surge": {"title": "SHOP PANIC", "art": preload("res://textures/ui/kraken/art_surge.png"),
-		"text": "The frightened merchant doubles shop prices for 2 rounds."},
+		"text": "The frightened merchant doubles shop prices for 6 rounds."},
 	"ship": {"title": "THE KRAKEN'S SHIP", "art": preload("res://textures/ui/kraken/art_ship.png"),
-		"text": "Portals open beneath every player, dropping them onto the kraken's flying ship for 2 rounds."},
+		"text": "Portals open beneath every player, dropping them onto the kraken's flying ship for 5 rounds."},
 }
 const KRAKEN_CARD_BACK := preload("res://textures/ui/kraken/back_board.png")   ## tools/make_card_back.py
 const KCARD_NEON := Color(0.45, 1.0, 0.32)
@@ -628,7 +639,7 @@ func _kraken_spines(r: int) -> void:
 	await get_tree().create_timer(0.8, false).timeout
 
 
-## 4) 2 라운드 동안 상점 가격 2 배
+## 4) 6 라운드 동안 상점 가격 2 배
 func _kraken_surge(r: int) -> void:
 	var shops: Array = world.spaces_of_kind("shop")
 	if shops.size() > 0:
@@ -641,7 +652,7 @@ func _kraken_surge(r: int) -> void:
 		Audio.play("coins")
 		_shake_camera(0.4, 0.5)
 	shop_price_mult = Rules.KRAKEN_SURGE_MULT
-	_surge_until = r + Rules.KRAKEN_EFFECT_ROUNDS
+	_surge_until = r + Rules.KRAKEN_SURGE_ROUNDS
 	shot_hint = "60_kraken_surge"
 	await get_tree().create_timer(0.8, false).timeout
 
@@ -659,13 +670,11 @@ func _kraken_ship(r: int) -> void:
 		q["island_tile"] = q["tile"]
 		q["island_prev"] = q["prev"]
 	await _fall_through(alive, false)
-	# 배 위 내려앉을 칸 (서로 멀리)
-	var drops: Array = world.ship.drop_tiles.duplicate()
-	for k in alive.size():
-		var q: Dictionary = alive[k]
-		var t: int = drops[k % drops.size()]
-		q["tile"] = t
-		q["prev"] = _prev_on_loop(t)
+	# 배 위: 모두 같은 칸에 떨어짐. 왔던 칸(prev)이 없으니 첫 주사위 때 갈 방향을 고름
+	var drop: int = int(world.ship.drop_tiles[0])
+	for q in alive:
+		q["tile"] = drop
+		q["prev"] = -1
 	await _arrive(alive, true)
 	_legend_add("kraken_chest")
 	_legend_add("cannon")

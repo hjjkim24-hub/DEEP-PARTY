@@ -143,6 +143,7 @@ var _mats := {}
 var _blocked: Array = []      ## 장식을 놓지 않을 자리 [Vector2 중심, 반지름]
 var _blocked_grid := {}
 var _spinners: Array = []     ## 빙글빙글 도는 찬스 카드 {node, base_y, phase}
+var coin_badges := {}          ## 칸 → 칸 위에 떠서 도는 동전 (행운 · 함정 칸 표시)
 var _portal_fx: Array = []    ## 포탈 고리 {node, mat, light, phase}
 var _critters: Array = []     ## 큰 원을 그리며 헤엄치는 바다거북 · 가오리
 var _rotors: Array = []       ## 빙글빙글 도는 것 [Node3D, 속도] (등대 불빛 …)
@@ -342,6 +343,7 @@ func _build_spaces() -> void:
 				if not pairs.has(sp_def["pair"]):
 					pairs[sp_def["pair"]] = []
 				pairs[sp_def["pair"]].append(best)
+	_extra_shops(int(cfg.get("extra_shops", 0)))
 	for k in pairs:
 		var pr: Array = pairs[k]
 		if pr.size() == 2:
@@ -1997,15 +1999,32 @@ const GRIP_DEPTH := 6.9
 const GRIP_POSE := {"pitch": -0.15, "curl": 0.0, "hook": 2.6, "tipback": 0.9}
 
 
-func _kraken_coils() -> void:
-	# [테두리 위 지점, 판 안쪽 방향, 크기]
-	var defs := [
+## 판 테두리를 움켜쥐는 촉수 고리들의 자리 [테두리 위 지점, 판 안쪽 방향, 크기]
+func _coil_defs() -> Array:
+	return [
 		[Vector2(-26.0, -half_d), Vector2(0.2, 1.0), 1.5], [Vector2(26.0, -half_d), Vector2(-0.2, 1.0), 1.5],
 		[Vector2(-half_w, -30.0), Vector2(1.0, 0.15), 1.25], [Vector2(-half_w, 4.0), Vector2(1.0, -0.1), 1.1],
 		[Vector2(half_w, -22.0), Vector2(-1.0, 0.1), 1.2], [Vector2(half_w, 10.0), Vector2(-1.0, -0.05), 1.3],
 		[Vector2(-30.0, half_d), Vector2(0.15, -1.0), 1.0], [Vector2(22.0, half_d), Vector2(-0.1, -1.0), 1.15],
 		[Vector2(-half_w + 2.0, half_d - 2.0), Vector2(1.0, -1.0), 1.0], [Vector2(half_w - 2.0, half_d - 2.0), Vector2(-1.0, -1.0), 0.95],
 	]
+
+
+## 칸 자리(xz)가 촉수가 걸쳐 눕는 자리 근처인지 (상점 천막 같은 키 큰 것이 촉수를 뚫고 나오지 않게)
+func _under_coil(p: Vector2, margin: float = 4.5) -> bool:
+	for d in _coil_defs():
+		var edge: Vector2 = d[0]
+		var dir2: Vector2 = (d[1] as Vector2).normalized()
+		var sz: float = d[2]
+		var a := edge - dir2 * GRIP_OUT * sz
+		var b := edge + dir2 * 7.5 * sz
+		if Geometry2D.get_closest_point_to_segment(p, a, b).distance_to(p) < margin * sz:
+			return true
+	return false
+
+
+func _kraken_coils() -> void:
+	var defs := _coil_defs()
 	for k in defs.size():
 		var edge: Vector2 = defs[k][0]
 		var dir2: Vector2 = (defs[k][1] as Vector2).normalized()
@@ -3321,6 +3340,51 @@ func _tile_props() -> void:
 				_eel_den(i)
 
 
+## 상점을 판 곳곳에 더 깖: 보통 칸 중에서 길을 따라 고르게, 다른 상점과 4 칸 이상 떨어지게 (항상 같은 자리)
+func _extra_shops(n: int) -> void:
+	if n <= 0:
+		return
+	var shops: Array = spaces_of_kind("shop")
+	var cand := []
+	for i in spaces.size():
+		var kd: String = spaces[i]["kind"]
+		if kd in ["plain", "minigame", "chance"] and not spaces[i].has("special") and not bool(spaces[i].get("bridge", false)) and not bool(spaces[i].get("ship", false)):
+			cand.append(i)
+	if cand.is_empty():
+		return
+	var step := maxf(1.0, float(cand.size()) / n)
+	var f := step * 0.5
+	var placed := 0
+	while placed < n and f < cand.size():
+		var i: int = cand[int(f)]
+		var sp3: Vector3 = spaces[i]["pos"]
+		if _graph_near(i, shops, 4) or _under_coil(Vector2(sp3.x, sp3.z)):
+			f += 1.0
+			continue
+		spaces[i]["kind"] = "shop"
+		spaces[i]["special"] = true
+		shops.append(i)
+		placed += 1
+		f += step
+
+
+## i 에서 길(links)을 따라 max_d 칸 안에 targets 중 하나가 있나
+func _graph_near(i: int, targets: Array, max_d: int) -> bool:
+	var seen := {i: 0}
+	var q := [i]
+	while not q.is_empty():
+		var a: int = q.pop_front()
+		if a in targets:
+			return true
+		if int(seen[a]) >= max_d:
+			continue
+		for b in spaces[a]["links"]:
+			if not seen.has(int(b)):
+				seen[int(b)] = int(seen[a]) + 1
+				q.append(int(b))
+	return false
+
+
 ## 작살 칸: 옆에 포경선에서 떼어 온 듯한 작살포 (돌 받침 · 나무 기둥 · 돌아가는 쇠 포신 · 장전된 작살 · 밧줄 타래)
 var harpoon_guns := {}   ## 칸 → {"root", "yaw", "barrel", "loaded", "muzzle"} (움직이는 부분은 합치지 않게 붙잡아 둠)
 
@@ -4042,7 +4106,44 @@ func regular_tiles() -> Array:
 
 
 ## 칸 모양 바꾸기 (찬스 카드로 생기는 +5 / -5 동전 칸)
+## 행운(금화) · 함정(녹슨 검은 동전) 칸: 칸 위에 큰 동전이 떠서 빙글빙글 → 멀리서도 어디인지 보임
+func set_coin_badge(i: int, kind: String) -> void:
+	clear_coin_badge(i)
+	if kind != "coin_plus" and kind != "coin_minus":
+		return
+	var pivot := Node3D.new()
+	pivot.position = (spaces[i]["pos"] as Vector3) + Vector3(0, 1.25, 0)
+	add_child(pivot)
+	var c := ItemModels.coin(0.42, kind == "coin_minus")
+	c.rotation.x = PI * 0.5
+	pivot.add_child(c)
+	var gl := OmniLight3D.new()
+	gl.light_color = Color(1.0, 0.8, 0.35) if kind == "coin_plus" else Color(0.9, 0.25, 0.2)
+	gl.light_energy = 0.8
+	gl.omni_range = 2.2
+	gl.shadow_enabled = false
+	pivot.add_child(gl)
+	pivot.scale = Vector3.ONE * 0.05
+	create_tween().tween_property(pivot, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var sp := {"node": pivot, "base_y": pivot.position.y, "phase": float(i) * 0.37}
+	_spinners.append(sp)
+	coin_badges[i] = sp
+
+
+func clear_coin_badge(i: int) -> void:
+	if not coin_badges.has(i):
+		return
+	var sp: Dictionary = coin_badges[i]
+	coin_badges.erase(i)
+	_spinners.erase(sp)
+	var n: Node3D = sp["node"]
+	var t := create_tween()
+	t.tween_property(n, "scale", Vector3.ONE * 0.05, 0.25)
+	t.tween_callback(n.queue_free)
+
+
 func set_tile_look(i: int, kind: String) -> void:
+	set_coin_badge(i, kind)
 	var sp: Dictionary = spaces[i]
 	if not sp.has("top_mi"):
 		return

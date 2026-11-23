@@ -415,8 +415,13 @@ func outlined(text: String, size_: int) -> Label:
 
 
 ## 화면 가운데 큰 글씨
+var _big_now: Label = null   ## 지금 화면 가운데 떠 있는 큰 글씨 (다음 글씨는 이게 사라진 뒤에 → 겹치지 않음)
+
 func _big_text(text: String, hold: float, col: Color = PEARL) -> void:
+	while is_instance_valid(_big_now) and not _big_now.is_queued_for_deletion():
+		await get_tree().process_frame
 	var l := outlined(text, 120)
+	_big_now = l
 	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	l.text = tr(text)
 	l.add_theme_color_override("font_color", col)
@@ -474,4 +479,6 @@ func pressure() -> float:
 func skill(p: Dictionary) -> float:
 	if not bool(p["cpu"]):
 		return 1.0
-	return float(GameState.players[int(p["slot"])].get("level", 1))
+	# 레벨 → 실력값 (게임들은 0~2 사이로 받아 씀). 보통은 쉬움 쪽에 가깝게 낮춤
+	var lv := int(GameState.players[int(p["slot"])].get("level", 1))
+	return [0.0, 0.45, 1.3][clampi(lv, 0, 2)]

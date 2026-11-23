@@ -26,7 +26,9 @@ const MINIGAME_LANDER_BONUS := 0     ## 모든 미니게임 보상 통일 (1~4�
 
 ## 찬스 카드로 생기는 동전 칸
 const COIN_SPACE_AMOUNT := 5
-const COIN_SPACES_PER_CARD := 3
+const COIN_SPACES_PER_CARD := 3     ## (예전 값 · 안 씀)
+const COIN_SPACES_FRACTION := 0.3   ## 행운 · 함정 칸 카드: 판의 약 30% 를 한꺼번에 바꿈 (다른 칸 위에도 덮어씀)
+const COIN_SPACES_ROUNDS := 3       ## 그만큼 라운드가 지나면 원래 칸으로 돌아옴
 const STEAL_COINS := 5
 
 ## ── 크라켄 생존전 (개인전 · 2대2) ───────────────────────────
@@ -41,8 +43,8 @@ const HEARTS_MAX := 5               ## 최대 체력은 5 로 고정 (물약으�
 ## 크라켄 차례: KRAKEN_ATTACK_EVERY 라운드마다 라운드 끝에 아래 행동 중 하나를 무작위로
 ##   barrage: 많은 칸을 붉게 표시 → 다음 라운드 끝에 내려침
 ##   spines : 적은 칸을 2 라운드 동안 독가시 칸으로 (멈추면 하트 -1, 상점 · 포털 등도 바뀔 수 있음)
-##   surge  : 2 라운드 동안 상점 가격 2 배
-##   ship   : 모두의 발밑에 포탈이 열려 하늘을 나는 '크라켄의 배'로 2 라운드 (배에선 크라켄 공격 없음).
+##   surge  : 6 라운드 동안 상점 가격 2 배
+##   ship   : 모두의 발밑에 포탈이 열려 하늘을 나는 '크라켄의 배'로 5 라운드 (배에선 크라켄 공격 없음).
 ##            섬으로 돌아온 뒤부터 다음 크라켄 차례까지 다시 셈
 const EEL_RANGE := 2                ## 전기뱀장어 칸: 앞뒤로 이만큼(내 칸 포함 모두 5칸) 감전
 const TRAP_SKIP := 1                ## 곰덫에 걸리면 쉬는 차례 수
@@ -50,7 +52,7 @@ const KRAKEN_ATTACK_EVERY := 2
 ## 처음 몇 라운드는 크라켄이 잠들어 있음: 모두 주사위를 이만큼 굴린 뒤(그 라운드 끝) 깨어나 바로 첫 차례
 const KRAKEN_WAKE_ROUND := 2
 const KRAKEN_ACTIONS := ["barrage", "spines", "surge", "ship"]
-const SHIP_ROUNDS := 2              ## ship: 배 위에서 보내는 라운드 수
+const SHIP_ROUNDS := 5              ## ship: 배 위에서 보내는 라운드 수 (모두 같은 칸에 떨어져 첫 주사위 때 방향을 고름)
 const KRAKEN_CHEST_WIN := 0.5       ## 크라켄의 보물상자 룰렛: 보물상자가 나올 확률
 const CANNON_COINS := 5             ## 대포 칸: 맞은 상대가 잃는 동전
 const KRAKEN_TARGETS_BASE := 40     ## barrage: 첫 공격에 노리는 칸 수 (판은 약 180칸)
@@ -64,6 +66,7 @@ const KRAKEN_SPINES_BASE := 3       ## spines: 독가시 칸 수
 const KRAKEN_SPINES_MAX := 5
 const KRAKEN_EFFECT_ROUNDS := 2     ## spines · surge 가 이어지는 라운드 수
 const KRAKEN_SURGE_MULT := 2        ## surge: 상점 가격 배수
+const KRAKEN_SURGE_ROUNDS := 6      ## surge: 상점 대혼란이 이어지는 라운드 수 (이어지는 동안은 다시 안 나옴)
 const POTION_PRICE := 10            ## 상점: 하트 +1
 const SHIELD_PRICE := 5             ## 상점: 다음 피해 한 번 막기
 
@@ -79,20 +82,20 @@ const ITEMS := {
 	"oxygen": {"price": 20, "title": "OXYGEN TANK", "text": "Just keep it in your bag. When you'd lose your last heart, you stay at 1 heart instead."},
 	"net": {"price": 8, "title": "FISHING NET", "text": "Use it to throw a net over a player. Their next roll is only 1-3."},
 }
-const MINIGAME_WIN_HEAL := 1        ## 미니게임 1등은 하트 +1
+const MINIGAME_WIN_HEAL := 0        ## 미니게임 1등 하트 회복 없음
 
 ## 찬스 카드 (weight 가 클수록 자주 나옴)
 const CARDS := [
 	{"id": "coins5", "weight": 22, "title": "+5 COINS", "text": "Get 5 coins."},
 	{"id": "coins10", "weight": 12, "title": "+10 COINS", "text": "Get 10 coins."},
 	{"id": "roll_again", "weight": 12, "title": "ROLL AGAIN", "text": "Roll the dice one more time, right now!"},
-	{"id": "lucky_spaces", "weight": 10, "title": "LUCKY SPACES", "text": "Lucky spaces (+5 coins) pop up around the board!"},
-	{"id": "trap_spaces", "weight": 10, "title": "COIN TRAPS", "text": "Trap spaces (-5 coins) pop up around the board!"},
+	{"id": "lucky_spaces", "weight": 10, "title": "LUCKY SPACES", "text": "Lucky spaces (+5 coins) cover about a third of the board for 3 rounds!"},
+	{"id": "trap_spaces", "weight": 10, "title": "COIN TRAPS", "text": "Trap spaces (-5 coins) cover about a third of the board for 3 rounds!"},
 	{"id": "pickpocket", "weight": 12, "title": "PICKPOCKET", "text": "Take 5 coins from a player of your choice."},
 	{"id": "warp", "weight": 4, "title": "WARP", "text": "Warp to any space you like!"},
 	{"id": "heal", "weight": 8, "survival": true, "title": "SEA MEDIC", "text": "Get back 1 heart."},
 	{"id": "shield", "weight": 8, "survival": true, "title": "BARNACLE SHIELD", "text": "Blocks the next hit you take."},
-	{"id": "harpoon", "weight": 8, "survival": true, "title": "HARPOON", "text": "Throw a harpoon at a player of your choice. A hit costs them 1 heart."},
+	{"id": "harpoon", "weight": 3, "survival": true, "title": "HARPOON", "text": "Throw a harpoon at a player of your choice. A hit costs them 1 heart."},
 	{"id": "trap", "weight": 7, "survival": true, "title": "BEAR TRAP", "text": "Secretly hide a trap on any space. Whoever stops there loses 1 heart and misses a turn."},
 	{"id": "vampire", "weight": 6, "survival": true, "title": "VAMPIRE JELLY", "text": "Steal 1 heart from a player of your choice. Useless if your hearts are full."},
 	{"id": "bait", "weight": 6, "survival": true, "title": "KRAKEN BAIT", "text": "The kraken will strike next to a player of your choice!"},
