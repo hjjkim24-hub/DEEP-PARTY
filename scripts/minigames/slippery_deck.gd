@@ -14,6 +14,11 @@ const DASH := 8.6
 const DASH_CD := 1.4
 const BUMP_R := 0.84
 const BARREL_R := 0.42
+## 술통: 시간과 상관없이 랜덤. 속도는 언제나 보고 피할 수 있는 범위로 고정
+const BARREL_V_MIN := 4.6
+const BARREL_V_MAX := 6.0
+const BARREL_GAP_MIN := 0.45
+const BARREL_GAP_MAX := 0.85
 
 var _track: Node3D
 var _elapsed := 0.0
@@ -306,14 +311,13 @@ func _kick_me(s: int, v: Vector3, stun: float) -> void:
 func _tick(delta: float) -> void:
 	_elapsed += delta
 	_t3 += delta
-	var pr := pressure()
 	if not is_client():
 		_think(delta)
 		_barrel_t -= delta
 		if _barrel_t <= 0.0:
-			_spawn_barrel(pr)
-			_barrel_t = lerpf(0.72, 0.36, pr) * rng.randf_range(0.7, 1.3)
-	_slide(delta, pr)
+			_spawn_barrel()
+			_barrel_t = rng.randf_range(BARREL_GAP_MIN, BARREL_GAP_MAX)
+	_slide(delta)
 	_update_barrels(delta)
 	if not is_client():
 		_bumps(delta)
@@ -347,7 +351,7 @@ func _in_puddle(pos: Vector3) -> bool:
 
 
 ## 미끄러지는 움직임 (가속만, 마찰 약함). 웅덩이 위는 더 미끄럽고 방향 바꾸기도 어려움
-func _slide(delta: float, pr: float) -> void:
+func _slide(delta: float) -> void:
 	for s in walkers:
 		var w: Dictionary = walkers[s]
 		w["dash_cd"] = maxf(0.0, float(w["dash_cd"]) - delta)
@@ -371,7 +375,7 @@ func _slide(delta: float, pr: float) -> void:
 		if float(w["stun"]) > 0.0:
 			inp = Vector3.ZERO
 		var oily := _in_puddle(w["pos"])
-		var fric := (0.5 if oily else 1.05) * lerpf(1.0, 0.8, pr)
+		var fric := (0.5 if oily else 1.05)
 		if _done.has(s):
 			fric = 3.0
 		var vel: Vector3 = w["vel"]
@@ -544,15 +548,24 @@ func _finish(s: int, t: float) -> void:
 
 
 # ── 굴러오는 술통 ────────────────────────────────────────────
-func _spawn_barrel(pr: float) -> void:
+func _spawn_barrel() -> void:
 	# 가끔은 달리는 사람을 노림
 	var x := rng.randf_range(-HALF_W + 0.5, HALF_W - 0.5)
 	if rng.randf() < 0.3:
 		var rc := _racing()
 		if not rc.is_empty():
 			x = clampf(float((walkers[rc[rng.randi() % rc.size()]]["pos"] as Vector3).x) + rng.randf_range(-0.6, 0.6), -HALF_W + 0.5, HALF_W - 0.5)
+	# 바로 직전에 나온 통과 너무 붙어 나오지 않게 (한 줄로 벽을 만들면 못 피함)
+	for k in 6:
+		var ok := true
+		for br in _barrels:
+			if _elapsed - float(br["t0"]) < 0.9 and absf(float(br["x"]) - x) < 1.7:
+				ok = false
+		if ok:
+			break
+		x = rng.randf_range(-HALF_W + 0.5, HALF_W - 0.5)
 	_next_barrel += 1
-	net_call("_barrel_go", [_next_barrel, x, lerpf(6.0, 9.5, pr) * rng.randf_range(0.85, 1.15), _elapsed, rng.randf() < 0.25])
+	net_call("_barrel_go", [_next_barrel, x, rng.randf_range(BARREL_V_MIN, BARREL_V_MAX), _elapsed, rng.randf() < 0.25])
 
 
 func _barrel_go(id: int, x: float, speed: float, t0: float, hop: bool) -> void:
