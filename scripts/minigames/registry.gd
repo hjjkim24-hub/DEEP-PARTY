@@ -11,11 +11,15 @@ const LIST := {
 	"anchor_drop": preload("res://scripts/minigames/anchor_drop.gd"),
 	"ink_paint": preload("res://scripts/minigames/ink_paint.gd"),
 	"clam_snatch": preload("res://scripts/minigames/clam_snatch.gd"),
+	"slippery_deck": preload("res://scripts/minigames/slippery_deck.gd"),
+	"mast_climb": preload("res://scripts/minigames/mast_climb.gd"),
+	"water_cannon": preload("res://scripts/minigames/water_cannon.gd"),
 }
 const NAMES := {
 	"tentacle_dodge": "TentacleDodge", "cannon_volley": "CannonVolley",
 	"treasure_dive": "TreasureDive", "chest_shuffle": "ChestShuffle",
 	"tentacle_tug": "TentacleTug", "powder_keg": "PowderKeg", "anchor_drop": "AnchorDrop", "ink_paint": "InkPaint", "clam_snatch": "ClamSnatch",
+	"slippery_deck": "SlipperyDeck", "mast_climb": "MastClimb", "water_cannon": "WaterCannon",
 }
 
 

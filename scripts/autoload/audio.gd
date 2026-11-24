@@ -28,7 +28,7 @@ const SFX_NAMES := [
 	"box_rumble", "box_burst", "box_whoosh", "dice_shake", "dice_land",
 	"cannon", "explode", "whoosh", "portal", "card_spin", "card_flip", "coins", "roar", "thud", "creak",
 	"kraken_rumble", "kraken_slam", "kraken_rise", "zap", "snap",
-	"card_draw", "card_pass", "aura",
+	"card_draw", "card_pass", "aura", "gull", "pump", "spray",
 ]
 ## 소리별 음량(dB). 파일은 모두 최고점 -1dB 로 맞춰 두었으니 여기서 크기를 정함. 자주 나는 소리는 작게.
 const SFX_DB := {

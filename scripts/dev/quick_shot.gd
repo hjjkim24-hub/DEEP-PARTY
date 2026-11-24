@@ -73,6 +73,9 @@ func _mg_shot(id: String, intro_only: bool) -> void:
 		return
 	var mg: Control = Reg.create(id, rr)
 	mg.setup(ps, true, Callable())
+	# 느린 화면(소프트웨어 렌더)에서도 한 프레임에 지나는 게임 시간이 짧도록 (움직임이 실제 게임과 같게)
+	if OS.get_environment("TIMESCALE") != "":
+		Engine.time_scale = float(OS.get_environment("TIMESCALE"))
 	layer.add_child(mg)
 	var t0 := Time.get_ticks_msec()
 	mg.run()
@@ -140,7 +143,8 @@ func _shot(shot_name: String) -> void:
 ## 화면 없이 돌릴 때: 장면 대신 지금 상태를 글로 (온라인 점검에서 방장 · 손님 비교용)
 func _digest(tag: String) -> void:
 	var sc := get_tree().current_scene
-	var mg: Node = sc.get("_current") if sc and "_current" in sc else null
+	var cur = sc.get("_current") if sc and "_current" in sc else null
+	var mg: Node = cur if cur is Node else null
 	var line := "DIGEST %s fps=%d" % [tag, Engine.get_frames_per_second()]
 	if mg and "scores" in mg:
 		line += " t=%.1f scores=%s" % [float(mg.time_left), str(mg.scores)]

@@ -297,6 +297,45 @@ func _build() -> void:
 		t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		t.custom_minimum_size = Vector2(400, 0)
 		ch.add_child(t)
+	elif _info.controls == "ALT_KEYS":
+		# 번갈아 누르기 (돛대 오르기)
+		ch.add_child(_key_row(["A", "D"]))
+		var or_a := _ink("or", 26, Color(INK, 0.9))
+		or_a.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		ch.add_child(or_a)
+		ch.add_child(_key_row(["←", "→"]))
+		ch.add_child(_ink_wrap("Press them one after the other", 28, 230))
+	elif _info.controls == "KEYS_DASH" or _info.controls == "KEYS_MOUSE":
+		# 이동 + 스페이스 (+ 마우스): 줄마다 한 가지씩, 작게
+		cv.remove_child(ch)
+		ch.queue_free()
+		cv.add_theme_constant_override("separation", 6)
+		var r1 := HBoxContainer.new()
+		r1.add_theme_constant_override("separation", 12)
+		cv.add_child(r1)
+		r1.add_child(_key_row(["W", "A", "S", "D"]))
+		var sl := _ink("/", 26, Color(INK, 0.9))
+		sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		r1.add_child(sl)
+		r1.add_child(_key_row(["↑", "←", "↓", "→"]))
+		r1.add_child(_ink_wrap("Move", 28, 90))
+		if _info.controls == "KEYS_MOUSE":
+			var r2 := HBoxContainer.new()
+			r2.add_theme_constant_override("separation", 16)
+			cv.add_child(r2)
+			var mi := _mouse_icon()
+			mi.custom_minimum_size = Vector2(90, 120)
+			mi.scale = Vector2(0.62, 0.62)
+			var mw := Control.new()
+			mw.custom_minimum_size = Vector2(60, 76)
+			mw.add_child(mi)
+			r2.add_child(mw)
+			r2.add_child(_ink_wrap("Aim with the mouse, hold the left button to spray", 26, 460))
+		var r3 := HBoxContainer.new()
+		r3.add_theme_constant_override("separation", 16)
+		cv.add_child(r3)
+		r3.add_child(_key_row(["SPACE"]))
+		r3.add_child(_ink_wrap("Dash and bump!" if _info.controls == "KEYS_DASH" else "Mash to pump water", 28, 360))
 	else:
 		ch.add_child(_keys_icon(["W", "A", "S", "D"]))
 		var or_l := _ink("or", 26, Color(INK, 0.9))
@@ -536,6 +575,37 @@ func _mouse_icon() -> Control:
 	tm.timeout.connect(c.queue_redraw)
 	c.add_child(tm)
 	return c
+
+
+## 조작 설명 글씨: 한글이 단어 중간에서 안 끊기게, 정해진 너비 안에서 줄바꿈
+func _ink_wrap(text: String, size_: int, width: float) -> Label:
+	var t := _ink(_keep_words(tr(text)), size_, INK_DARK)
+	t.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	t.custom_minimum_size = Vector2(width, 0)
+	return t
+
+
+## 가로로 늘어선 키 (SPACE 는 넓게)
+func _key_row(keys: Array) -> Control:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 6)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	for kname in keys:
+		var k := PanelContainer.new()
+		var st := _box(Color(0.93, 0.86, 0.7), INK, 2, 8)
+		st.border_width_bottom = 6
+		k.add_theme_stylebox_override("panel", st)
+		k.custom_minimum_size = Vector2(150 if String(kname).length() > 2 else 46, 46)
+		var l := _ink(String(kname), 20 if String(kname).length() > 2 else 24, INK)
+		l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		k.add_child(l)
+		h.add_child(k)
+	return h
 
 
 func _keys_icon(keys: Array) -> Control:
