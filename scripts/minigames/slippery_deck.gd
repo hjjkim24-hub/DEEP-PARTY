@@ -81,7 +81,7 @@ func _build_pier() -> void:
 	var mats := []
 	for c in cols:
 		var wm := wood_mat(c, Vector3(1, 0, 0), 0.05)
-		wm.set_shader_parameter("oil", 1.0)
+		wm.set_shader_parameter("oil", 0.7)
 		mats.append(wm)
 	var z0 := START_Z + 3.0
 	var z1 := FINISH_Z - 8.0
@@ -115,6 +115,7 @@ func _build_pier() -> void:
 			b.height = 0.5
 			add_mesh(b, pile, Vector3(sx * (HALF_W + 0.05), 0.12, zz), Basis(), _track)
 		zz -= 6.0
+	_oil_flow(z0, z1)
 	# 뒤쪽 막힘판 (출발선 뒤로는 못 감)
 	box(Vector3(HALF_W * 2.2, 1.0, 0.3), beam, Vector3(0, 0.45, z0 - 0.15), Basis(), _track)
 	# 출발선 (흰 칠) · 결승선 (체크무늬 + 아치 + 깃발 줄)
@@ -163,6 +164,68 @@ func _build_pier() -> void:
 		barrel(_track, Vector3(-HALF_W + 0.6 + i * 1.0, 0.0, FINISH_Z - 6.5), 0.4, 0.8, Color(0.4, 0.25, 0.13))
 	for i in nb - 1:
 		barrel(_track, Vector3(-HALF_W + 1.1 + i * 1.0, 0.8, FINISH_Z - 6.7), 0.4, 0.8, Color(0.36, 0.23, 0.12))
+
+
+## 위에서 아래로 줄줄 흘러내리는 투명한 기름막 + 다리 양옆으로 똑똑 떨어지는 기름 방울 + 꼭대기 쓰러진 통에서 쏟아지는 기름
+func _oil_flow(z0: float, z1: float) -> void:
+	var length := z0 - z1
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(HALF_W * 2.0 - 0.06, length - 0.4)
+	var fm := ShaderMaterial.new()
+	fm.shader = preload("res://shaders/oil_flow.gdshader")
+	fm.set_shader_parameter("half_w", HALF_W)
+	var flow := add_mesh(pm, fm, Vector3(0, 0.014, (z0 + z1) * 0.5), Basis(), _track)
+	flow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# 방울 (투명하고 매끈한 기름 방울)
+	var drop_mat := StandardMaterial3D.new()
+	drop_mat.albedo_color = Color(0.95, 0.85, 0.55, 0.55)
+	drop_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	drop_mat.roughness = 0.03
+	drop_mat.metallic_specular = 1.0
+	drop_mat.rim_enabled = true
+	drop_mat.rim = 0.6
+	var dm := SphereMesh.new()
+	dm.radius = 0.035
+	dm.height = 0.09
+	dm.radial_segments = 8
+	dm.rings = 4
+	dm.material = drop_mat
+	for sx: float in [-1.0, 1.0]:
+		var d := CPUParticles3D.new()
+		d.amount = 90
+		d.lifetime = 0.7
+		d.mesh = dm
+		d.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		d.emission_box_extents = Vector3(0.03, 0.02, length * 0.5)
+		d.direction = Vector3(sx, -1.0, 0.4)
+		d.spread = 12.0
+		d.initial_velocity_min = 0.2
+		d.initial_velocity_max = 0.6
+		d.gravity = Vector3(0, -9.8, 0)
+		d.scale_amount_min = 0.6
+		d.scale_amount_max = 1.3
+		d.position = Vector3(sx * (HALF_W + 0.2), -0.1, (z0 + z1) * 0.5)
+		d.visibility_aabb = AABB(Vector3(-1, -3, -length * 0.5 - 1), Vector3(2, 3.5, length + 2))
+		_track.add_child(d)
+	# 꼭대기: 쓰러진 통 두 개에서 기름이 콸콸 → 다리로 쏟아져 흘러내림
+	for i in 2:
+		var x := -1.6 + i * 3.4
+		var tipped := barrel(_track, Vector3(x, BARREL_R, FINISH_Z - 4.6), BARREL_R, 1.0, Color(0.38, 0.24, 0.13))
+		tipped.rotation = Vector3(PI / 2, 0.25 - i * 0.5, 0)
+		tipped.position.z -= 0.5
+		var pour := CPUParticles3D.new()
+		pour.amount = 40
+		pour.lifetime = 0.5
+		pour.mesh = dm
+		pour.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		pour.emission_sphere_radius = 0.15
+		pour.direction = Vector3(0, 0.1, 1)
+		pour.spread = 18.0
+		pour.initial_velocity_min = 1.2
+		pour.initial_velocity_max = 2.0
+		pour.gravity = Vector3(0, -6.0, 0)
+		pour.position = Vector3(x, BARREL_R, FINISH_Z - 4.0)
+		_track.add_child(pour)
 
 
 func _setup_game() -> void:
