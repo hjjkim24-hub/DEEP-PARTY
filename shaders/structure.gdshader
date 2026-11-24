@@ -9,6 +9,7 @@ uniform float moss = 0.6;
 uniform vec3 grain = vec3(0.0, 0.0, 1.0);   // 나뭇결 방향 (로컬)
 uniform float caustics = 1.0;     // 물속 빛 무늬 (하늘 위 배에서는 0)
 uniform float plank_w = 0.3;                // 널 너비 (0 = 통널 한 장: 틈 없음)
+uniform float oil = 0.0;          // > 0: 기름 · 물기로 번들번들한 윗면 (미끄러운 갑판)
 uniform float radial = 0.0;       // > 0: 둥근 벽 · 원뿔 지붕 (값 = 대략의 반지름)
 uniform sampler2D det_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D det_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
@@ -254,9 +255,27 @@ void fragment() {
 		bump += (vec3(noise3(wpos * 11.0), 0.5, noise3(wpos * 11.0 + 4.0)) - 0.5) * m * 0.6;
 	}
 
+	float spec = 0.4;
+	vec3 film_e = vec3(0.0);
+	if (oil > 0.0 && wn.y > 0.7) {
+		// 기름막: 결 따라 길게 번진 얼룩 · 젖어서 짙어진 나무 · 거울처럼 매끈한 면 · 비스듬히 보면 무지갯빛
+		float smear = fbm3(vec3(wpos.x * 0.9, 0.0, wpos.z * 0.22));
+		float film = smoothstep(0.3, 0.68, smear);
+		float k = oil * mix(0.6, 1.0, film);
+		c = mix(c, c * c * 1.6, k * 0.55);    // 젖은 나무: 더 짙고 진한 색
+		r = mix(r, mix(0.3, 0.07, film), k);
+		spec = mix(spec, 0.5, k);
+		bump *= 1.0 - 0.75 * k;
+		groove *= 1.0 - 0.5 * k;
+		vec3 vn = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
+		float fr = pow(1.0 - clamp(dot(vn, VIEW), 0.0, 1.0), 3.0);
+		float th = smear * 3.0 + fbm3(wpos * 0.45 + 3.0) * 1.5 + fr * 0.8;
+		vec3 rainbow = 0.5 + 0.5 * cos(6.2832 * (th + vec3(0.0, 0.33, 0.67)));
+		film_e = rainbow * film * oil * (0.02 + 0.1 * fr);
+	}
 	ALBEDO = c;
-	ROUGHNESS = clamp(r + groove * 0.1, 0.05, 1.0);
-	SPECULAR = 0.4;
+	ROUGHNESS = clamp(r + groove * 0.1, 0.02, 1.0);
+	SPECULAR = spec;
 	METALLIC = metal;
 	AO = 1.0 - groove * 0.5;
 	AO_LIGHT_AFFECT = 0.5;
@@ -268,5 +287,5 @@ void fragment() {
 	}
 	float t = TIME * 0.5;
 	float cs = caustic(wpos.xz * 0.35, t) + 0.6 * caustic(wpos.xz * 0.6 + 3.1, t * 1.3);
-	EMISSION = vec3(0.35, 0.62, 0.52) * cs * 0.16 * clamp(wn.y, 0.0, 1.0) * caustics;
+	EMISSION = vec3(0.35, 0.62, 0.52) * cs * 0.16 * clamp(wn.y, 0.0, 1.0) * caustics + film_e;
 }

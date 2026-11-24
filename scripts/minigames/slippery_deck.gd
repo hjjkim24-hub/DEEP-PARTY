@@ -1,7 +1,7 @@
 extends "res://scripts/minigames/minigame_3d.gd"
 ## 미끄러운 갑판 레이스 (WASD + 스페이스): 기름이 번들번들한 길고 좁은 잔교(바다 위 나무 다리)를 위로 달려 결승선까지.
 ## 이동 = 가속만 붙고 잘 안 멈춤(관성). 스페이스 = 앞으로 확 돌진 (부딪친 사람은 튕겨 나감).
-## 꼭대기에서 술통이 계속 랜덤으로 굴러 내려옴 → 맞으면 뒤로 밀려나고 잠깐 휘청. 기름 웅덩이 위는 더 미끄러움.
+## 꼭대기에서 술통이 계속 랜덤으로 굴러 내려옴 → 맞으면 뒤로 밀려나고 잠깐 휘청. 바닥 전체가 기름막으로 번들번들.
 ## 다리 옆으로 미끄러져 떨어지면 풍덩 → 조금 뒤에서 다시 올라옴. 결승선에 먼저 닿은 순서대로 순위.
 ## 화면은 각자 자기 말을 따라가요 (미리보기 · 자동 점검은 선두를 따라감).
 
@@ -28,7 +28,6 @@ var _pair_cd := {}
 var _barrels: Array = []        ## {id, x, speed, t0, node, holder, hit{}, hop}
 var _barrel_t := 1.0
 var _next_barrel := 0
-var _puddles: Array = []        ## [Vector3 중심, 반지름]
 var _ai := {}
 var _cam_z := START_Z
 var _skid_mat: StandardMaterial3D
@@ -44,7 +43,7 @@ func _init() -> void:
 
 func _build_stage() -> void:
 	env_sea_day()
-	sun.rotation_degrees = Vector3(-55, -30, 0)
+	sun.rotation_degrees = Vector3(-38, 160, 0)   # 해가 결승선 쪽 → 번들번들한 바닥에 햇빛이 길게 비침
 	var sea := ocean(-1.9, 320.0)
 	sea.position.z = (START_Z + FINISH_Z) * 0.5
 	(sea.material_override as ShaderMaterial).set_shader_parameter("crest_foam", 0.55)
@@ -81,7 +80,9 @@ func _build_pier() -> void:
 	var cols := [Color(0.5, 0.38, 0.26), Color(0.55, 0.42, 0.29), Color(0.47, 0.35, 0.24), Color(0.52, 0.4, 0.27)]
 	var mats := []
 	for c in cols:
-		mats.append(wood_mat(c, Vector3(1, 0, 0), 0.1))
+		var wm := wood_mat(c, Vector3(1, 0, 0), 0.05)
+		wm.set_shader_parameter("oil", 1.0)
+		mats.append(wm)
 	var z0 := START_Z + 3.0
 	var z1 := FINISH_Z - 8.0
 	var z := z0
@@ -162,60 +163,6 @@ func _build_pier() -> void:
 		barrel(_track, Vector3(-HALF_W + 0.6 + i * 1.0, 0.0, FINISH_Z - 6.5), 0.4, 0.8, Color(0.4, 0.25, 0.13))
 	for i in nb - 1:
 		barrel(_track, Vector3(-HALF_W + 1.1 + i * 1.0, 0.8, FINISH_Z - 6.7), 0.4, 0.8, Color(0.36, 0.23, 0.12))
-	# 번들번들한 기름 웅덩이 (위에선 더 미끄러움)
-	_oil_puddles(rr)
-
-
-func _oil_puddles(rr: RandomNumberGenerator) -> void:
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = Color(0.1, 0.07, 0.04, 0.55)
-	dark.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	dark.roughness = 0.04
-	dark.metallic = 0.4
-	dark.metallic_specular = 1.0
-	var g := GradientTexture2D.new()
-	g.fill = GradientTexture2D.FILL_RADIAL
-	g.fill_from = Vector2(0.5, 0.5)
-	g.fill_to = Vector2(0.5, 0.0)
-	var gr := Gradient.new()
-	gr.set_color(0, Color(1, 1, 1, 1))
-	gr.set_color(1, Color(1, 1, 1, 0))
-	gr.add_point(0.7, Color(1, 1, 1, 0.9))
-	g.gradient = gr
-	dark.albedo_texture = g
-	var sheen := StandardMaterial3D.new()
-	sheen.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	sheen.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	sheen.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	var sg := GradientTexture2D.new()
-	sg.fill = GradientTexture2D.FILL_RADIAL
-	sg.fill_from = Vector2(0.5, 0.5)
-	sg.fill_to = Vector2(0.5, 0.0)
-	var sgr := Gradient.new()
-	sgr.set_color(0, Color(0, 0, 0, 0))
-	sgr.set_color(1, Color(0, 0, 0, 0))
-	sgr.add_point(0.5, Color(0.45, 0.2, 0.55, 0.16))
-	sgr.add_point(0.62, Color(0.2, 0.45, 0.55, 0.16))
-	sgr.add_point(0.74, Color(0.55, 0.5, 0.15, 0.14))
-	sg.gradient = sgr
-	sheen.albedo_texture = sg
-	var z := START_Z - 6.0
-	while z > FINISH_Z + 4.0:
-		var c := Vector3(rr.randf_range(-HALF_W + 1.0, HALF_W - 1.0), 0, z)
-		var r := rr.randf_range(1.0, 1.6)
-		_puddles.append([c, r])
-		for j in 3:
-			var q := QuadMesh.new()
-			var sz := r * 2.0 * (1.0 if j == 0 else 0.6)
-			q.size = Vector2(sz * rr.randf_range(1.0, 1.4), sz)
-			q.orientation = PlaneMesh.FACE_Y
-			var off := Vector3(rr.randf_range(-0.5, 0.5), 0, rr.randf_range(-0.5, 0.5)) * (0.0 if j == 0 else 1.0)
-			var mi := add_mesh(q, dark, c + off + Vector3(0, 0.012 + j * 0.002, 0), Basis(Vector3.UP, rr.randf() * TAU), _track)
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			if j == 0:
-				var sh := add_mesh(q, sheen, c + Vector3(0, 0.018, 0), Basis(Vector3.UP, rr.randf() * TAU), _track)
-				sh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		z -= rr.randf_range(5.0, 8.0)
 
 
 func _setup_game() -> void:
@@ -343,14 +290,7 @@ func _follow_cam(delta: float) -> void:
 	_place_cam(_cam_z)
 
 
-func _in_puddle(pos: Vector3) -> bool:
-	for pd in _puddles:
-		if Vector2(pos.x - pd[0].x, pos.z - pd[0].z).length() < float(pd[1]):
-			return true
-	return false
-
-
-## 미끄러지는 움직임 (가속만, 마찰 약함). 웅덩이 위는 더 미끄럽고 방향 바꾸기도 어려움
+## 미끄러지는 움직임 (가속만, 마찰 약함)
 func _slide(delta: float) -> void:
 	for s in walkers:
 		var w: Dictionary = walkers[s]
@@ -374,12 +314,11 @@ func _slide(delta: float) -> void:
 			inp = _ai[s]["inp"]
 		if float(w["stun"]) > 0.0:
 			inp = Vector3.ZERO
-		var oily := _in_puddle(w["pos"])
-		var fric := (0.5 if oily else 1.05)
+		var fric := 1.05
 		if _done.has(s):
 			fric = 3.0
 		var vel: Vector3 = w["vel"]
-		vel += inp * ACC * (0.55 if oily else 1.0) * delta
+		vel += inp * ACC * delta
 		vel *= exp(-fric * delta)
 		var sp := vel.length()
 		if sp > MAXV:
@@ -574,7 +513,7 @@ func _barrel_go(id: int, x: float, speed: float, t0: float, hop: bool) -> void:
 	var holder := Node3D.new()
 	root.add_child(holder)
 	holder.basis = Basis.looking_at(Vector3.RIGHT, Vector3.UP)   # 굴러가는 축 = 좌우
-	var b := barrel(holder, Vector3(0, 0, -0.4), BARREL_R, 0.8, [Color(0.4, 0.25, 0.13), Color(0.34, 0.22, 0.12), Color(0.45, 0.3, 0.16)][id % 3])
+	var b := barrel(holder, Vector3(0, 0, -0.55), BARREL_R, 1.1, [Color(0.4, 0.25, 0.13), Color(0.34, 0.22, 0.12), Color(0.45, 0.3, 0.16)][id % 3])
 	b.rotation = Vector3(PI / 2, 0, 0)
 	root.position = Vector3(x, BARREL_R, FINISH_Z - 5.5)
 	_barrels.append({"id": id, "x": x, "speed": speed, "t0": t0, "node": root, "holder": holder, "hit": {}, "hop": hop})
@@ -609,7 +548,7 @@ func _update_barrels(delta: float) -> void:
 			if hit.has(s) or float(w["fallen"]) > 0.0:
 				continue
 			var pos: Vector3 = w["pos"]
-			if absf(pos.z - z) < 0.8 and absf(pos.x - node.position.x) < 0.75 and y < 1.2:
+			if absf(pos.z - z) < 0.8 and absf(pos.x - node.position.x) < 0.9 and y < 1.2:
 				hit[s] = true
 				var away := signf(pos.x - node.position.x)
 				if away == 0.0:
