@@ -2,10 +2,10 @@ extends "res://scripts/minigames/minigame_3d.gd"
 ## 먹물 땅따먹기 (마우스로 걷기): 크라켄의 배 갑판 위. 걸어가는 자리마다 내 색 먹물이 칠해져요.
 ## 30초 뒤 가장 넓게 칠한 사람이 승리. 남의 색 위도 덮어 칠할 수 있어요.
 ## 후반엔 크라켄이 검은 먹물 덩이를 뱉어 칠해 둔 땅을 지워 버려요 (갈수록 크게 · 자주).
-## 중간중간 갑판 아무 데나 오리발(잠수용 핀)이 떨어짐 → 주우면 몇 초 동안 빨라짐.
+## 중간중간 갑판 아무 데나 부스터(빛나는 구슬 속 작은 로켓)가 떨어짐 → 주우면 몇 초 동안 빨라짐.
 
-const GRID := 120
-const HALF := 7.2               ## 갑판 반 너비 (정사각형)
+const GRID := 140
+const HALF := 8.6               ## 갑판 반 너비 (정사각형) — 넓힘 (카메라도 같은 비율로 물러남)
 const BRUSH := 0.8
 
 var _owner := PackedInt32Array()   ## 칸마다 주인 slot (-1 = 빈칸)
@@ -26,7 +26,7 @@ var _fin_id := 0
 
 func _init() -> void:
 	title = "INK SPLAT"
-	how_to = "Walk to paint the deck in your color! You can paint over other colors too. Grab swim fins for a burst of speed. Watch out - the kraken spits black ink that wipes the deck clean. Biggest area wins!"
+	how_to = "Walk to paint the deck in your color! You can paint over other colors too. Grab boosters for a burst of speed. Watch out - the kraken spits black ink that wipes the deck clean. Biggest area wins!"
 	goal = "Paint the most deck!"
 	controls = "KEYS"
 	duration = 30.0
@@ -39,8 +39,8 @@ func _build_stage() -> void:
 	(sea.material_override as ShaderMaterial).set_shader_parameter("crest_foam", 0.5)
 	sky_clouds(12, 200.0, 30.0)
 	cam.fov = 44.0
-	cam.position = Vector3(0, 15.5, 12.5)
-	cam.look_at(Vector3(0, 0, 0.8))
+	cam.position = Vector3(0, 15.5, 12.5) * (HALF / 7.2)
+	cam.look_at(Vector3(0, 0, 0.8 * HALF / 7.2))
 	_build_ship()
 	# 칠하는 면 (갑판 바로 위 투명 판)
 	_img = Image.create(GRID, GRID, false, Image.FORMAT_RGBA8)
@@ -59,9 +59,10 @@ func _build_stage() -> void:
 
 ## 갑판 = 큰 배의 주갑판: 선체(뱃머리는 크라켄 쪽) · 널빤지(선체 모양대로) · 뱃전 · 대포 · 돛대 · 잡동사니
 func _build_ship() -> void:
-	const L := 25.0
-	const B := 19.0
-	const D := 4.2
+	# 배 크기도 갑판(칠하는 구역)에 맞춰 같은 비율로 키움
+	var L := 25.0 * HALF / 7.2
+	var B := 19.0 * HALF / 7.2
+	var D := 4.2
 	var stern_z := HALF + 1.6
 	var hull := MeshInstance3D.new()
 	hull.mesh = hull_mesh(L, B, D, 24, 14)
@@ -271,7 +272,7 @@ func _tick(delta: float) -> void:
 		for k in steps:
 			_paint_at(last.lerp(pp, float(k + 1) / steps), BRUSH, int(w["p"]["slot"]))
 		w["last_paint"] = pp
-	# 오리발: 방장이 가끔 아무 데나 떨어뜨리고, 밟은 사람이 줍기
+	# 부스터: 방장이 가끔 아무 데나 떨어뜨리고, 밟은 사람이 줍기
 	_fin_t -= delta
 	if _fin_t <= 0.0 and not is_client():
 		_fin_t = rng.randf_range(3.5, 6.0)
@@ -292,8 +293,15 @@ func _tick(delta: float) -> void:
 	for id in _fins.keys():
 		var f: Dictionary = _fins[id]
 		var fn: Node3D = f["node"]
-		fn.position.y = 0.12 + sin(_t3 * 3.0 + float(id)) * 0.06
-		fn.rotation.y += delta * 1.2
+		fn.position.y = 0.85 + sin(_t3 * 2.6 + float(id)) * 0.1
+		fn.rotation.y += delta * 1.1
+		# 로켓 불꽃 일렁임 · 바닥 고리 회전
+		var fl = fn.get_meta("flame") if fn.has_meta("flame") else null
+		if fl is Node3D:
+			(fl as Node3D).scale = Vector3(1.0, 0.85 + 0.3 * absf(sin(_t3 * 23.0 + float(id))), 1.0)
+		var rg = fn.get_meta("ring") if fn.has_meta("ring") else null
+		if rg is Node3D:
+			(rg as Node3D).rotation.y -= delta * 0.8
 		if is_client():
 			continue
 		for w in walkers.values():
@@ -303,8 +311,8 @@ func _tick(delta: float) -> void:
 				net_call("_fin_take", [id, int(w["p"]["slot"])])
 				break
 	for w in walkers.values():
-		if float(w.get("boost", 0.0)) > 0.0 and fmod(_t3, 0.3) < delta:
-			splash((w["pos"] as Vector3) + Vector3(0, 0.1, 0), 2, 0.12)
+		if float(w.get("boost", 0.0)) > 0.0 and fmod(_t3, 0.12) < delta:
+			_boost_spark(w)
 	var pr := pressure()
 	_blob_t -= delta
 	if _blob_t <= 0.0 and pr > 0.15 and not is_client():
@@ -496,7 +504,7 @@ func _think(delta: float) -> void:
 					bv = v
 					best = c
 			a["goal"] = best
-			# 가까운 오리발이 있으면 주우러 감
+			# 가까운 부스터이 있으면 주우러 감
 			for f in _fins.values():
 				if pos.distance_to(f["pos"]) < lerpf(1.2, 3.2, sk / 2.0):
 					a["goal"] = f["pos"]
@@ -504,84 +512,147 @@ func _think(delta: float) -> void:
 		w["target"] = a["goal"]
 
 
-## 오리발 한 켤레 (노란 날 · 검은 고무 발주머니 · 옆 테두리) + 바닥에 은은한 빛 고리
+## 부스터: 빛나는 유리 구슬 안에 떠 있는 작은 로켓 (크롬 몸통 · 빨간 띠 · 날개 · 번개 표시 · 꽁무니 불꽃)
+## 바닥엔 주황빛 원과 천천히 도는 점선 고리, 하늘로는 옅은 빛기둥 → 멀리서도 "주울 것"으로 보임
 func _fin_spawn(id: int, at: Vector3, yaw: float) -> void:
 	var root := Node3D.new()
-	root.position = at + Vector3(0, 0.12, 0)
+	root.position = at + Vector3(0, 0.85, 0)
 	root.rotation.y = yaw
 	world3.add_child(root)
-	var blade := StandardMaterial3D.new()
-	blade.albedo_color = Color(1.0, 0.82, 0.1)
-	blade.roughness = 0.35
-	blade.clearcoat_enabled = true
-	blade.clearcoat = 0.5
-	var rubber := StandardMaterial3D.new()
-	rubber.albedo_color = Color(0.06, 0.06, 0.07)
-	rubber.roughness = 0.7
-	for sgn in [-1.0, 1.0]:
-		var fin := Node3D.new()
-		fin.position = Vector3(sgn * 0.2, 0, 0)
-		fin.rotation = Vector3(0, sgn * 0.12, sgn * 0.08)
-		root.add_child(fin)
-		# 날: 발 쪽은 좁고 끝은 넓은 납작한 판 (SurfaceTool 사다리꼴)
-		var st := SurfaceTool.new()
-		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		var w0 := 0.1
-		var w1 := 0.17
-		var z0 := 0.1
-		var z1 := 0.72
-		var th := 0.012
-		var top := [Vector3(-w0, th, z0), Vector3(w0, th, z0), Vector3(w1, th + 0.03, z1), Vector3(-w1, th + 0.03, z1)]
-		var bot := [Vector3(-w0, -th, z0), Vector3(w0, -th, z0), Vector3(w1, -th + 0.03, z1), Vector3(-w1, -th + 0.03, z1)]
-		for tri in [[top[0], top[2], top[1]], [top[0], top[3], top[2]], [bot[0], bot[1], bot[2]], [bot[0], bot[2], bot[3]],
-				[top[1], top[2], bot[2]], [top[1], bot[2], bot[1]], [top[3], top[0], bot[0]], [top[3], bot[0], bot[3]], [top[2], top[3], bot[3]], [top[2], bot[3], bot[2]]]:
-			for v in tri:
-				st.add_vertex(v)
-		st.generate_normals()
-		var bm := MeshInstance3D.new()
-		bm.mesh = st.commit()
-		bm.material_override = blade
-		fin.add_child(bm)
-		# 옆 테두리 (검은 고무 날개살)
-		for x in [-1.0, 1.0]:
-			var rail := MeshInstance3D.new()
-			var rb := BoxMesh.new()
-			rb.size = Vector3(0.025, 0.04, 0.62)
-			rail.mesh = rb
-			rail.material_override = rubber
-			rail.position = Vector3(x * 0.135, 0.02, 0.41)
-			rail.rotation.y = -x * 0.11
-			fin.add_child(rail)
-		# 발주머니
-		var pocket := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		sm.radius = 0.5
-		sm.height = 1.0
-		pocket.mesh = sm
-		pocket.material_override = rubber
-		pocket.scale = Vector3(0.22, 0.13, 0.3)
-		pocket.position = Vector3(0, 0.05, 0.0)
-		fin.add_child(pocket)
-	# 바닥 빛 고리
-	var ring := MeshInstance3D.new()
-	var tm := TorusMesh.new()
-	tm.inner_radius = 0.55
-	tm.outer_radius = 0.66
-	ring.mesh = tm
-	var rm := StandardMaterial3D.new()
-	rm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	rm.albedo_color = Color(0.5, 0.95, 1.0, 0.55)
-	rm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	ring.material_override = rm
-	ring.position = Vector3(at.x, 0.06, at.z)
-	ring.scale = Vector3(1, 0.3, 1)
-	world3.add_child(ring)
-	root.set_meta("ring", ring)
+	var chrome := StandardMaterial3D.new()
+	chrome.albedo_color = Color(0.82, 0.84, 0.88)
+	chrome.metallic = 0.9
+	chrome.roughness = 0.22
+	var red := StandardMaterial3D.new()
+	red.albedo_color = Color(0.85, 0.1, 0.08)
+	red.roughness = 0.3
+	red.clearcoat_enabled = true
+	red.clearcoat = 0.6
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.14, 0.14, 0.16)
+	dark.metallic = 0.8
+	dark.roughness = 0.4
+	var bolt := StandardMaterial3D.new()
+	bolt.albedo_color = Color(1.0, 0.85, 0.1)
+	bolt.emission_enabled = true
+	bolt.emission = Color(1.0, 0.8, 0.1)
+	bolt.emission_energy_multiplier = 1.6
+	# 로켓 (비스듬히 기울어 날아가는 자세)
+	var rocket := Node3D.new()
+	rocket.rotation = Vector3(0.35, 0.0, -1.0)   # 위에서 내려다보는 카메라에도 옆모습이 보이게 눕힘
+	rocket.scale = Vector3.ONE * 1.45
+	root.add_child(rocket)
+	add_mesh(_cyl_mesh(0.12, 0.13, 0.4, 24), chrome, Vector3(0, 0.0, 0), Basis(), rocket)
+	var nose := SphereMesh.new()
+	nose.radius = 0.12
+	nose.height = 0.34
+	nose.radial_segments = 24
+	add_mesh(nose, red, Vector3(0, 0.22, 0), Basis(), rocket)
+	for y in [-0.1, 0.1]:
+		add_mesh(_cyl_mesh(0.133, 0.133, 0.045, 24), red, Vector3(0, y, 0), Basis(), rocket)
+	add_mesh(_cyl_mesh(0.085, 0.12, 0.1, 20), dark, Vector3(0, -0.25, 0), Basis(), rocket)   # 분사구
+	for k in 3:
+		var a := TAU * k / 3.0
+		var fb := BoxMesh.new()
+		fb.size = Vector3(0.015, 0.16, 0.12)
+		add_mesh(fb, red, Vector3(cos(a) * 0.15, -0.16, sin(a) * 0.15), Basis(Vector3.UP, -a), rocket)
+	# 번개 표시 (몸통 앞뒤)
+	for sz in [1.0, -1.0]:
+		for seg in [[Vector3(0.018, 0.035, 0), 0.5], [Vector3(-0.018, -0.035, 0), 0.5]]:
+			var bb := BoxMesh.new()
+			bb.size = Vector3(0.03, 0.1, 0.01)
+			add_mesh(bb, bolt, (seg[0] as Vector3) + Vector3(0, 0.0, sz * 0.128), Basis(Vector3.BACK, float(seg[1])), rocket)
+	# 꽁무니 불꽃: 바깥 주황 + 안쪽 노랑 (덧그리기 → 빛남)
+	var flame := Node3D.new()
+	flame.position = Vector3(0, -0.3, 0)
+	rocket.add_child(flame)
+	for layer in [[0.085, 0.32, Color(1.0, 0.45, 0.08, 0.75)], [0.05, 0.2, Color(1.0, 0.92, 0.5, 0.95)]]:
+		var fm := StandardMaterial3D.new()
+		fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		fm.albedo_color = layer[2]
+		var cone := _cyl_mesh(float(layer[0]), 0.0, float(layer[1]), 16)
+		add_mesh(cone, fm, Vector3(0, -float(layer[1]) * 0.5, 0), Basis(), flame)
+	var fl := OmniLight3D.new()
+	fl.light_color = Color(1.0, 0.55, 0.2)
+	fl.light_energy = 1.6
+	fl.omni_range = 2.2
+	fl.position = Vector3(0, -0.15, 0)
+	flame.add_child(fl)
+	root.set_meta("flame", flame)
+	# 유리 구슬 (가장자리가 하늘빛으로 빛나는 비눗방울 같은 껍질)
+	var orb := SphereMesh.new()
+	orb.radius = 0.5
+	orb.height = 1.0
+	orb.radial_segments = 40
+	orb.rings = 20
+	var gm := StandardMaterial3D.new()
+	gm.albedo_color = Color(0.55, 0.88, 1.0, 0.18)
+	gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	gm.roughness = 0.04
+	gm.metallic_specular = 1.0
+	gm.rim_enabled = true
+	gm.rim = 1.0
+	gm.rim_tint = 0.2
+	gm.emission_enabled = true
+	gm.emission = Color(0.35, 0.75, 1.0)
+	gm.emission_energy_multiplier = 0.45
+	add_mesh(orb, gm, Vector3.ZERO, Basis(), root)
+	# 구슬 둘레 금테 (캡슐 느낌)
+	var band := TorusMesh.new()
+	band.inner_radius = 0.49
+	band.outer_radius = 0.53
+	band.rings = 48
+	band.ring_segments = 10
+	var gold := StandardMaterial3D.new()
+	gold.albedo_color = Color(1.0, 0.75, 0.25)
+	gold.metallic = 1.0
+	gold.roughness = 0.25
+	gold.emission_enabled = true
+	gold.emission = Color(0.6, 0.35, 0.05)
+	gold.emission_energy_multiplier = 0.5
+	add_mesh(band, gold, Vector3.ZERO, Basis(Vector3.RIGHT, 0.35), root)
+	# 바닥: 주황빛 원판 + 점선 고리 (천천히 돎)
+	var ground := Node3D.new()
+	ground.position = Vector3(at.x, 0.05, at.z)
+	world3.add_child(ground)
+	var disc := QuadMesh.new()
+	disc.size = Vector2(2.0, 2.0)
+	disc.orientation = PlaneMesh.FACE_Y
+	var dm := StandardMaterial3D.new()
+	dm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	dm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	dm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	var g := GradientTexture2D.new()
+	g.fill = GradientTexture2D.FILL_RADIAL
+	g.fill_from = Vector2(0.5, 0.5)
+	g.fill_to = Vector2(0.5, 0.0)
+	var gr := Gradient.new()
+	gr.set_color(0, Color(1.0, 0.7, 0.25, 0.55))
+	gr.set_color(1, Color(1.0, 0.5, 0.1, 0.0))
+	gr.add_point(0.82, Color(1.0, 0.6, 0.15, 0.3))
+	g.gradient = gr
+	dm.albedo_texture = g
+	var dmi := add_mesh(disc, dm, Vector3.ZERO, Basis(), ground)
+	dmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var dash := StandardMaterial3D.new()
+	dash.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	dash.albedo_color = Color(1.0, 0.82, 0.35)
+	var spin := Node3D.new()
+	ground.add_child(spin)
+	for k in 12:
+		var a := TAU * k / 12.0
+		var db := BoxMesh.new()
+		db.size = Vector3(0.24, 0.02, 0.07)
+		add_mesh(db, dash, Vector3(cos(a), 0.01, sin(a)) * 0.82, Basis(Vector3.UP, -a + PI / 2), spin)
+	root.set_meta("ring", spin)
+	root.set_meta("ground", ground)
 	# 멀리서도 보이게: 하늘로 솟는 옅은 빛기둥
 	var beam := MeshInstance3D.new()
 	var cm := CylinderMesh.new()
-	cm.top_radius = 0.35
-	cm.bottom_radius = 0.55
+	cm.top_radius = 0.3
+	cm.bottom_radius = 0.5
 	cm.height = 6.0
 	cm.cap_top = false
 	cm.cap_bottom = false
@@ -591,17 +662,62 @@ func _fin_spawn(id: int, at: Vector3, yaw: float) -> void:
 	bm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	bm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	bm.cull_mode = BaseMaterial3D.CULL_DISABLED
-	bm.albedo_color = Color(0.45, 0.9, 1.0, 0.22)
+	bm.albedo_color = Color(1.0, 0.7, 0.3, 0.1)
 	beam.material_override = bm
 	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	beam.position = Vector3(at.x, 3.0, at.z)
-	world3.add_child(beam)
-	ring.set_meta("beam", beam)
+	beam.position = Vector3(0, 3.0, 0)
+	ground.add_child(beam)
 	root.scale = Vector3.ONE * 0.05
-	create_tween().tween_property(root, "scale", Vector3.ONE * 1.7, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	ground.scale = Vector3.ONE * 0.05
+	create_tween().tween_property(root, "scale", Vector3.ONE * 1.3, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	create_tween().tween_property(ground, "scale", Vector3.ONE, 0.3)
 	sfx("toast")
 	splash(at + Vector3(0, 0.1, 0), 10, 0.5)
 	_fins[id] = {"node": root, "pos": at}
+
+
+func _cyl_mesh(top: float, bottom: float, h: float, seg: int) -> CylinderMesh:
+	var c := CylinderMesh.new()
+	c.top_radius = top
+	c.bottom_radius = bottom
+	c.height = h
+	c.radial_segments = seg
+	return c
+
+
+## 부스터 쓰는 중: 발뒤꿈치에서 주황 불꽃 · 불티가 튐
+func _boost_spark(w: Dictionary) -> void:
+	var p := CPUParticles3D.new()
+	p.one_shot = true
+	p.amount = 6
+	p.lifetime = 0.45
+	p.explosiveness = 0.9
+	p.local_coords = false
+	var back := -(w["vel"] as Vector3).normalized() if (w["vel"] as Vector3).length() > 0.1 else Vector3.ZERO
+	p.direction = back + Vector3(0, 0.6, 0)
+	p.spread = 25.0
+	p.initial_velocity_min = 1.5
+	p.initial_velocity_max = 3.0
+	p.gravity = Vector3(0, -2.0, 0)
+	p.scale_amount_min = 0.6
+	p.scale_amount_max = 1.2
+	var m := SphereMesh.new()
+	m.radius = 0.06
+	m.height = 0.12
+	var sm := StandardMaterial3D.new()
+	sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	sm.albedo_color = Color(1.0, 0.6, 0.15)
+	sm.vertex_color_use_as_albedo = true
+	m.material = sm
+	p.mesh = m
+	var cr := Gradient.new()
+	cr.set_color(0, Color(1.0, 0.95, 0.6))
+	cr.set_color(1, Color(1.0, 0.3, 0.05, 0.0))
+	p.color_ramp = cr
+	p.position = (w["pos"] as Vector3) + Vector3(0, 0.25, 0)
+	world3.add_child(p)
+	p.emitting = true
+	p.finished.connect(p.queue_free)
 
 
 func _fin_take(id: int, s: int) -> void:
@@ -610,18 +726,15 @@ func _fin_take(id: int, s: int) -> void:
 	var f: Dictionary = _fins[id]
 	_fins.erase(id)
 	var node: Node3D = f["node"]
-	var ring = node.get_meta("ring")
-	if ring is Node:
-		var beam = (ring as Node).get_meta("beam") if (ring as Node).has_meta("beam") else null
-		if beam is Node:
-			(beam as Node).queue_free()
-		(ring as Node).queue_free()
+	var ground = node.get_meta("ground") if node.has_meta("ground") else null
+	if ground is Node:
+		(ground as Node).queue_free()
 	node.queue_free()
 	if walkers.has(s):
 		var w: Dictionary = walkers[s]
 		w["boost"] = BOOST_TIME
 		float_at((w["pos"] as Vector3) + Vector3(0, 2.2, 0), tr("SPEED UP!"), Color(0.55, 0.95, 1.0), 34)
-	sfx("equip")
+	sfx("whoosh")
 	splash((f["pos"] as Vector3) + Vector3(0, 0.2, 0), 18, 0.7)
 
 

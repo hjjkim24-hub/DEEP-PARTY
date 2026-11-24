@@ -361,7 +361,7 @@ const KO := {
 	"Most points after 5 drops wins!": "5번 떨어뜨려 점수가 가장 높으면 승리!",
 	"INK SPLAT": "먹물 땅따먹기",
 	"Walk to paint the deck in your color! You can paint over other colors too. Watch out - the kraken spits black ink that wipes the deck clean. Biggest area wins!": "걸어 다니며 갑판을 내 색으로 칠하세요! 남의 색도 덮어 칠할 수 있어요. 크라켄이 뱉는 검은 먹물은 칠을 지워 버려요. 가장 넓게 칠하면 승리!",
-	"Walk to paint the deck in your color! You can paint over other colors too. Grab swim fins for a burst of speed. Watch out - the kraken spits black ink that wipes the deck clean. Biggest area wins!": "걸어 다니며 갑판을 내 색으로 칠하세요! 남의 색도 덮어 칠할 수 있어요. 오리발을 주우면 잠깐 빨라져요. 크라켄이 뱉는 검은 먹물은 칠을 지워 버려요. 가장 넓게 칠하면 승리!",
+	"Walk to paint the deck in your color! You can paint over other colors too. Grab boosters for a burst of speed. Watch out - the kraken spits black ink that wipes the deck clean. Biggest area wins!": "걸어 다니며 갑판을 내 색으로 칠하세요! 남의 색도 덮어 칠할 수 있어요. 부스터를 주우면 잠깐 빨라져요. 크라켄이 뱉는 검은 먹물은 칠을 지워 버려요. 가장 넓게 칠하면 승리!",
 	"Paint the most deck!": "갑판을 가장 넓게 칠하세요!",
 	"CLAM SNATCH": "조개 낚아채기",
 	"Giant clams snap open with pearls inside - click one first to grab it! Golden pearls are worth 3. But if a crab is hiding inside, you lose 2 points!": "대왕조개가 열리면 진주가 반짝! 먼저 클릭해서 가져가세요. 황금 진주는 3점. 하지만 게가 숨어 있으면 2점을 잃어요!",
