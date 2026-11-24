@@ -5,7 +5,7 @@ extends "res://scripts/minigames/minigame_3d.gd"
 ## 다리 옆으로 미끄러져 떨어지면 풍덩 → 조금 뒤에서 다시 올라옴. 결승선에 먼저 닿은 순서대로 순위.
 ## 화면은 각자 자기 말을 따라가요 (미리보기 · 자동 점검은 선두를 따라감).
 
-const HALF_W := 3.6             ## 다리 반 너비
+const HALF_W := 4.8             ## 다리 반 너비 (9.6m)
 const START_Z := 6.0            ## 출발선
 const FINISH_Z := -86.0         ## 결승선 (길게 — 화면은 각자 내 말을 따라감)
 const ACC := 10.5
@@ -63,7 +63,7 @@ func _build_stage() -> void:
 func _place_cam(z: float, snap: bool = false) -> void:
 	if snap:
 		_cam_z = z
-	var xf := Transform3D(Basis(), Vector3(0, 9.8, _cam_z + 9.0))
+	var xf := Transform3D(Basis(), Vector3(0, 10.6, _cam_z + 9.6))
 	xf = xf.looking_at(Vector3(0, 0, _cam_z - 5.5), Vector3.UP)
 	cam_base = xf
 	cam.transform = xf
@@ -152,9 +152,10 @@ func _build_pier() -> void:
 	banner.position = Vector3(0, 4.3, FINISH_Z + 0.12)
 	_track.add_child(banner)
 	# 꼭대기: 술통이 쏟아져 나오는 비탈 + 쌓인 술통 더미
-	for i in 7:
+	var nb := int(HALF_W * 2.0)
+	for i in nb:
 		barrel(_track, Vector3(-HALF_W + 0.6 + i * 1.0, 0.0, FINISH_Z - 6.5), 0.4, 0.8, Color(0.4, 0.25, 0.13))
-	for i in 6:
+	for i in nb - 1:
 		barrel(_track, Vector3(-HALF_W + 1.1 + i * 1.0, 0.8, FINISH_Z - 6.7), 0.4, 0.8, Color(0.36, 0.23, 0.12))
 	# 번들번들한 기름 웅덩이 (위에선 더 미끄러움)
 	_oil_puddles(rr)
@@ -217,7 +218,7 @@ func _setup_game() -> void:
 	var n := players.size()
 	for i in n:
 		var p: Dictionary = players[i]
-		var x := (float(i) - (n - 1) * 0.5) * 1.6
+		var x := (float(i) - (n - 1) * 0.5) * 2.0
 		var w := add_walker(p, Vector3(x, 0, START_Z + 1.0), 5.0)
 		w["face"] = PI   # 위(앞)를 봄
 		w["dash_cd"] = 0.0
@@ -311,7 +312,7 @@ func _tick(delta: float) -> void:
 		_barrel_t -= delta
 		if _barrel_t <= 0.0:
 			_spawn_barrel(pr)
-			_barrel_t = lerpf(0.85, 0.42, pr) * rng.randf_range(0.7, 1.3)
+			_barrel_t = lerpf(0.72, 0.36, pr) * rng.randf_range(0.7, 1.3)
 	_slide(delta, pr)
 	_update_barrels(delta)
 	if not is_client():
@@ -622,8 +623,8 @@ func _think(delta: float) -> void:
 			# 앞으로 잠깐 사이에 내 자리를 지나갈 술통들 → 줄마다 위험도
 			var best_x: float = a["lane"]
 			var best_v := INF
-			for k in 9:
-				var lx := lerpf(-HALF_W + 0.7, HALF_W - 0.7, k / 8.0)
+			for k in 11:
+				var lx := lerpf(-HALF_W + 0.7, HALF_W - 0.7, k / 10.0)
 				var danger := 0.0
 				for br in _barrels:
 					var bz := _barrel_z(br)
