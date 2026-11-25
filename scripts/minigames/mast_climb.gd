@@ -285,7 +285,7 @@ func _mast(x: float) -> Dictionary:
 	# 줄사다리: 뱃전에서 망대까지 굵은 밧줄 여러 가닥 + 가로 디딤줄
 	var lad := std_mat(Color(0.32, 0.25, 0.17), 0.95)
 	var z0 := _hb(x) - 0.12
-	var secs := [[START_Y, z0, 1.45, 9.8, 0.62, 0.6, 6], [10.05, 1.45, 0.95, 18.4, 0.42, 0.4, 5], [18.65, 0.92, 0.6, 26.0, 0.3, 0.2, 4]]
+	var secs := [[START_Y, z0, 1.2, 9.8, 0.62, 0.5, 4], [10.05, 1.45, 0.8, 18.4, 0.42, 0.35, 3], [18.65, 0.92, 0.5, 26.0, 0.3, 0.2, 3]]
 	for sc: Array in secs:
 		var y0 := float(sc[0])
 		var y1 := float(sc[3])
@@ -303,17 +303,13 @@ func _mast(x: float) -> Dictionary:
 			de.bottom_radius = 0.09
 			de.height = 0.06
 			add_mesh(de, dark, Vector3(f * w0, y0 + 0.05, zz0), Basis(Vector3.RIGHT, PI / 2), root)
-		var y := y0 + 0.44
+		var y := y0 + 0.6
 		while y < y1 - 0.1:
 			var t := (y - y0) / (y1 - y0)
 			var w := lerpf(w0, w1, t)
 			var z := lerpf(zz0, zz1, t)
 			_rod(Vector3(-w, y, z + 0.01), Vector3(w, y, z + 0.01), 0.022, lad, root)
-			y += 0.44
-	# 뒤로 당긴 밧줄 (돛대 꼭대기 → 뒤쪽 뱃전), 앞으로 이은 밧줄은 _setup_game 에서
-	for yy: float in [18.5, 27.0]:
-		_rod(Vector3(0, yy, 0), Vector3(-3.6, _sheer(x - 3.6) - 0.1, _hb(x - 3.6) - 0.1), 0.025, rope, root)
-		_rod(Vector3(0, yy, 0), Vector3(-3.6, _sheer(x - 3.6) - 0.1, -_hb(x - 3.6) + 0.1), 0.025, rope, root)
+			y += 0.6
 	# 깃발: 깃대 + 펄럭이는 천 (처음엔 해골 흑기, 잡으면 그 사람 색)
 	var pole := CylinderMesh.new()
 	pole.top_radius = 0.035
@@ -387,12 +383,10 @@ func _setup_game() -> void:
 	for i in xs.size() - 1:
 		var a: float = xs[i]
 		var b: float = xs[i + 1]
-		_rod(Vector3(a, 18.3, 0), Vector3(b, _sheer(b) - 0.6, 0), 0.03, rope, _ship)
-		_rod(Vector3(a, 26.8, 0), Vector3(b, 10.4, 0), 0.025, rope, _ship)
+		_rod(Vector3(a, 18.3, 0), Vector3(b, 10.4, 0), 0.03, rope, _ship)
 	if not xs.is_empty():
 		var f: float = xs[xs.size() - 1]
 		_rod(Vector3(f, 18.3, 0), Vector3(25.8, 4.85, 0), 0.03, rope, _ship)
-		_rod(Vector3(f, 26.8, 0), Vector3(31.3, 6.35, 0), 0.025, rope, _ship)
 	_place(0.0)
 	_place_cam(true)
 
