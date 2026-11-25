@@ -1,7 +1,7 @@
 extends "res://scripts/minigames/minigame_3d.gd"
-## 미끄러운 갑판 레이스 (WASD + 스페이스): 기름이 번들번들한 길고 좁은 잔교(바다 위 나무 다리)를 위로 달려 결승선까지.
+## 미끄러운 갑판 레이스 (WASD + 스페이스): 비누칠로 미끌미끌한 길고 좁은 잔교(바다 위 나무 다리)를 위로 달려 결승선까지.
 ## 이동 = 가속만 붙고 잘 안 멈춤(관성). 스페이스 = 앞으로 확 돌진 (부딪친 사람은 튕겨 나감).
-## 꼭대기에서 술통이 계속 랜덤으로 굴러 내려옴 → 맞으면 뒤로 밀려나고 잠깐 휘청. 바닥 전체가 기름막으로 번들번들.
+## 꼭대기에서 술통이 계속 랜덤으로 굴러 내려옴 → 맞으면 뒤로 밀려나고 잠깐 휘청. 바닥 전체가 비누막으로 미끌미끌.
 ## 다리 옆으로 미끄러져 떨어지면 풍덩 → 조금 뒤에서 다시 올라옴. 결승선에 먼저 닿은 순서대로 순위.
 ## 화면은 각자 자기 말을 따라가요 (미리보기 · 자동 점검은 선두를 따라감).
 
@@ -35,7 +35,7 @@ var _skid_mat: StandardMaterial3D
 
 func _init() -> void:
 	title = "SLIPPERY DECK"
-	how_to = "Race up the long oil-slicked pier to the finish line! It's as slippery as ice - once you slide, it's hard to stop. Barrels keep rolling down from the top: dodge them! SPACE dashes forward and bumps others aside. Slip off the edge and you'll climb back on a little behind."
+	how_to = "Race up the long soapy pier to the finish line! It's as slippery as ice - once you slide, it's hard to stop. Barrels keep rolling down from the top: dodge them! SPACE dashes forward and bumps others aside. Slip off the edge and you'll climb back on a little behind."
 	goal = "Reach the finish line first!"
 	controls = "KEYS_DASH"
 	duration = 60.0
@@ -58,9 +58,9 @@ func _build_stage() -> void:
 	island(Vector3(-90, -2.4, -170), 22.0, 14.0, 6)
 	island(Vector3(110, -2.4, -120), 16.0, 10.0, 2)
 	_skid_mat = StandardMaterial3D.new()
-	_skid_mat.albedo_color = Color(0.06, 0.05, 0.04, 0.8)
+	_skid_mat.albedo_color = Color(0.97, 0.98, 1.0, 0.85)
 	_skid_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_skid_mat.roughness = 0.1
+	_skid_mat.roughness = 0.5
 
 
 ## 카메라: 내 말 뒤 위에서 앞(위쪽)을 내려다봄
@@ -115,7 +115,7 @@ func _build_pier() -> void:
 			b.height = 0.5
 			add_mesh(b, pile, Vector3(sx * (HALF_W + 0.05), 0.12, zz), Basis(), _track)
 		zz -= 6.0
-	_oil_flow(z0, z1)
+	_soap(z0, z1)
 	# 뒤쪽 막힘판 (출발선 뒤로는 못 감)
 	box(Vector3(HALF_W * 2.2, 1.0, 0.3), beam, Vector3(0, 0.45, z0 - 0.15), Basis(), _track)
 	# 출발선 (흰 칠) · 결승선 (체크무늬 + 아치 + 깃발 줄)
@@ -166,66 +166,83 @@ func _build_pier() -> void:
 		barrel(_track, Vector3(-HALF_W + 1.1 + i * 1.0, 0.8, FINISH_Z - 6.7), 0.4, 0.8, Color(0.36, 0.23, 0.12))
 
 
-## 위에서 아래로 줄줄 흘러내리는 투명한 기름막 + 다리 양옆으로 똑똑 떨어지는 기름 방울 + 꼭대기 쓰러진 통에서 쏟아지는 기름
-func _oil_flow(z0: float, z1: float) -> void:
+## 다리 전체에 비누칠: 우윳빛 비누막 · 문지른 자국 · 거품 덩어리 (셰이더) + 가장자리로 떨어지는 비눗물 + 떠오르는 비눗방울
+func _soap(z0: float, z1: float) -> void:
 	var length := z0 - z1
 	var pm := PlaneMesh.new()
-	pm.size = Vector2(HALF_W * 2.0 - 0.06, length - 0.4)
+	pm.size = Vector2(HALF_W * 2.0 - 0.04, length - 0.4)
 	var fm := ShaderMaterial.new()
-	fm.shader = preload("res://shaders/oil_flow.gdshader")
+	fm.shader = preload("res://shaders/soap_film.gdshader")
 	fm.set_shader_parameter("half_w", HALF_W)
-	var flow := add_mesh(pm, fm, Vector3(0, 0.014, (z0 + z1) * 0.5), Basis(), _track)
-	flow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# 방울 (투명하고 매끈한 기름 방울)
+	var film := add_mesh(pm, fm, Vector3(0, 0.014, (z0 + z1) * 0.5), Basis(), _track)
+	film.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# 가장자리로 똑똑 떨어지는 비눗물 방울
 	var drop_mat := StandardMaterial3D.new()
-	drop_mat.albedo_color = Color(0.95, 0.85, 0.55, 0.55)
+	drop_mat.albedo_color = Color(0.92, 0.96, 1.0, 0.45)
 	drop_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	drop_mat.roughness = 0.03
 	drop_mat.metallic_specular = 1.0
 	drop_mat.rim_enabled = true
-	drop_mat.rim = 0.6
+	drop_mat.rim = 0.7
 	var dm := SphereMesh.new()
-	dm.radius = 0.035
-	dm.height = 0.09
+	dm.radius = 0.03
+	dm.height = 0.08
 	dm.radial_segments = 8
 	dm.rings = 4
 	dm.material = drop_mat
 	for sx: float in [-1.0, 1.0]:
 		var d := CPUParticles3D.new()
-		d.amount = 90
+		d.amount = 70
 		d.lifetime = 0.7
 		d.mesh = dm
 		d.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 		d.emission_box_extents = Vector3(0.03, 0.02, length * 0.5)
-		d.direction = Vector3(sx, -1.0, 0.4)
+		d.direction = Vector3(sx, -1.0, 0.0)
 		d.spread = 12.0
-		d.initial_velocity_min = 0.2
-		d.initial_velocity_max = 0.6
+		d.initial_velocity_min = 0.1
+		d.initial_velocity_max = 0.4
 		d.gravity = Vector3(0, -9.8, 0)
 		d.scale_amount_min = 0.6
 		d.scale_amount_max = 1.3
 		d.position = Vector3(sx * (HALF_W + 0.2), -0.1, (z0 + z1) * 0.5)
 		d.visibility_aabb = AABB(Vector3(-1, -3, -length * 0.5 - 1), Vector3(2, 3.5, length + 2))
 		_track.add_child(d)
-	# 꼭대기: 쓰러진 통 두 개에서 기름이 콸콸 → 다리로 쏟아져 흘러내림
-	for i in 2:
-		var x := -1.6 + i * 3.4
-		var tipped := barrel(_track, Vector3(x, BARREL_R, FINISH_Z - 4.6), BARREL_R, 1.0, Color(0.38, 0.24, 0.13))
-		tipped.rotation = Vector3(PI / 2, 0.25 - i * 0.5, 0)
-		tipped.position.z -= 0.5
-		var pour := CPUParticles3D.new()
-		pour.amount = 40
-		pour.lifetime = 0.5
-		pour.mesh = dm
-		pour.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
-		pour.emission_sphere_radius = 0.15
-		pour.direction = Vector3(0, 0.1, 1)
-		pour.spread = 18.0
-		pour.initial_velocity_min = 1.2
-		pour.initial_velocity_max = 2.0
-		pour.gravity = Vector3(0, -6.0, 0)
-		pour.position = Vector3(x, BARREL_R, FINISH_Z - 4.0)
-		_track.add_child(pour)
+	# 다리 위로 둥실둥실 떠오르는 비눗방울 (투명 + 무지갯빛 테두리)
+	var bub_mat := StandardMaterial3D.new()
+	bub_mat.albedo_color = Color(1, 1, 1, 0.12)
+	bub_mat.vertex_color_use_as_albedo = true
+	bub_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bub_mat.roughness = 0.02
+	bub_mat.metallic_specular = 1.0
+	bub_mat.rim_enabled = true
+	bub_mat.rim = 1.0
+	bub_mat.rim_tint = 1.0
+	bub_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var bm := SphereMesh.new()
+	bm.radius = 0.09
+	bm.height = 0.18
+	bm.material = bub_mat
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(1.0, 0.75, 0.95, 0.35))
+	ramp.set_color(1, Color(0.7, 1.0, 0.95, 0.35))
+	ramp.add_point(0.5, Color(1.0, 1.0, 0.7, 0.35))
+	var bubbles := CPUParticles3D.new()
+	bubbles.amount = 60
+	bubbles.lifetime = 4.0
+	bubbles.mesh = bm
+	bubbles.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	bubbles.emission_box_extents = Vector3(HALF_W - 0.3, 0.05, length * 0.5)
+	bubbles.direction = Vector3(0, 1, 0)
+	bubbles.spread = 30.0
+	bubbles.initial_velocity_min = 0.25
+	bubbles.initial_velocity_max = 0.6
+	bubbles.gravity = Vector3(0.15, 0.05, 0)
+	bubbles.scale_amount_min = 0.5
+	bubbles.scale_amount_max = 1.6
+	bubbles.color_initial_ramp = ramp
+	bubbles.position = Vector3(0, 0.1, (z0 + z1) * 0.5)
+	bubbles.visibility_aabb = AABB(Vector3(-HALF_W - 2, -1, -length * 0.5 - 1), Vector3(HALF_W * 2 + 4, 5, length + 2))
+	_track.add_child(bubbles)
 
 
 func _setup_game() -> void:
