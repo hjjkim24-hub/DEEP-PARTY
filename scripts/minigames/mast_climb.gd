@@ -22,6 +22,11 @@ const GUST_DUR := 1.6
 ## 줄사다리가 지나는 길 (y, 돛대에서 앞쪽으로 떨어진 거리 z): 뱃전 → 아래 망대 → 윗돛대 → 꼭대기
 const ROUTE := [Vector2(1.2, 2.85), Vector2(9.8, 0.62), Vector2(10.05, 1.45), Vector2(18.4, 0.42), Vector2(18.65, 0.92), Vector2(26.0, 0.3), Vector2(26.7, 0.3)]
 const REST_YS := [10.05, 18.65]  ## 망대 (쉬면 힘이 더 빨리 참)
+## 줄사다리 세 구간: [아래 y, 아래 z(첫 구간은 뱃전), 아래 반폭, 위 y, 위 z, 위 반폭, 세로줄 수]
+const RUNG_GAP := 0.6
+const WORN_N := 6               ## 판마다 낡은 디딤줄 수 (네 돛대 모두 같은 높이)
+const CAREFUL := 0.45           ## 낡은 줄 밟기 직전 이만큼 멈췄으면 버팀
+const SNAP_DROP := 1.2
 
 var _ship: Node3D
 var _lanes := {}                ## slot → {x, h, shown, last, stun, done, time, pawn, mast, st, tired, grip, idle, bar...}
@@ -35,14 +40,15 @@ var _gust_label: Label
 var _cam_y := 6.0
 var _cam_x := 0.0
 var _flutter := 5.0
+var _worn: Array = []          ## 낡은 디딤줄 높이 (발 기준 y)
 
 
 func _init() -> void:
 	title = "MAST CLIMB"
-	how_to = "Climb the rope ladder to the flag at the very top of the mast! Press the two keys one after the other to climb - the same key twice makes you slip. Every pull uses arm strength: if it runs out you'll hang there catching your breath, so rest a moment before it empties. When a GUST is coming, hold SPACE to cling on or you'll be blown down!"
+	how_to = "Climb the rope ladder to the flag at the very top of the mast! Press the two keys one after the other to climb - the same key twice makes you slip. Every pull uses arm strength: if it runs out you'll hang there catching your breath, so rest a moment before it empties. Some rungs are old and frayed: pause for a moment before stepping on them or they'll snap! When a GUST is coming, hold SPACE to cling on or you'll be blown down!"
 	goal = "Grab the flag first!"
 	controls = "ALT_KEYS_GRIP"
-	duration = 45.0
+	duration = 50.0
 
 
 func _build_stage() -> void:
@@ -284,6 +290,7 @@ func _mast(x: float) -> Dictionary:
 			add_mesh(tie, tie_m, fp + brace * Vector3(0, 0, tz), brace * Basis(Vector3.RIGHT, PI / 2), root)
 	# 줄사다리: 뱃전에서 망대까지 굵은 밧줄 여러 가닥 + 가로 디딤줄
 	var lad := std_mat(Color(0.32, 0.25, 0.17), 0.95)
+	var worn := {}
 	var z0 := _hb(x) - 0.12
 	var secs := [[START_Y, z0, 1.2, 9.8, 0.62, 0.5, 4], [10.05, 1.45, 0.8, 18.4, 0.42, 0.35, 3], [18.65, 0.92, 0.5, 26.0, 0.3, 0.2, 3]]
 	for sc: Array in secs:
@@ -303,13 +310,17 @@ func _mast(x: float) -> Dictionary:
 			de.bottom_radius = 0.09
 			de.height = 0.06
 			add_mesh(de, dark, Vector3(f * w0, y0 + 0.05, zz0), Basis(Vector3.RIGHT, PI / 2), root)
-		var y := y0 + 0.6
+		var y := y0 + RUNG_GAP
 		while y < y1 - 0.1:
 			var t := (y - y0) / (y1 - y0)
 			var w := lerpf(w0, w1, t)
 			var z := lerpf(zz0, zz1, t)
-			_rod(Vector3(-w, y, z + 0.01), Vector3(w, y, z + 0.01), 0.022, lad, root)
-			y += 0.6
+			var wi := _worn_index(y)
+			if wi < 0:
+				_rod(Vector3(-w, y, z + 0.01), Vector3(w, y, z + 0.01), 0.022, lad, root)
+			else:
+				worn[wi] = _worn_rung(root, w, y, z + 0.01)
+			y += RUNG_GAP
 	# 깃발: 깃대 + 펄럭이는 천 (처음엔 해골 흑기, 잡으면 그 사람 색)
 	var pole := CylinderMesh.new()
 	pole.top_radius = 0.035
@@ -334,7 +345,49 @@ func _mast(x: float) -> Dictionary:
 	skull.height = 0.22
 	var sk := add_mesh(skull, bone, Vector3(0.72, 0.05, 0.012), Basis(), flag)
 	sk.scale = Vector3(1, 1, 0.15)
-	return {"root": root, "flag": flag, "fm": fm, "segs": segs, "skull": sk, "z0": z0}
+	return {"root": root, "flag": flag, "fm": fm, "segs": segs, "skull": sk, "z0": z0, "worn": worn}
+
+
+func _worn_index(y: float) -> int:
+	for i in _worn.size():
+		if absf(float(_worn[i]) - y) < 0.01:
+			return i
+	return -1
+
+
+## 모든 디딤줄 높이
+func _rung_ys() -> Array:
+	var out := []
+	for sc: Array in [[START_Y, 9.8], [10.05, 18.4], [18.65, 26.0]]:
+		var y := float(sc[0]) + RUNG_GAP
+		while y < float(sc[1]) - 0.1:
+			out.append(y)
+			y += RUNG_GAP
+	return out
+
+
+## 낡은 디딤줄: 색 바래고 가운데가 축 처짐 + 해진 올. 끊어지면 양쪽에 반 토막씩 대롱대롱
+func _worn_rung(root: Node3D, w: float, y: float, z: float) -> Dictionary:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.55, 0.48, 0.38)
+	m.roughness = 1.0
+	m.emission_enabled = true
+	m.emission = Color(1.0, 0.45, 0.15)
+	m.emission_energy_multiplier = 0.0
+	var whole := Node3D.new()
+	root.add_child(whole)
+	var mid := Vector3(0.05, y - 0.13, z)
+	_rod(Vector3(-w, y, z), mid, 0.03, m, whole)
+	_rod(mid, Vector3(w, y, z), 0.03, m, whole)
+	for k in 3:   # 해진 올
+		var fx := -w * 0.5 + k * w * 0.45
+		_rod(Vector3(fx, y - 0.05 - absf(fx) * 0.03, z), Vector3(fx + 0.05, y - 0.18, z + 0.02), 0.01, m, whole)
+	var broken := Node3D.new()
+	broken.visible = false
+	root.add_child(broken)
+	_rod(Vector3(-w, y, z), Vector3(-w + 0.1, y - 0.4, z + 0.03), 0.017, m, broken)
+	_rod(Vector3(w, y, z), Vector3(w - 0.08, y - 0.34, z + 0.03), 0.017, m, broken)
+	return {"whole": whole, "broken": broken, "mat": m, "y": y}
 
 
 ## 힘 게이지 (말 옆 세로 막대, 항상 화면 앞쪽에 보임)
@@ -361,6 +414,20 @@ func _make_bar() -> Dictionary:
 
 
 func _setup_game() -> void:
+	var wr := RandomNumberGenerator.new()
+	wr.seed = rng.randi()
+	var cand: Array = _rung_ys().filter(func(y: float) -> bool: return y > START_Y + 2.0 and y < TOP_Y - 1.5 and absf(y - 10.05) > 0.7 and absf(y - 18.65) > 0.7)
+	_worn.clear()
+	var guard := 0
+	while _worn.size() < WORN_N and guard < 200:
+		guard += 1
+		var y: float = cand[wr.randi() % cand.size()]
+		var ok := true
+		for o: float in _worn:
+			if absf(o - y) < 2.6:
+				ok = false
+		if ok:
+			_worn.append(y)
 	var n := players.size()
 	var xs: Array = []
 	for i in n:
@@ -374,7 +441,7 @@ func _setup_game() -> void:
 		pawn.rotation.y = PI
 		_lanes[s] = {"x": x, "h": 0.0, "shown": 0.0, "last": -1, "stun": 0.0, "done": false, "time": 0.0, "pawn": pawn,
 			"mast": mast, "pulse": 0.0, "slip": 0.0, "st": 1.0, "tired": 0.0, "grip": false, "idle": 1.0, "bar": _make_bar(),
-			"blown": 0.0}
+			"blown": 0.0, "broken": {}}
 		_ai[s] = {"next": rng.randf_range(0.2, 0.5), "rest": false, "grip_from": INF, "grip_to": -INF}
 		scores[s] = 0.0
 	# 돛대끼리 앞뒤로 이은 밧줄 + 맨 앞 돛대 → 바우스프릿
@@ -434,7 +501,22 @@ func _step(s: int, side: int) -> void:
 	var L: Dictionary = _lanes.get(s, {})
 	if L.is_empty() or L["done"] or float(L["stun"]) > 0.0 or float(L["tired"]) > 0.0 or L["grip"]:
 		return
+	var waited := float(L["idle"])
 	L["idle"] = 0.0
+	if int(L["last"]) != side:
+		var y0 := START_Y + float(L["h"])
+		var wi := _worn_cross(L, y0, y0 + STEP)
+		if wi >= 0:
+			if waited >= CAREFUL:
+				net_call("_creak_fx", [s, wi])
+			else:
+				# 툭! 끊어져 떨어짐
+				L["broken"][wi] = true
+				L["h"] = maxf(0.0, float(L["h"]) - SNAP_DROP)
+				L["stun"] = 0.6
+				L["last"] = -1
+				net_call("_snap_fx", [s, wi])
+				return
 	if int(L["last"]) == side:
 		L["h"] = maxf(0.0, float(L["h"]) - SLIP)
 		L["stun"] = 0.22
@@ -451,6 +533,44 @@ func _step(s: int, side: int) -> void:
 			L["tired"] = TIRED_T
 			net_call("_tired_fx", [s])
 	L["last"] = side
+
+
+## 이 발에 밟게 되는 (아직 안 끊긴) 낡은 줄
+func _worn_cross(L: Dictionary, y_from: float, y_to: float) -> int:
+	var br: Dictionary = L["broken"]
+	for i in _worn.size():
+		var wy := float(_worn[i])
+		if not br.has(i) and y_from < wy and wy <= y_to:
+			return i
+	return -1
+
+
+func _snap_fx(s: int, wi: int) -> void:
+	if OS.get_environment("MG_DEBUG") != "":
+		print("MC snap s=%d wi=%d el=%.1f" % [s, wi, _elapsed])
+	var L: Dictionary = _lanes[s]
+	L["broken"][wi] = true
+	L["slip"] = 0.8
+	L["blown"] = 0.6
+	var w: Dictionary = (L["mast"]["worn"] as Dictionary).get(wi, {})
+	if not w.is_empty():
+		(w["whole"] as Node3D).visible = false
+		(w["broken"] as Node3D).visible = true
+	var pawn: Node3D = L["pawn"]
+	sfx("thud", 90)
+	debris(pawn.global_position + Vector3(0, 0.4, 0.2), Color(0.66, 0.6, 0.5), 10)
+	float_at(pawn.global_position + Vector3(0, 1.5, 0.4), tr("SNAP!"), Color(1.0, 0.55, 0.3), 42)
+	if is_local(player_by_slot(s)):
+		shake(0.25)
+
+
+func _creak_fx(s: int, _wi: int) -> void:
+	if OS.get_environment("MG_DEBUG") != "":
+		print("MC creak s=%d el=%.1f" % [s, _elapsed])
+	var pawn: Node3D = _lanes[s]["pawn"]
+	if is_local(player_by_slot(s)):
+		sfx("thud", 30)
+	float_at(pawn.global_position + Vector3(0, 1.4, 0.4), tr("Creak..."), Color(0.85, 0.8, 0.7), 28)
 
 
 func _slip_fx(s: int) -> void:
@@ -665,6 +785,13 @@ func _place(delta: float) -> void:
 			var flail := sin(_t3 * 26.0) * 0.35 * float(L["blown"])
 			pawn.position = Vector3(x + sway * 0.4 + gdir * float(L["blown"]) * 0.5, y + float(L["pulse"]) * 0.05 - (0.08 if tired else 0.0), z)
 			pawn.rotation = Vector3(-tilt * 0.8 - float(L["slip"]) * 0.6 + (0.25 if tired else 0.0), PI, sway + gust_lean + flail + (sin(_t3 * 3.0) * 0.08 if tired else 0.0))
+		# 낡은 줄 경고: 발 바로 위(한 발~두 발 거리)에 있으면 주황빛으로 깜빡
+		var wd: Dictionary = mast["worn"]
+		for wi in wd:
+			var wm: StandardMaterial3D = wd[wi]["mat"]
+			var gap := float(wd[wi]["y"]) - (START_Y + float(L["shown"]))
+			var near: bool = gap > 0.0 and gap < 0.9 and not L["done"]
+			wm.emission_energy_multiplier = (1.2 + 1.0 * sin(_t3 * 14.0)) if near else 0.0
 		# 힘 게이지: 말 오른쪽 옆
 		var bar: Dictionary = L["bar"]
 		var br: Node3D = bar["root"]
@@ -777,6 +904,13 @@ func _think(delta: float) -> void:
 			var side := 1 - maxi(int(L["last"]), 0)
 			if rng.randf() < lerpf(0.1, 0.02, sk):
 				side = maxi(int(L["last"]), 0)   # 실수
+			var y0 := START_Y + float(L["h"])
+			var wi := _worn_cross(L, y0, y0 + STEP)
+			if wi >= 0 and int(a.get("worn_seen", -1)) != wi:
+				a["worn_seen"] = wi
+				if rng.randf() < lerpf(0.45, 0.95, sk):
+					a["next"] = float(a["next"]) + CAREFUL + rng.randf_range(0.05, 0.2)
+					break
 			_step(s, side)
 
 
