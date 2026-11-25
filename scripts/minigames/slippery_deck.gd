@@ -1,7 +1,7 @@
 extends "res://scripts/minigames/minigame_3d.gd"
-## 미끄러운 갑판 레이스 (WASD + 스페이스): 비누칠로 미끌미끌한 길고 좁은 잔교(바다 위 나무 다리)를 위로 달려 결승선까지.
+## 미끄러운 갑판 레이스 (WASD + 스페이스): 꽁꽁 얼고 눈 덮인 길고 좁은 잔교(바다 위 나무 다리)를 위로 달려 결승선까지.
 ## 이동 = 가속만 붙고 잘 안 멈춤(관성). 스페이스 = 앞으로 확 돌진 (부딪친 사람은 튕겨 나감).
-## 꼭대기에서 술통이 계속 랜덤으로 굴러 내려옴 → 맞으면 뒤로 밀려나고 잠깐 휘청. 바닥 전체가 비누막으로 미끌미끌.
+## 꼭대기에서 술통이 계속 랜덤으로 굴러 내려옴 → 맞으면 뒤로 밀려나고 잠깐 휘청. 가운데는 빙판, 가장자리는 눈 더미.
 ## 다리 옆으로 미끄러져 떨어지면 풍덩 → 조금 뒤에서 다시 올라옴. 결승선에 먼저 닿은 순서대로 순위.
 ## 화면은 각자 자기 말을 따라가요 (미리보기 · 자동 점검은 선두를 따라감).
 
@@ -31,11 +31,13 @@ var _next_barrel := 0
 var _ai := {}
 var _cam_z := START_Z
 var _skid_mat: StandardMaterial3D
+var _snowfall: CPUParticles3D
+var _floes: Array = []
 
 
 func _init() -> void:
 	title = "SLIPPERY DECK"
-	how_to = "Race up the long soapy pier to the finish line! It's as slippery as ice - once you slide, it's hard to stop. Barrels keep rolling down from the top: dodge them! SPACE dashes forward and bumps others aside. Slip off the edge and you'll climb back on a little behind."
+	how_to = "Race up the long frozen pier to the finish line! It's a sheet of ice - once you slide, it's hard to stop. Barrels keep rolling down from the top: dodge them! SPACE dashes forward and bumps others aside. Slip off the edge and you'll climb back on a little behind."
 	goal = "Reach the finish line first!"
 	controls = "KEYS_DASH"
 	duration = 60.0
@@ -43,7 +45,18 @@ func _init() -> void:
 
 func _build_stage() -> void:
 	env_sea_day()
-	sun.rotation_degrees = Vector3(-38, 160, 0)   # 해가 결승선 쪽 → 번들번들한 바닥에 햇빛이 길게 비침
+	# 한겨울 바다: 희뿌연 하늘 · 차가운 햇빛 · 낮게 깔린 눈안개. 해는 결승선 쪽 → 빙판에 햇빛이 길게 비침
+	var wsky := env.sky.sky_material as ProceduralSkyMaterial
+	wsky.sky_top_color = Color(0.42, 0.55, 0.7)
+	wsky.sky_horizon_color = Color(0.86, 0.9, 0.94)
+	wsky.ground_horizon_color = Color(0.78, 0.84, 0.9)
+	wsky.ground_bottom_color = Color(0.08, 0.14, 0.2)
+	env.fog_light_color = Color(0.85, 0.89, 0.94)
+	env.fog_density = 0.0075
+	env.ambient_light_energy = 0.7
+	sun.light_color = Color(0.92, 0.96, 1.0)
+	sun.light_energy = 1.05
+	sun.rotation_degrees = Vector3(-32, 160, 0)
 	var sea := ocean(-1.9, 320.0)
 	sea.position.z = (START_Z + FINISH_Z) * 0.5
 	(sea.material_override as ShaderMaterial).set_shader_parameter("crest_foam", 0.55)
@@ -54,13 +67,12 @@ func _build_stage() -> void:
 	world3.add_child(_track)
 	_build_pier()
 	gulls(6, Vector3(0, 0, FINISH_Z * 0.5), 20.0, 9.0, 11)
-	sea_debris(14, 8.0, 30.0, -1.8, 21, Vector3(0, 0, FINISH_Z * 0.5))
 	island(Vector3(-90, -2.4, -170), 22.0, 14.0, 6)
 	island(Vector3(110, -2.4, -120), 16.0, 10.0, 2)
 	_skid_mat = StandardMaterial3D.new()
-	_skid_mat.albedo_color = Color(0.97, 0.98, 1.0, 0.85)
+	_skid_mat.albedo_color = Color(0.95, 0.97, 1.0, 0.9)   # 미끄러질 때 튀는 눈가루 · 얼음 부스러기
 	_skid_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_skid_mat.roughness = 0.5
+	_skid_mat.roughness = 0.8
 
 
 ## 카메라: 내 말 뒤 위에서 앞(위쪽)을 내려다봄
@@ -115,18 +127,18 @@ func _build_pier() -> void:
 			b.height = 0.5
 			add_mesh(b, pile, Vector3(sx * (HALF_W + 0.05), 0.12, zz), Basis(), _track)
 		zz -= 6.0
-	_soap(z0, z1)
+	_winter(z0, z1)
 	# 뒤쪽 막힘판 (출발선 뒤로는 못 감)
 	box(Vector3(HALF_W * 2.2, 1.0, 0.3), beam, Vector3(0, 0.45, z0 - 0.15), Basis(), _track)
 	# 출발선 (흰 칠) · 결승선 (체크무늬 + 아치 + 깃발 줄)
-	box(Vector3(HALF_W * 2.0, 0.02, 0.18), std_mat(Color(0.95, 0.95, 0.9), 0.7), Vector3(0, 0.005, START_Z), Basis(), _track)
+	box(Vector3(HALF_W * 2.0, 0.02, 0.18), std_mat(Color(0.95, 0.95, 0.9), 0.7), Vector3(0, 0.03, START_Z), Basis(), _track)
 	var blk := std_mat(Color(0.06, 0.06, 0.06), 0.6)
 	var wht := std_mat(Color(0.95, 0.95, 0.92), 0.6)
 	var cells := 12
 	for i in cells:
 		for j in 2:
 			box(Vector3(HALF_W * 2.0 / cells, 0.02, 0.3), blk if (i + j) % 2 == 0 else wht,
-				Vector3(-HALF_W + (i + 0.5) * HALF_W * 2.0 / cells, 0.006, FINISH_Z + (j - 0.5) * 0.3), Basis(), _track)
+				Vector3(-HALF_W + (i + 0.5) * HALF_W * 2.0 / cells, 0.03, FINISH_Z + (j - 0.5) * 0.3), Basis(), _track)
 	var post := wood_mat(Color(0.42, 0.28, 0.16), Vector3(0, 1, 0), 0.1)
 	for sx: float in [-1.0, 1.0]:
 		var p := CylinderMesh.new()
@@ -166,83 +178,145 @@ func _build_pier() -> void:
 		barrel(_track, Vector3(-HALF_W + 1.1 + i * 1.0, 0.8, FINISH_Z - 6.7), 0.4, 0.8, Color(0.36, 0.23, 0.12))
 
 
-## 다리 전체에 비누칠: 우윳빛 비누막 · 문지른 자국 · 거품 덩어리 (셰이더) + 가장자리로 떨어지는 비눗물 + 떠오르는 비눗방울
-func _soap(z0: float, z1: float) -> void:
+## 꽁꽁 언 잔교: 빙판 + 눈 (셰이더) · 가장자리 눈 더미 · 말뚝 위 눈 · 옆 각목에 매달린 고드름 · 바다 위 유빙 · 내리는 눈
+func _winter(z0: float, z1: float) -> void:
 	var length := z0 - z1
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 33
 	var pm := PlaneMesh.new()
-	pm.size = Vector2(HALF_W * 2.0 - 0.04, length - 0.4)
+	pm.size = Vector2(HALF_W * 2.0 + 0.1, length - 0.3)
 	var fm := ShaderMaterial.new()
-	fm.shader = preload("res://shaders/soap_film.gdshader")
+	fm.shader = preload("res://shaders/ice_snow.gdshader")
 	fm.set_shader_parameter("half_w", HALF_W)
-	var film := add_mesh(pm, fm, Vector3(0, 0.014, (z0 + z1) * 0.5), Basis(), _track)
-	film.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# 가장자리로 똑똑 떨어지는 비눗물 방울
-	var drop_mat := StandardMaterial3D.new()
-	drop_mat.albedo_color = Color(0.92, 0.96, 1.0, 0.45)
-	drop_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	drop_mat.roughness = 0.03
-	drop_mat.metallic_specular = 1.0
-	drop_mat.rim_enabled = true
-	drop_mat.rim = 0.7
-	var dm := SphereMesh.new()
-	dm.radius = 0.03
-	dm.height = 0.08
-	dm.radial_segments = 8
-	dm.rings = 4
-	dm.material = drop_mat
-	for sx: float in [-1.0, 1.0]:
-		var d := CPUParticles3D.new()
-		d.amount = 70
-		d.lifetime = 0.7
-		d.mesh = dm
-		d.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-		d.emission_box_extents = Vector3(0.03, 0.02, length * 0.5)
-		d.direction = Vector3(sx, -1.0, 0.0)
-		d.spread = 12.0
-		d.initial_velocity_min = 0.1
-		d.initial_velocity_max = 0.4
-		d.gravity = Vector3(0, -9.8, 0)
-		d.scale_amount_min = 0.6
-		d.scale_amount_max = 1.3
-		d.position = Vector3(sx * (HALF_W + 0.2), -0.1, (z0 + z1) * 0.5)
-		d.visibility_aabb = AABB(Vector3(-1, -3, -length * 0.5 - 1), Vector3(2, 3.5, length + 2))
-		_track.add_child(d)
-	# 다리 위로 둥실둥실 떠오르는 비눗방울 (투명 + 무지갯빛 테두리)
-	var bub_mat := StandardMaterial3D.new()
-	bub_mat.albedo_color = Color(1, 1, 1, 0.12)
-	bub_mat.vertex_color_use_as_albedo = true
-	bub_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	bub_mat.roughness = 0.02
-	bub_mat.metallic_specular = 1.0
-	bub_mat.rim_enabled = true
-	bub_mat.rim = 1.0
-	bub_mat.rim_tint = 1.0
-	bub_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	var bm := SphereMesh.new()
-	bm.radius = 0.09
-	bm.height = 0.18
-	bm.material = bub_mat
-	var ramp := Gradient.new()
-	ramp.set_color(0, Color(1.0, 0.75, 0.95, 0.35))
-	ramp.set_color(1, Color(0.7, 1.0, 0.95, 0.35))
-	ramp.add_point(0.5, Color(1.0, 1.0, 0.7, 0.35))
-	var bubbles := CPUParticles3D.new()
-	bubbles.amount = 60
-	bubbles.lifetime = 4.0
-	bubbles.mesh = bm
-	bubbles.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-	bubbles.emission_box_extents = Vector3(HALF_W - 0.3, 0.05, length * 0.5)
-	bubbles.direction = Vector3(0, 1, 0)
-	bubbles.spread = 30.0
-	bubbles.initial_velocity_min = 0.25
-	bubbles.initial_velocity_max = 0.6
-	bubbles.gravity = Vector3(0.15, 0.05, 0)
-	bubbles.scale_amount_min = 0.5
-	bubbles.scale_amount_max = 1.6
-	bubbles.color_initial_ramp = ramp
-	bubbles.position = Vector3(0, 0.1, (z0 + z1) * 0.5)
-	bubbles.visibility_aabb = AABB(Vector3(-HALF_W - 2, -1, -length * 0.5 - 1), Vector3(HALF_W * 2 + 4, 5, length + 2))
-	_track.add_child(bubbles)
+	var sheet := add_mesh(pm, fm, Vector3(0, 0.014, (z0 + z1) * 0.5), Basis(), _track)
+	sheet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var snow_mat := StandardMaterial3D.new()
+	snow_mat.albedo_color = Color(0.94, 0.96, 1.0)
+	snow_mat.roughness = 0.85
+	var ice_mat := StandardMaterial3D.new()
+	ice_mat.albedo_color = Color(0.75, 0.9, 1.0, 0.55)
+	ice_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	ice_mat.roughness = 0.04
+	ice_mat.metallic_specular = 1.0
+	ice_mat.rim_enabled = true
+	ice_mat.rim = 0.5
+	# 가장자리 눈 더미 (납작하게 뭉친 눈덩이를 길게 이어 붙임)
+	var lump := SphereMesh.new()
+	lump.radius = 0.5
+	lump.height = 1.0
+	lump.radial_segments = 18
+	lump.rings = 10
+	lump.material = snow_mat
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = lump
+	var xs: Array = []
+	var z := z0 - 0.3
+	while z > z1 + 0.3:
+		for sx: float in [-1.0, 1.0]:
+			# 바깥 줄 (크고 길게 겹침) + 안쪽 줄 (작고 낮게) → 이어진 눈 둔덕
+			var b := Basis(Vector3.UP, rr.randf_range(-0.25, 0.25)).scaled(Vector3(rr.randf_range(0.8, 1.2), rr.randf_range(0.14, 0.3), rr.randf_range(1.6, 2.6)))
+			xs.append(Transform3D(b, Vector3(sx * (HALF_W - 0.2 - rr.randf_range(0.0, 0.15)), -0.02, z)))
+			if rr.randf() < 0.55:
+				var b2 := Basis(Vector3.UP, rr.randf() * TAU).scaled(Vector3(rr.randf_range(0.5, 0.9), rr.randf_range(0.06, 0.14), rr.randf_range(0.7, 1.4)))
+				xs.append(Transform3D(b2, Vector3(sx * (HALF_W - 0.75 - rr.randf_range(0.0, 0.35)), -0.01, z + rr.randf_range(-0.4, 0.4))))
+		z -= rr.randf_range(0.45, 0.8)
+	mm.instance_count = xs.size()
+	for i in xs.size():
+		mm.set_instance_transform(i, xs[i])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	_track.add_child(mmi)
+	# 말뚝 위 눈 모자
+	var zz := z0 - 1.0
+	while zz > z1:
+		for sx: float in [-1.0, 1.0]:
+			var cap := SphereMesh.new()
+			cap.radius = 0.15
+			cap.height = 0.14
+			add_mesh(cap, snow_mat, Vector3(sx * (HALF_W + 0.05), 0.39, zz), Basis(), _track)
+		zz -= 6.0
+	# 고드름 (옆 각목 아래로 주렁주렁)
+	var icicle := CylinderMesh.new()
+	icicle.top_radius = 0.045
+	icicle.bottom_radius = 0.0
+	icicle.height = 1.0
+	icicle.radial_segments = 6
+	icicle.rings = 1
+	icicle.material = ice_mat
+	var im := MultiMesh.new()
+	im.transform_format = MultiMesh.TRANSFORM_3D
+	im.mesh = icicle
+	var ts: Array = []
+	z = z0 - 0.2
+	while z > z1:
+		for sx: float in [-1.0, 1.0]:
+			if rr.randf() < 0.75:
+				var l := rr.randf_range(0.12, 0.55)
+				var th := rr.randf_range(0.7, 1.3)
+				ts.append(Transform3D(Basis().scaled(Vector3(th, l, th)), Vector3(sx * (HALF_W + 0.17), -0.37 - l * 0.5, z)))
+		z -= rr.randf_range(0.18, 0.4)
+	im.instance_count = ts.size()
+	for i in ts.size():
+		im.set_instance_transform(i, ts[i])
+	var imi := MultiMeshInstance3D.new()
+	imi.multimesh = im
+	imi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_track.add_child(imi)
+	# 결승 아치 위에 쌓인 눈
+	box(Vector3(HALF_W * 2.0 + 1.1, 0.14, 0.24), snow_mat, Vector3(0, 4.6, FINISH_Z), Basis(), _track)
+	# 바다 위 유빙 (납작하고 울퉁불퉁한 얼음 조각)
+	var floe_mat := StandardMaterial3D.new()
+	floe_mat.albedo_color = Color(0.8, 0.88, 0.94)
+	floe_mat.roughness = 0.35
+	for i in 22:
+		var fl := CylinderMesh.new()
+		var r := rr.randf_range(0.5, 1.8)
+		fl.top_radius = r
+		fl.bottom_radius = r * 1.05
+		fl.height = 0.22
+		fl.radial_segments = rr.randi_range(7, 11)
+		fl.rings = 1
+		var sx2 := -1.0 if rr.randf() < 0.5 else 1.0
+		var pos := Vector3(sx2 * rr.randf_range(HALF_W + 4.0, 34.0), -1.84, rr.randf_range(z1 - 20.0, z0 + 15.0))
+		var f := add_mesh(fl, floe_mat, pos, Basis(Vector3.UP, rr.randf() * TAU).scaled(Vector3(1.0, 1.0, rr.randf_range(0.6, 1.0))), world3)
+		f.set_meta("bob", rr.randf() * TAU)
+		_floes.append(f)
+	# 내리는 눈 (화면 따라다님)
+	var flake := QuadMesh.new()
+	flake.size = Vector2(0.06, 0.06)
+	var fmat := StandardMaterial3D.new()
+	fmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fmat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	fmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	var fg := GradientTexture2D.new()
+	fg.fill = GradientTexture2D.FILL_RADIAL
+	fg.fill_from = Vector2(0.5, 0.5)
+	fg.fill_to = Vector2(0.5, 0.0)
+	var fgr := Gradient.new()
+	fgr.set_color(0, Color(1, 1, 1, 0.95))
+	fgr.set_color(1, Color(1, 1, 1, 0))
+	fg.gradient = fgr
+	fmat.albedo_texture = fg
+	flake.material = fmat
+	_snowfall = CPUParticles3D.new()
+	_snowfall.amount = 700
+	_snowfall.lifetime = 7.0
+	_snowfall.preprocess = 7.0
+	_snowfall.local_coords = false
+	_snowfall.mesh = flake
+	_snowfall.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	_snowfall.emission_box_extents = Vector3(16.0, 0.5, 18.0)
+	_snowfall.direction = Vector3(0.25, -1, 0)
+	_snowfall.spread = 15.0
+	_snowfall.initial_velocity_min = 1.2
+	_snowfall.initial_velocity_max = 2.0
+	_snowfall.gravity = Vector3(0.2, -0.3, 0)
+	_snowfall.scale_amount_min = 0.6
+	_snowfall.scale_amount_max = 1.8
+	_snowfall.visibility_aabb = AABB(Vector3(-40, -20, -40), Vector3(80, 40, 80))
+	world3.add_child(_snowfall)
+	_snowfall.position = Vector3(0, 11.0, _cam_z - 8.0)
 
 
 func _setup_game() -> void:
@@ -368,6 +442,12 @@ func _follow_cam(delta: float) -> void:
 	focus = clampf(focus, FINISH_Z - 2.0, START_Z)
 	_cam_z = lerpf(_cam_z, focus, clampf(delta * 3.0, 0.0, 1.0))
 	_place_cam(_cam_z)
+	if _snowfall:
+		_snowfall.position = Vector3(0, 11.0, _cam_z - 8.0)
+	for f: Node3D in _floes:
+		var ph := float(f.get_meta("bob")) + _t3 * 0.9
+		f.position.y = -1.84 + sin(ph) * 0.06
+		f.rotation.x = sin(ph * 0.8) * 0.03
 
 
 ## 미끄러지는 움직임 (가속만, 마찰 약함)

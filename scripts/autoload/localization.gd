@@ -461,7 +461,7 @@ const KO := {
 	"Dash and bump!": "돌진! 몸통 박치기",
 	"Mash to pump water": "연타해서 물 채우기",
 	"SLIPPERY DECK": "미끄러운 갑판",
-	"Race up the long soapy pier to the finish line! It's as slippery as ice - once you slide, it's hard to stop. Barrels keep rolling down from the top: dodge them! SPACE dashes forward and bumps others aside. Slip off the edge and you'll climb back on a little behind.": "비누칠로 미끌미끌한 긴 잔교를 달려 결승선까지! 얼음판처럼 미끄러워서 한번 미끄러지면 잘 안 멈춰요. 위에서 술통이 계속 굴러 내려오니 피하세요! 스페이스로 앞으로 돌진하면 부딪친 사람을 밀쳐 낼 수 있어요. 옆으로 떨어지면 조금 뒤에서 다시 올라와요.",
+	"Race up the long frozen pier to the finish line! It's a sheet of ice - once you slide, it's hard to stop. Barrels keep rolling down from the top: dodge them! SPACE dashes forward and bumps others aside. Slip off the edge and you'll climb back on a little behind.": "꽁꽁 얼어붙은 긴 잔교를 달려 결승선까지! 바닥이 빙판이라 한번 미끄러지면 잘 안 멈춰요. 위에서 술통이 계속 굴러 내려오니 피하세요! 스페이스로 앞으로 돌진하면 부딪친 사람을 밀쳐 낼 수 있어요. 옆으로 떨어지면 조금 뒤에서 다시 올라와요.",
 	"Reach the finish line first!": "결승선에 먼저 도착하라!",
 	"FINISH": "결승선",
 	"Stay on the deck!": "갑판에서 끝까지 버텨라!",
