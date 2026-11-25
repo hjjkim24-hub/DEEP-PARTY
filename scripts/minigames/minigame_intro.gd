@@ -305,6 +305,25 @@ func _build() -> void:
 		ch.add_child(or_a)
 		ch.add_child(_key_row(["←", "→"]))
 		ch.add_child(_ink_wrap("Press them one after the other", 28, 230))
+	elif _info.controls == "ALT_KEYS_GRIP":
+		# 번갈아 누르기 + 스페이스 꾹 (돛대 오르기)
+		cv.remove_child(ch)
+		ch.queue_free()
+		cv.add_theme_constant_override("separation", 6)
+		var g1 := HBoxContainer.new()
+		g1.add_theme_constant_override("separation", 12)
+		cv.add_child(g1)
+		g1.add_child(_key_row(["A", "D"]))
+		var g_or := _ink("or", 26, Color(INK, 0.9))
+		g_or.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		g1.add_child(g_or)
+		g1.add_child(_key_row(["←", "→"]))
+		g1.add_child(_ink_wrap("Press them one after the other", 28, 300))
+		var g2 := HBoxContainer.new()
+		g2.add_theme_constant_override("separation", 16)
+		cv.add_child(g2)
+		g2.add_child(_key_row(["SPACE"]))
+		g2.add_child(_ink_wrap("Hold to cling on in a gust!", 28, 420))
 	elif _info.controls == "KEYS_DASH" or _info.controls == "KEYS_MOUSE":
 		# 이동 + 스페이스 (+ 마우스): 줄마다 한 가지씩, 작게
 		cv.remove_child(ch)
