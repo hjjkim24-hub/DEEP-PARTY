@@ -324,6 +324,25 @@ func _build() -> void:
 		cv.add_child(g2)
 		g2.add_child(_key_row(["SPACE"]))
 		g2.add_child(_ink_wrap("Hold to cling on in a gust!", 28, 420))
+	elif _info.controls == "SIDE_JUMP":
+		# 좌우 이동 + 점프 (동굴 탈출)
+		cv.remove_child(ch)
+		ch.queue_free()
+		cv.add_theme_constant_override("separation", 6)
+		var j1 := HBoxContainer.new()
+		j1.add_theme_constant_override("separation", 12)
+		cv.add_child(j1)
+		j1.add_child(_key_row(["A", "D"]))
+		var j_or := _ink("or", 26, Color(INK, 0.9))
+		j_or.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		j1.add_child(j_or)
+		j1.add_child(_key_row(["←", "→"]))
+		j1.add_child(_ink_wrap("Move", 28, 120))
+		var j2 := HBoxContainer.new()
+		j2.add_theme_constant_override("separation", 16)
+		cv.add_child(j2)
+		j2.add_child(_key_row(["SPACE"]))
+		j2.add_child(_ink_wrap("Jump", 28, 200))
 	elif _info.controls == "KEYS_DASH" or _info.controls == "KEYS_MOUSE":
 		# 이동 + 스페이스 (+ 마우스): 줄마다 한 가지씩, 작게
 		cv.remove_child(ch)
