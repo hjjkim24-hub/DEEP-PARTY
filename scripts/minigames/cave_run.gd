@@ -47,6 +47,7 @@ var _tide: Node3D
 var _tide_foam: CPUParticles3D
 var _cam_x := 0.0
 var _cam_y := 1.0
+var _pool_lights: Array = []
 
 
 func _init() -> void:
@@ -65,11 +66,15 @@ func _build_stage() -> void:
 	env.background_color = Color(0.02, 0.03, 0.04)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.5, 0.58, 0.64)
-	env.ambient_light_energy = 1.1
+	env.ambient_light_energy = 1.3
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.06, 0.1, 0.13)
 	env.fog_density = 0.012
 	env.fog_sky_affect = 0.0
+	env.volumetric_fog_enabled = true
+	env.volumetric_fog_density = 0.018
+	env.volumetric_fog_albedo = Color(0.7, 0.78, 0.82)
+	env.volumetric_fog_length = 40.0
 	sun.light_color = Color(0.85, 0.92, 1.0)
 	sun.light_energy = 0.35
 	sun.shadow_enabled = false
@@ -92,108 +97,325 @@ func _rock_m(c: Color, moss: float = 0.5) -> ShaderMaterial:
 	return stone_mat(c, "stone", moss)
 
 
+## 동굴 바위 재질 (지층 · 젖음 · 이끼 셰이더)
+func _cave_mat(base: Color, moss: float = 0.4, drip_: float = 0.5, glow_: float = 0.0) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = preload("res://shaders/cave_rock.gdshader")
+	m.set_shader_parameter("base_col", base)
+	m.set_shader_parameter("dark_col", base.darkened(0.55))
+	m.set_shader_parameter("water_y", WATER_Y)
+	m.set_shader_parameter("moss", moss)
+	m.set_shader_parameter("drip", drip_)
+	m.set_shader_parameter("glow", glow_)
+	return m
+
+
+## 단면(profile: (z, y) 점들)을 x 방향으로 쭉 이어 만든 울퉁불퉁한 바위 면.
+## amp(j): 그 점을 노이즈로 얼마나 들쑥날쑥하게 할지. hint_sign: 바깥(보이는 쪽) 방향
+func _sweep(x0: float, x1: float, step: float, prof: Array, amps: Array, nz: FastNoiseLite, hint_up: bool) -> ArrayMesh:
+	var nx := maxi(2, int(ceil((x1 - x0) / step)) + 1)
+	var np := prof.size()
+	var P := []
+	for i in nx:
+		var x := lerpf(x0, x1, float(i) / (nx - 1))
+		var row := []
+		for j in np:
+			var a: Vector2 = prof[j]
+			var b: Vector2 = prof[mini(j + 1, np - 1)]
+			var c: Vector2 = prof[maxi(j - 1, 0)]
+			var t := (b - c).normalized()
+			# 단면에서의 바깥 방향: hint_up 이면 (진행 방향 기준) 위 · 앞쪽, 아니면 안쪽(동굴 속)
+			var nrm := Vector2(-t.y, t.x) if hint_up else Vector2(t.y, -t.x)
+			var amp := float(amps[j])
+			var d := nz.get_noise_3d(x, a.y, a.x) * amp + nz.get_noise_3d(x * 3.1, a.y * 3.1, a.x * 3.1) * amp * 0.35
+			var q := a + nrm * d
+			row.append(Vector3(x + nz.get_noise_3d(a.x * 2.0, a.y * 2.0, x) * amp * 0.3, q.y, q.x))
+		P.append(row)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in nx - 1:
+		for j in np - 1:
+			var a: Vector3 = P[i][j]
+			var b: Vector3 = P[i + 1][j]
+			var c: Vector3 = P[i + 1][j + 1]
+			var d: Vector3 = P[i][j + 1]
+			var pa: Vector2 = prof[j]
+			var pb: Vector2 = prof[j + 1]
+			var t := (pb - pa).normalized()
+			var n2 := Vector2(-t.y, t.x) if hint_up else Vector2(t.y, -t.x)
+			var hint := Vector3(0, n2.y, n2.x)
+			for tri: Array in [[a, b, c], [a, c, d]]:
+				var v0: Vector3 = tri[0]
+				var v1: Vector3 = tri[1]
+				var v2: Vector3 = tri[2]
+				# Godot 앞면 = 시계 방향 → 기하 노멀이 바깥과 반대가 되게 정렬
+				if (v1 - v0).cross(v2 - v0).dot(hint) > 0.0:
+					var tmp := v1
+					v1 = v2
+					v2 = tmp
+				st.add_vertex(v0)
+				st.add_vertex(v1)
+				st.add_vertex(v2)
+	st.index()
+	st.generate_normals()
+	return st.commit()
+
+
+## 땅 한 덩어리: 뒤쪽은 바위가 솟고, 가운데(달리는 길)는 거의 평평, 앞은 둥근 턱 → 깎아지른 바위 절벽
+func _ground_mesh(x0: float, x1: float, top: float, nz: FastNoiseLite, mat: Material) -> void:
+	var prof := [Vector2(-3.2, top + 1.3), Vector2(-2.7, top + 0.7), Vector2(-2.2, top + 0.25), Vector2(-1.7, top + 0.05),
+		Vector2(-1.2, top), Vector2(-0.4, top), Vector2(0.4, top), Vector2(1.2, top), Vector2(1.7, top - 0.02),
+		Vector2(2.05, top - 0.12), Vector2(2.25, top - 0.4), Vector2(2.3, top - 1.2), Vector2(2.35, top - 2.2),
+		Vector2(2.3, top - 3.3), Vector2(2.4, top - 4.6)]
+	var amps := [0.45, 0.35, 0.22, 0.06, 0.02, 0.015, 0.015, 0.02, 0.05, 0.1, 0.18, 0.3, 0.32, 0.3, 0.3]
+	var mi := MeshInstance3D.new()
+	mi.mesh = _sweep(x0, x1, 0.25, prof, amps, nz, true)
+	mi.material_override = mat
+	world3.add_child(mi)
+	# 웅덩이 쪽 끝면: 울퉁불퉁한 절벽 (위 → 아래로 층층이)
+	for side: int in [0, 1]:
+		var ex := x0 if side == 0 else x1
+		var out := -1.0 if side == 0 else 1.0
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var zs := 12
+		var ys := 10
+		var G := []
+		for a in zs + 1:
+			var z := lerpf(-2.9, 2.35, float(a) / zs)
+			var col := []
+			for b in ys + 1:
+				var y := lerpf(top + (0.0 if absf(z) < 1.8 else 0.3), top - 4.6, float(b) / ys)
+				var dx := nz.get_noise_3d(ex * 2.0, y * 1.5, z * 1.5) * 0.18 + 0.04
+				if b == 0:
+					dx = 0.0
+				col.append(Vector3(ex + out * dx, y, z))
+			G.append(col)
+		for a in zs:
+			for b in ys:
+				var p0: Vector3 = G[a][b]
+				var p1: Vector3 = G[a + 1][b]
+				var p2: Vector3 = G[a + 1][b + 1]
+				var p3: Vector3 = G[a][b + 1]
+				var hint := Vector3(out, 0, 0)
+				for tri: Array in [[p0, p1, p2], [p0, p2, p3]]:
+					var v0: Vector3 = tri[0]
+					var v1: Vector3 = tri[1]
+					var v2: Vector3 = tri[2]
+					if (v1 - v0).cross(v2 - v0).dot(hint) > 0.0:
+						var tmp := v1
+						v1 = v2
+						v2 = tmp
+					st.add_vertex(v0)
+					st.add_vertex(v1)
+					st.add_vertex(v2)
+		st.index()
+		st.generate_normals()
+		var em := MeshInstance3D.new()
+		em.mesh = st.commit()
+		em.material_override = mat
+		world3.add_child(em)
+
+
+## 울퉁불퉁한 바위 덩어리 (구를 노이즈로 찌그러뜨림)
+func _boulder(c: Vector3, size: Vector3, nz: FastNoiseLite, mat: Material, seed_: float) -> MeshInstance3D:
+	var sm := SphereMesh.new()
+	sm.radius = 1.0
+	sm.height = 2.0
+	sm.radial_segments = 20
+	sm.rings = 12
+	var arr := sm.get_mesh_arrays()
+	var vs: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	for k in vs.size():
+		var v := vs[k]
+		var d := 1.0 + nz.get_noise_3d(v.x * 1.7 + seed_, v.y * 1.7, v.z * 1.7) * 0.35 + nz.get_noise_3d(v.x * 5.0, v.y * 5.0 + seed_, v.z * 5.0) * 0.08
+		v = v * d
+		if v.y < -0.3:
+			v.y = -0.3 + (v.y + 0.3) * 0.3   # 바닥은 납작
+		vs[k] = v * size
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+	for k in idx.size():
+		st.add_vertex(vs[idx[k]])
+	st.index()
+	st.generate_normals()
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = mat
+	mi.position = c
+	world3.add_child(mi)
+	return mi
+
+
+## 종유석 하나 (끝에 물방울이 맺힘)
+func _stalactite(p: Vector3, len: float, r: float, mat: Material, drop_mat: Material, up: bool = false) -> void:
+	var cm := CylinderMesh.new()
+	cm.top_radius = r if not up else 0.0
+	cm.bottom_radius = 0.0 if not up else r
+	cm.height = len
+	cm.radial_segments = 9
+	cm.rings = 4
+	var sgn := -1.0 if not up else 1.0
+	var mi := add_mesh(cm, mat, p + Vector3(0, sgn * len * 0.5, 0), Basis(Vector3.FORWARD, randf_range(-0.08, 0.08)), world3)
+	mi.scale = Vector3(1.0, 1.0, randf_range(0.7, 1.0))
+	if not up and randf() < 0.6:
+		var d := SphereMesh.new()
+		d.radius = 0.035
+		d.height = 0.08
+		add_mesh(d, drop_mat, p + Vector3(0, -len - 0.02, 0), Basis(), world3)
+
+
 func _build_cave() -> void:
 	var rr := RandomNumberGenerator.new()
 	rr.seed = 9
-	var ground_m := _rock_m(Color(0.36, 0.33, 0.29), 0.45)
-	var wet_m := _rock_m(Color(0.25, 0.24, 0.22), 0.7)
-	var wall_m := _rock_m(Color(0.34, 0.31, 0.28), 0.3)
-	# 땅: 젖은 바위 덩어리 (윗면 울퉁불퉁한 돌 몇 개)
+	seed(9)
+	var nz := FastNoiseLite.new()
+	nz.seed = 7
+	nz.frequency = 0.45
+	nz.fractal_octaves = 3
+	var ground_m := _cave_mat(Color(0.4, 0.37, 0.33), 0.45, 0.35)
+	var wall_m := _cave_mat(Color(0.37, 0.34, 0.31), 0.25, 0.8, 0.7)
+	var drop_m := StandardMaterial3D.new()
+	drop_m.albedo_color = Color(0.8, 0.9, 1.0, 0.6)
+	drop_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	drop_m.roughness = 0.02
+	drop_m.metallic_specular = 1.0
+	# 땅 덩어리들 (턱 바위는 둥근 바위로)
+	var runs := []   # 맞닿은 평지는 한 덩어리로 (이음매 없이)
 	for g: Array in GROUND:
-		var x0 := float(g[0])
-		var x1 := float(g[1])
-		var top := float(g[2])
-		var bot := -6.0 if top <= 0.01 else 0.0
-		box(Vector3(x1 - x0, top - bot, 4.2), ground_m, Vector3((x0 + x1) * 0.5, (top + bot) * 0.5, 0), Basis(), world3)
-		var x := x0 + 0.4
-		while x < x1 - 0.3:
-			if rr.randf() < 0.55:
-				var s := SphereMesh.new()
-				s.radius = rr.randf_range(0.25, 0.55)
-				s.height = s.radius * 2.0
-				var mi := add_mesh(s, wet_m, Vector3(x, top - s.radius * 0.55, rr.randf_range(-1.9, -0.9) if rr.randf() < 0.5 else rr.randf_range(1.0, 1.9)), Basis(), world3)
-				mi.scale = Vector3(rr.randf_range(1.0, 1.8), rr.randf_range(0.5, 0.9), rr.randf_range(0.8, 1.3))
-			x += rr.randf_range(0.6, 1.4)
-		# 물가 쪽 모서리: 따개비 · 해초
-		for ex: float in [x0, x1]:
-			if ex < -7.0 or ex > 117.0 or top > 0.01:
-				continue
-			for k in 7:
-				var b := CylinderMesh.new()
-				b.top_radius = 0.02
-				b.bottom_radius = rr.randf_range(0.05, 0.09)
-				b.height = rr.randf_range(0.06, 0.12)
-				add_mesh(b, std_mat(Color(0.86, 0.84, 0.78), 0.8), Vector3(ex + (0.08 if ex == x0 else -0.08) * 0.0, rr.randf_range(-1.1, -0.2), rr.randf_range(-1.8, 1.8)),
-					Basis(Vector3.FORWARD, (PI / 2) * (-1.0 if ex == x0 else 1.0)), world3).position.x = ex + (-0.04 if ex == x0 else 0.04)
-			for k in 5:
-				var q := QuadMesh.new()
-				q.size = Vector2(0.12, rr.randf_range(0.5, 1.0))
-				var sm := std_mat(Color(0.12, 0.3, 0.14), 0.7)
-				sm.cull_mode = BaseMaterial3D.CULL_DISABLED
-				var wd := add_mesh(q, sm, Vector3(ex + (-0.05 if ex == x0 else 0.05), -q.size.y * 0.5 + rr.randf_range(-0.2, 0.0), rr.randf_range(-1.8, 1.8)), Basis(Vector3.UP, PI / 2), world3)
-				wd.rotation.z = rr.randf_range(-0.2, 0.2)
-	# 물웅덩이: 짙은 청록 물 (매끈 · 반투명)
-	var wm := StandardMaterial3D.new()
-	wm.albedo_color = Color(0.03, 0.13, 0.13, 0.96)
-	wm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	wm.roughness = 0.06
-	wm.metallic_specular = 0.8
-	wm.emission_enabled = true
-	wm.emission = Color(0.01, 0.04, 0.05)
+		if float(g[2]) > 0.01:
+			_boulder(Vector3((float(g[0]) + float(g[1])) * 0.5, 0.05, 0), Vector3((float(g[1]) - float(g[0])) * 0.62, 0.75, 1.9), nz, ground_m, 3.0)
+			continue
+		if not runs.is_empty() and absf(float(runs[runs.size() - 1][1]) - float(g[0])) < 0.01:
+			runs[runs.size() - 1][1] = float(g[1])
+		else:
+			runs.append([float(g[0]), float(g[1])])
+	for r: Array in runs:
+		_ground_mesh(float(r[0]), float(r[1]), 0.0, nz, ground_m)
+	# 웅덩이: 잔물결 · 물가 거품이 이는 물 + 앞쪽 물에 잠긴 바위 턱
 	for pt: Array in PITS:
-		# 웅덩이를 꽉 채운 물 (앞면은 깊이감 있는 청록) + 물 아래 앞쪽 바위 턱
-		var body := StandardMaterial3D.new()
-		body.albedo_color = Color(0.05, 0.2, 0.21, 0.9)
-		body.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		body.roughness = 0.08
-		body.emission_enabled = true
-		body.emission = Color(0.03, 0.12, 0.12)
-		var top := PlaneMesh.new()
-		top.size = Vector2(float(pt[1]) - float(pt[0]) + 0.02, 4.2)
-		add_mesh(top, wm, Vector3((float(pt[0]) + float(pt[1])) * 0.5, WATER_Y, 0), Basis(), world3).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var mi := box(Vector3(float(pt[1]) - float(pt[0]) + 0.02, 3.0, 4.2), body, Vector3((float(pt[0]) + float(pt[1])) * 0.5, WATER_Y - 1.52, 0), Basis(), world3)
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		box(Vector3(float(pt[1]) - float(pt[0]), 3.4, 0.3), wet_m, Vector3((float(pt[0]) + float(pt[1])) * 0.5, WATER_Y - 3.0, 2.25), Basis(), world3)
-		box(Vector3(float(pt[1]) - float(pt[0]), 0.3, 4.2), std_mat(Color(0.03, 0.05, 0.06), 0.9), Vector3((float(pt[0]) + float(pt[1])) * 0.5, -3.0, 0), Basis(), world3)
-	# 뒷벽 · 천장 (울퉁불퉁) · 종유석
-	box(Vector3(132, 14, 1.0), wall_m, Vector3(55, 3, -3.6), Basis(), world3)
-	box(Vector3(132, 4, 9.0), wall_m, Vector3(55, 10.4, 0), Basis(), world3)
-	var x := -8.0
-	while x < 118.0:
-		var s := SphereMesh.new()
-		s.radius = rr.randf_range(0.8, 1.8)
-		s.height = s.radius * 2.0
-		# 벽에서 튀어나온 납작하고 길쭉한 바위 결 (층층이 비스듬히)
-		var mi := add_mesh(s, wall_m, Vector3(x, rr.randf_range(0.8, 7.5), -3.15), Basis(Vector3.BACK, rr.randf_range(-0.35, 0.35)), world3)
-		mi.scale = Vector3(rr.randf_range(1.6, 3.0), rr.randf_range(0.35, 0.7), 0.28)
-		if rr.randf() < 0.7:
-			var st := CylinderMesh.new()
-			st.top_radius = rr.randf_range(0.12, 0.3)
-			st.bottom_radius = 0.0
-			st.height = rr.randf_range(0.6, 2.0)
-			st.radial_segments = 7
-			add_mesh(st, wet_m, Vector3(x + rr.randf_range(-0.5, 0.5), 8.4 - st.height * 0.5, rr.randf_range(-2.5, 0.5)), Basis(), world3)
-		x += rr.randf_range(1.6, 3.0)
-	# 입구 쪽 막힌 벽
-	box(Vector3(2.0, 14, 6), wall_m, Vector3(-9.0, 2, 0), Basis(), world3)
-	# 벽 횃불 (깜빡이는 불빛)
-	for tx: float in [2.0, 15.0, 28.0, 44.0, 58.0, 72.0, 86.0, 96.0]:
-		torch(world3, Vector3(tx, 0.0 if tx not in [15.0, 44.0] else 2.6, -2.6), 1.6)
-	# 천장 틈 빛줄기 (먼지가 떠다님)
+		var x0 := float(pt[0])
+		var x1 := float(pt[1])
+		var w := ocean(WATER_Y, 1.0)
+		var pm := PlaneMesh.new()
+		pm.size = Vector2(x1 - x0 + 0.4, 5.4)
+		pm.subdivide_width = int((x1 - x0) * 3.0)
+		pm.subdivide_depth = 14
+		w.mesh = pm
+		w.position = Vector3((x0 + x1) * 0.5, WATER_Y, -0.2)
+		var om := w.material_override as ShaderMaterial
+		om.set_shader_parameter("amp", 0.04)
+		om.set_shader_parameter("choppy", 0.2)
+		om.set_shader_parameter("speed", 0.6)
+		om.set_shader_parameter("crest_foam", 0.0)
+		om.set_shader_parameter("edge_foam", 0.25)
+		om.set_shader_parameter("deep", Color(0.0, 0.04, 0.05))
+		om.set_shader_parameter("shallow", Color(0.02, 0.17, 0.17))
+		om.set_shader_parameter("sss_col", Color(0.03, 0.3, 0.27))
+		var rim := MeshInstance3D.new()
+		rim.mesh = _sweep(x0 - 0.3, x1 + 0.3, 0.3, [Vector2(1.9, WATER_Y - 2.0), Vector2(2.1, WATER_Y - 0.3), Vector2(2.3, WATER_Y + 0.12), Vector2(2.6, WATER_Y + 0.02), Vector2(2.75, WATER_Y - 0.6), Vector2(2.8, WATER_Y - 3.5)],
+			[0.1, 0.12, 0.1, 0.12, 0.2, 0.2], nz, true)
+		rim.material_override = ground_m
+		world3.add_child(rim)
+		# 물 아래 깊은 바닥 (어둡게)
+		box(Vector3(x1 - x0, 0.3, 5.0), std_mat(Color(0.02, 0.03, 0.035), 0.9), Vector3((x0 + x1) * 0.5, WATER_Y - 3.4, 0), Basis(), world3)
+		# 물빛이 바위에 일렁임
+		var cl := OmniLight3D.new()
+		cl.light_color = Color(0.35, 0.75, 0.7)
+		cl.light_energy = 0.9
+		cl.omni_range = 6.0
+		cl.position = Vector3((x0 + x1) * 0.5, WATER_Y + 0.6, 0.5)
+		world3.add_child(cl)
+		_pool_lights.append(cl)
+	# 뒷벽 → 천장으로 이어지는 아치 (지층 · 굴곡 · 발광 이끼)
+	var arch := [Vector2(-2.6, -0.6), Vector2(-3.4, 0.6), Vector2(-3.9, 2.2), Vector2(-4.0, 4.0), Vector2(-3.8, 5.8),
+		Vector2(-3.2, 7.4), Vector2(-2.0, 8.5), Vector2(-0.4, 9.1), Vector2(1.4, 9.3), Vector2(3.2, 9.2), Vector2(4.6, 8.8)]
+	var aamps := [0.3, 0.55, 0.7, 0.75, 0.75, 0.7, 0.6, 0.55, 0.5, 0.5, 0.4]
+	var am := MeshInstance3D.new()
+	am.mesh = _sweep(-10.0, 112.0, 0.32, arch, aamps, nz, false)
+	am.material_override = wall_m
+	world3.add_child(am)
+	# 입구 쪽 막힌 바위 · 출구 쪽 동굴 입구 테두리
+	for k in 5:
+		_boulder(Vector3(-8.6 + rr.randf_range(-0.4, 0.4), k * 1.8, rr.randf_range(-2.0, 1.5)), Vector3(1.6, 1.4, 1.6), nz, wall_m, float(k) * 7.0)
+	# 출구 테두리: 아치 단면을 따라 바위를 둘러 동굴 입구 모양 (밖은 환한 바다)
+	for k in arch.size() - 1:
+		for h in 2:
+			var ap: Vector2 = (arch[k] as Vector2).lerp(arch[k + 1], h * 0.5)
+			var sz := rr.randf_range(1.5, 2.1)
+			_boulder(Vector3(112.4 + rr.randf_range(-0.3, 0.3), ap.y, ap.x - 0.4), Vector3(sz * 0.9, sz, sz), nz, wall_m, 40.0 + k * 2 + h)
+	_boulder(Vector3(112.0, 0.0, 2.6), Vector3(1.2, 1.6, 1.0), nz, ground_m, 55.0)
+	# 뒤쪽 바닥의 바위 · 석순
+	var x := -6.0
+	while x < 110.0:
+		if rr.randf() < 0.55:
+			_boulder(Vector3(x, rr.randf_range(-0.2, 0.3), rr.randf_range(-2.9, -2.2)), Vector3(rr.randf_range(0.5, 1.1), rr.randf_range(0.4, 0.9), rr.randf_range(0.4, 0.7)), nz, ground_m, x)
+		if rr.randf() < 0.3:
+			_stalactite(Vector3(x + 0.5, -0.1, rr.randf_range(-2.7, -2.2)), rr.randf_range(0.5, 1.4), rr.randf_range(0.12, 0.22), ground_m, drop_m, true)
+		x += rr.randf_range(1.8, 3.2)
+	# 종유석 무리 (천장)
+	x = -8.0
+	while x < 110.0:
+		var n := rr.randi_range(2, 5)
+		for k in n:
+			var zz := rr.randf_range(-2.2, 1.8)
+			var top := 8.9 - absf(zz + 0.4) * 0.15
+			_stalactite(Vector3(x + rr.randf_range(-0.8, 0.8), top, zz), rr.randf_range(0.5, 2.2), rr.randf_range(0.08, 0.26), wall_m, drop_m)
+		x += rr.randf_range(2.5, 4.5)
+	# 벽 횃불 (바위 턱 위) · 천장에 밧줄로 매단 랜턴
+	for tx: float in [2.0, 24.0, 33.5, 58.0, 74.0, 90.0, 99.0]:
+		torch(world3, Vector3(tx, -0.05, -2.3), 1.7)
+	var rope := std_mat(Color(0.45, 0.36, 0.24), 0.95)
+	for lx: float in [14.0, 44.0, 66.0, 82.0]:
+		var ln := rr.randf_range(2.6, 3.6)
+		box(Vector3(0.04, ln, 0.04), rope, Vector3(lx, 9.0 - ln * 0.5, -1.4), Basis(), world3)
+		lantern(world3, Vector3(lx, 9.0 - ln - 0.3, -1.4))
+	# 천장 틈 빛줄기
 	for lx: float in [12.0, 41.0, 62.0, 90.0]:
 		_light_shaft(Vector3(lx, 0, 0))
-	# 출구: 밝은 바다와 하늘이 보이는 동굴 입구
+	# 난파선 잔해: 부목 웅덩이 뒤쪽에 비스듬히 박힌 부러진 선체 판자 · 돛대 토막
+	var wreck := wood_mat(Color(0.33, 0.25, 0.17), Vector3(1, 0, 0), 0.6)
+	for k in 6:
+		var bx := 38.8 + k * 0.42
+		var ln := rr.randf_range(1.6, 2.6)
+		box(Vector3(0.36, ln, 0.1), wreck, Vector3(bx, WATER_Y + ln * 0.35, -2.4 + k * 0.03), Basis(Vector3.BACK, -0.35 + rr.randf_range(-0.08, 0.08)), world3)
+	var mastp := CylinderMesh.new()
+	mastp.top_radius = 0.16
+	mastp.bottom_radius = 0.2
+	mastp.height = 4.5
+	add_mesh(mastp, wood_mat(Color(0.38, 0.27, 0.17), Vector3(0, 1, 0), 0.5), Vector3(47.5, WATER_Y + 1.3, -2.5), Basis(Vector3.BACK, 0.75), world3)
+	# 잡동사니: 낡은 통 · 상자 (뒤쪽)
+	var crate_m := wood_mat(Color(0.45, 0.34, 0.22), Vector3(1, 0, 0), 0.4)
+	for cx: float in [-4.5, 22.0, 54.0, 71.5, 102.5]:
+		barrel(world3, Vector3(cx, 0.0, -1.85), 0.34, 0.85, Color(0.36, 0.25, 0.15))
+		box(Vector3(0.7, 0.6, 0.7), crate_m, Vector3(cx + 0.8, 0.3, -2.0), Basis(Vector3.UP, 0.3), world3)
+	# 출구: 밝은 바다와 하늘
 	var sky := StandardMaterial3D.new()
 	sky.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	sky.albedo_color = Color(0.85, 0.95, 1.0)
-	box(Vector3(0.2, 10, 8), sky, Vector3(117.5, 3, 0), Basis(), world3)
+	sky.albedo_color = Color(0.82, 0.93, 1.0)
+	# 바깥 풍경 판: 위는 파란 하늘 → 수평선은 희뿌옇게 → 아래는 반짝이는 바다
+	var gt := GradientTexture2D.new()
+	gt.fill_from = Vector2(0.5, 0.0)
+	gt.fill_to = Vector2(0.5, 1.0)
+	var gr := Gradient.new()
+	gr.set_color(0, Color(0.45, 0.7, 0.95))
+	gr.set_color(1, Color(0.06, 0.32, 0.42))
+	gr.add_point(0.58, Color(0.95, 0.97, 1.0))
+	gr.add_point(0.62, Color(0.4, 0.7, 0.8))
+	gt.gradient = gr
+	sky.albedo_texture = gt
+	sky.albedo_color = Color(1, 1, 1)
+	var sq := QuadMesh.new()
+	sq.size = Vector2(14, 14)
+	add_mesh(sq, sky, Vector3(113.6, 3.0, -0.5), Basis(Vector3.UP, -PI / 2), world3)
 	var glow := OmniLight3D.new()
-	glow.light_color = Color(1.0, 0.95, 0.8)
-	glow.light_energy = 3.5
-	glow.omni_range = 22.0
-	glow.position = Vector3(112, 4, 2)
+	glow.light_color = Color(1.0, 0.95, 0.82)
+	glow.light_energy = 4.0
+	glow.omni_range = 24.0
+	glow.position = Vector3(113, 4, 2)
 	world3.add_child(glow)
-	# 결승: 나무 기둥 두 개 + 깃발 줄
+	# 결승: 나무 기둥 두 개 + 깃발 줄 + 바닥 흰 줄
 	var post := wood_mat(Color(0.42, 0.3, 0.18), Vector3(0, 1, 0), 0.2)
 	for z: float in [-1.8, 1.8]:
 		var p := CylinderMesh.new()
@@ -201,8 +423,7 @@ func _build_cave() -> void:
 		p.bottom_radius = 0.13
 		p.height = 3.2
 		add_mesh(p, post, Vector3(FINISH_X, 1.6, z), Basis(), world3)
-	var rope := std_mat(Color(0.55, 0.45, 0.3), 0.9)
-	box(Vector3(0.05, 0.05, 3.6), rope, Vector3(FINISH_X, 3.0, 0), Basis(), world3)
+	box(Vector3(0.05, 0.05, 3.6), std_mat(Color(0.55, 0.45, 0.3), 0.9), Vector3(FINISH_X, 3.0, 0), Basis(), world3)
 	var cols := [Color(0.85, 0.15, 0.12), Color(0.95, 0.8, 0.2), Color(0.15, 0.45, 0.85), Color(0.95, 0.95, 0.92)]
 	for i in 9:
 		var fm := std_mat(cols[i % 4], 0.8)
@@ -215,7 +436,7 @@ func _build_cave() -> void:
 		var mi := add_mesh(tri, fm, Vector3(FINISH_X, 2.82, -1.6 + i * 0.4), Basis(Vector3.RIGHT, PI), world3)
 		mi.scale = Vector3(0.15, 1, 1)
 	for i in 2:
-		box(Vector3(0.12, 0.02, 4.0), std_mat(Color(0.9, 0.88, 0.8), 0.7), Vector3(FINISH_X + (i - 0.5) * 0.25, 0.01, 0), Basis(), world3)
+		box(Vector3(0.12, 0.02, 3.2), std_mat(Color(0.9, 0.88, 0.8), 0.7), Vector3(FINISH_X + (i - 0.5) * 0.25, 0.03, 0), Basis(), world3)
 
 
 func _light_shaft(p: Vector3) -> void:
@@ -224,6 +445,7 @@ func _light_shaft(p: Vector3) -> void:
 	sp.light_energy = 5.0
 	sp.spot_range = 12.0
 	sp.spot_angle = 16.0
+	sp.light_volumetric_fog_energy = 4.0
 	sp.position = p + Vector3(0, 9.0, 0)
 	sp.rotation_degrees = Vector3(-90, 0, 0)
 	world3.add_child(sp)
@@ -357,31 +579,41 @@ func _build_hazards() -> void:
 			s.height = 0.2
 			add_mesh(s, _rock_m(Color(0.27, 0.26, 0.24), 0.8), Vector3(gx + cos(a) * 0.5, 0.03, sin(a) * 0.5), Basis(), world3)
 		var cm := StandardMaterial3D.new()
-		cm.albedo_color = Color(0.78, 0.9, 1.0, 0.6)
+		cm.albedo_color = Color(0.7, 0.86, 0.95, 0.28)
 		cm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		cm.roughness = 0.05
-		cm.emission_enabled = true
-		cm.emission = Color(0.3, 0.45, 0.5)
+		cm.roughness = 0.02
+		cm.metallic_specular = 1.0
+		cm.rim_enabled = true
+		cm.rim = 1.0
+		cm.rim_tint = 0.2
+		cm.cull_mode = BaseMaterial3D.CULL_DISABLED
 		var col := CylinderMesh.new()
-		col.top_radius = 0.55
-		col.bottom_radius = 0.34
+		col.top_radius = 0.42
+		col.bottom_radius = 0.26
 		col.height = 1.0
-		col.radial_segments = 14
+		col.radial_segments = 18
+		col.rings = 6
 		var ci := add_mesh(col, cm, Vector3(gx, 0, 0), Basis(), world3)
 		ci.visible = false
 		var spray := CPUParticles3D.new()
-		spray.amount = 40
-		spray.lifetime = 0.8
+		spray.amount = 90
+		spray.lifetime = 0.9
 		spray.emitting = false
 		spray.direction = Vector3(0, 1, 0)
-		spray.spread = 35.0
-		spray.initial_velocity_min = 2.0
-		spray.initial_velocity_max = 4.0
+		spray.spread = 50.0
+		spray.initial_velocity_min = 1.5
+		spray.initial_velocity_max = 4.5
+		spray.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		spray.emission_sphere_radius = 0.35
+		spray.scale_amount_min = 0.4
+		spray.scale_amount_max = 1.4
 		spray.gravity = Vector3(0, -9.8, 0)
 		var sm := SphereMesh.new()
 		sm.radius = 0.06
 		sm.height = 0.12
 		var smat := std_mat(Color(0.85, 0.95, 1.0), 0.05)
+		smat.albedo_color = Color(0.85, 0.95, 1.0, 0.7)
+		smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		sm.material = smat
 		spray.mesh = sm
 		world3.add_child(spray)
@@ -420,14 +652,17 @@ func _build_hazards() -> void:
 		si.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_rocks.append({"rock": ri, "shadow": si, "smat": shm, "x": rx, "landed": -1})
 	# 게 통로: 낮게 내려온 천장 바위
-	var ov := _rock_m(Color(0.3, 0.28, 0.26), 0.5)
+	var ov := _cave_mat(Color(0.36, 0.33, 0.3), 0.3, 0.7)
+	var nz2 := FastNoiseLite.new()
+	nz2.seed = 11
+	nz2.frequency = 0.45
 	var ox := 86.5
 	while ox < 101.0:
-		var sp := SphereMesh.new()
-		sp.radius = rr.randf_range(0.9, 1.4)
-		sp.height = sp.radius * 2.0
-		var mi := add_mesh(sp, ov, Vector3(ox, rr.randf_range(4.0, 4.6), rr.randf_range(-1.6, -0.4)), Basis(Vector3.BACK, rr.randf_range(-0.3, 0.3)), world3)
-		mi.scale = Vector3(rr.randf_range(1.3, 2.0), rr.randf_range(0.5, 0.8), 1.2)
+		# 뒷벽에서 앞으로 튀어나온 바위 턱 (뒤쪽은 벽 속에 묻힘)
+		var bo := _boulder(Vector3(ox, rr.randf_range(4.5, 5.0), -2.4), Vector3(rr.randf_range(1.4, 1.9), rr.randf_range(0.8, 1.1), 2.6), nz2, ov, ox)
+		bo.rotation.z = rr.randf_range(-0.15, 0.15)
+		for k in 3:
+			_stalactite(Vector3(ox + rr.randf_range(-1.0, 1.0), 4.0, rr.randf_range(-1.0, -0.1)), rr.randf_range(0.3, 0.8), rr.randf_range(0.06, 0.13), ov, ov)
 		ox += rr.randf_range(1.4, 2.2)
 	# 게
 	for c: Array in CRABS:
@@ -1000,6 +1235,8 @@ func _show_hazards(delta: float) -> void:
 			leg.rotation.z = sin(_el * 18.0 + k * 1.3) * 0.35 * clampf(absf(vx), 0.0, 1.0)
 			k += 1
 		n.rotation.y = sin(_el * 3.0 + i) * 0.15
+	for k in _pool_lights.size():
+		(_pool_lights[k] as OmniLight3D).light_energy = 0.8 + sin(_el * 2.3 + k) * 0.2 + sin(_el * 5.1 + k * 2.0) * 0.12
 	var tx := _tide_x()
 	_tide.position.x = tx
 	_tide.position.y = 0.28 + sin(_el * 2.0) * 0.04
