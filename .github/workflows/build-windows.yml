@@ -62,7 +62,13 @@ jobs:
       - name: Export DeepParty.exe
         run: |
           New-Item -ItemType Directory -Force build | Out-Null
-          & $env:GODOT --headless --path . --export-release "Windows Desktop" "build/DeepParty.exe" 2>&1 | Tee-Object -FilePath export.log | Out-Host
+          # 가끔 러너에서 글꼴 다시 불러오기 도중 Godot 이 그냥 꺼짐 → 최대 3번까지 다시 시도
+          for ($try = 1; $try -le 3; $try++) {
+            & $env:GODOT --headless --path . --export-release "Windows Desktop" "build/DeepParty.exe" 2>&1 | Tee-Object -FilePath export.log | Out-Host
+            if (Test-Path "build/DeepParty.exe") { break }
+            Write-Host "Export attempt $try failed, retrying..."
+            Start-Sleep -Seconds 5
+          }
           if (-not (Test-Path "build/DeepParty.exe")) { Write-Host "::error::Export failed"; exit 1 }
           $bad = Select-String -Path export.log -Pattern "SCRIPT ERROR|Could not start rcedit|rcedit failed"
           if ($bad) { Write-Host "::error::Export problems"; $bad | ForEach-Object { Write-Host $_.Line }; exit 1 }
