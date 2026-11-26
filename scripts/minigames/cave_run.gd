@@ -15,13 +15,32 @@ const HW := 0.3                 ## 말 반 너비 (충돌)
 const PH := 1.15                ## 말 키 (충돌)
 const WATER_Y := -1.3           ## 웅덩이 물높이
 const FALL_Y := -0.9            ## 이보다 내려가면 빠짐
-const FINISH_X := 104.0
+const FINISH_X := 161.0
 const TIDE_START := 5.0         ## 밀물이 들어오기 시작하는 시각
 const TIDE_SPEED := 2.5
 ## 땅 (x0, x1, 윗면 y): 사이사이가 물웅덩이
-const GROUND := [[-8.0, 8.0, 0.0], [20.0, 37.0, 0.0], [28.6, 29.5, 0.75], [51.0, 70.0, 0.0], [70.0, 86.0, 0.0], [86.0, 101.0, 0.0], [101.0, 118.0, 0.0]]
+const GROUND := [[-8.0, 8.0, 0.0], [20.0, 37.0, 0.0], [28.6, 29.5, 0.75], [51.0, 70.0, 0.0], [70.0, 86.0, 0.0], [86.0, 101.0, 0.0], [101.0, 118.0, 0.0],
+	[119.6, 121.1, 0.0], [122.7, 124.2, 0.0], [125.8, 127.3, 0.0], [128.9, 130.4, 0.0],
+	[132.0, 160.0, 0.0], [160.0, 178.0, 0.0],
+	[136.0, 138.2, 1.3], [141.6, 143.8, 1.3], [147.2, 149.4, 1.3], [152.8, 155.0, 1.3]]
 ## 웅덩이 (x0, x1, 빠지면 돌아갈 자리 x)
-const PITS := [[8.0, 20.0, 6.6], [37.0, 51.0, 35.6]]
+const PITS := [[8.0, 20.0, 6.6], [37.0, 51.0, 35.6], [118.0, 132.0, 116.6]]
+## 굴러오는 술통 (오른쪽 더미에서 왼쪽 바위까지)
+const BARREL_X0 := 115.2
+const BARREL_X1 := 102.0
+const BARREL_R := 0.4
+const BARREL_T := 1.6
+## 곰치 (징검다리 사이 물속에서 튀어오름): x, 위상
+const EELS := [[121.9, 0.0], [125.0, 0.95], [128.1, 1.8]]
+const EEL_T := 2.7
+const EEL_WARN := 1.25
+const EEL_LEAP := 1.85
+## 밀려드는 파도 (오른쪽 안쪽에서 왼쪽으로 쓸고 감)
+const SURGE_X0 := 158.5
+const SURGE_X1 := 132.0
+const SURGE_V := 12.5
+const SURGE_T := 5.4
+const SURGE_WARN := 1.5
 const ANCHORS := [[25.6, 0.0], [32.4, 1.6]]          ## x, 위상
 const LOGS := [39.3, 42.6, 45.9, 49.2]
 const GEYSERS := [[54.0, 0.0], [57.8, 0.85], [61.6, 1.7], [65.4, 0.4]]
@@ -57,15 +76,23 @@ var _cam_x := 0.0
 var _cam_y := 1.0
 var _pool_lights: Array = []
 var _batches := {}
+var _barrel_nodes: Array = []
+var _smashed := {}
+var _eels: Array = []
+var _surge: Node3D
+var _surge_foam: CPUParticles3D
+var _surge_spray: CPUParticles3D
+var _surge_warned := false
+var _surge_roar := false
 static var _mesh_cache := {}    ## 동굴 지형 메시는 매번 같음 → 한 번 만들어 두고 다시 씀 (설명창 데모 · 본게임)
 
 
 func _init() -> void:
 	title = "CAVE RUN"
-	how_to = "Race through the sea cave to the sunlit exit! Ride the moving planks, dodge the swinging anchors, hop across the sinking logs, watch out for water spouts, falling rocks and pinching crabs. Fall into the water and you'll be put back at the start of that section. The tide is coming in behind you - don't dawdle!"
+	how_to = "Race through the sea cave to the sunlit exit! Ride the moving planks, dodge the swinging anchors, hop across the sinking logs, watch out for water spouts, falling rocks and pinching crabs, jump the rolling barrels, mind the moray eels between the stepping stones and climb the rocks when a big wave surges in. Fall into the water and you'll be put back at the start of that section. The tide is coming in behind you - don't dawdle!"
 	goal = "Get out of the cave first!"
 	controls = "SIDE_JUMP"
-	duration = 60.0
+	duration = 80.0
 
 
 # ── 무대 ────────────────────────────────────────────────────
@@ -96,6 +123,7 @@ func _build_stage() -> void:
 	_place_cam(true)
 	_build_cave()
 	_build_hazards()
+	_build_new_hazards()
 	_flush_batches()
 	_build_tide()
 
@@ -352,14 +380,18 @@ func _build_cave() -> void:
 	var runs := []   # 맞닿은 평지는 한 덩어리로 (이음매 없이)
 	for g: Array in GROUND:
 		if float(g[2]) > 0.01:
-			_boulder(Vector3((float(g[0]) + float(g[1])) * 0.5, 0.05, 0), Vector3((float(g[1]) - float(g[0])) * 0.62, 0.75, 1.9), nz, ground_m, 3.0)
+			var bw := float(g[1]) - float(g[0])
+			_boulder(Vector3((float(g[0]) + float(g[1])) * 0.5, 0.05, 0), Vector3(bw * (0.62 if bw < 1.5 else 0.56), float(g[2]), 1.9), nz, ground_m, 3.0 + float(g[0]))
 			continue
 		if not runs.is_empty() and absf(float(runs[runs.size() - 1][1]) - float(g[0])) < 0.01:
 			runs[runs.size() - 1][1] = float(g[1])
 		else:
 			runs.append([float(g[0]), float(g[1])])
+	var surge_m := _cave_mat(Color(0.36, 0.34, 0.31), 0.6, 0.3)
+	surge_m.set_shader_parameter("water_y", -0.45)   # 파도가 쓸고 가는 바닥: 촉촉하게 젖음
+	surge_m.set_shader_parameter("wet_h", 0.8)
 	for r: Array in runs:
-		_ground_mesh(float(r[0]), float(r[1]), 0.0, nz, ground_m)
+		_ground_mesh(float(r[0]), float(r[1]), 0.0, nz, surge_m if float(r[0]) >= SURGE_X1 - 0.1 else ground_m)
 	# 웅덩이: 잔물결 · 물가 거품이 이는 물 + 앞쪽 물에 잠긴 바위 턱
 	for pt: Array in PITS:
 		var x0 := float(pt[0])
@@ -400,7 +432,7 @@ func _build_cave() -> void:
 		Vector2(-3.2, 7.4), Vector2(-2.0, 8.5), Vector2(-0.4, 9.1), Vector2(1.4, 9.3), Vector2(3.2, 9.2), Vector2(4.6, 8.8)]
 	var aamps := [0.3, 0.55, 0.7, 0.75, 0.75, 0.7, 0.6, 0.55, 0.5, 0.5, 0.4]
 	var am := MeshInstance3D.new()
-	am.mesh = _sweep(-10.0, 112.0, 0.32, arch, aamps, nz, false)
+	am.mesh = _sweep(-10.0, 167.0, 0.32, arch, aamps, nz, false)
 	am.material_override = wall_m
 	world3.add_child(am)
 	# 입구 쪽 막힌 바위 · 출구 쪽 동굴 입구 테두리
@@ -411,11 +443,11 @@ func _build_cave() -> void:
 		for h in 2:
 			var ap: Vector2 = (arch[k] as Vector2).lerp(arch[k + 1], h * 0.5)
 			var sz := rr.randf_range(1.5, 2.1)
-			_boulder(Vector3(112.4 + rr.randf_range(-0.3, 0.3), ap.y, ap.x - 0.4), Vector3(sz * 0.9, sz, sz), nz, wall_m, 40.0 + k * 2 + h)
-	_boulder(Vector3(112.0, 0.0, 2.6), Vector3(1.2, 1.6, 1.0), nz, ground_m, 55.0)
+			_boulder(Vector3(167.4 + rr.randf_range(-0.3, 0.3), ap.y, ap.x - 0.4), Vector3(sz * 0.9, sz, sz), nz, wall_m, 40.0 + k * 2 + h)
+	_boulder(Vector3(167.0, 0.0, 2.6), Vector3(1.2, 1.6, 1.0), nz, ground_m, 55.0)
 	# 뒤쪽 바닥의 바위 · 석순
 	var x := -6.0
-	while x < 110.0:
+	while x < 165.0:
 		if rr.randf() < 0.55:
 			_boulder(Vector3(x, rr.randf_range(-0.2, 0.3), rr.randf_range(-2.9, -2.2)), Vector3(rr.randf_range(0.5, 1.1), rr.randf_range(0.4, 0.9), rr.randf_range(0.4, 0.7)), nz, ground_m, x)
 		if rr.randf() < 0.3:
@@ -423,7 +455,7 @@ func _build_cave() -> void:
 		x += rr.randf_range(1.8, 3.2)
 	# 종유석 무리 (천장)
 	x = -8.0
-	while x < 110.0:
+	while x < 165.0:
 		var n := rr.randi_range(2, 5)
 		for k in n:
 			var zz := rr.randf_range(-2.2, 1.8)
@@ -431,15 +463,15 @@ func _build_cave() -> void:
 			_stalactite(Vector3(x + rr.randf_range(-0.8, 0.8), top, zz), rr.randf_range(0.5, 2.2), rr.randf_range(0.08, 0.26), wall_m, drop_m)
 		x += rr.randf_range(2.5, 4.5)
 	# 벽 횃불 (바위 턱 위) · 천장에 밧줄로 매단 랜턴
-	for tx: float in [2.0, 24.0, 33.5, 58.0, 74.0, 90.0, 99.0]:
+	for tx: float in [2.0, 24.0, 33.5, 58.0, 74.0, 90.0, 99.0, 108.0, 117.4, 134.0, 145.0, 157.0]:
 		torch(world3, Vector3(tx, -0.05, -2.3), 1.7)
 	var rope := std_mat(Color(0.45, 0.36, 0.24), 0.95)
-	for lx: float in [14.0, 44.0, 66.0, 82.0]:
+	for lx: float in [14.0, 44.0, 66.0, 82.0, 111.0, 125.0, 139.5, 151.0]:
 		var ln := rr.randf_range(2.6, 3.6)
 		box(Vector3(0.04, ln, 0.04), rope, Vector3(lx, 9.0 - ln * 0.5, -1.4), Basis(), world3)
 		lantern(world3, Vector3(lx, 9.0 - ln - 0.3, -1.4))
 	# 천장 틈 빛줄기
-	for lx: float in [12.0, 41.0, 62.0, 90.0]:
+	for lx: float in [12.0, 41.0, 62.0, 90.0, 121.0, 146.0]:
 		_light_shaft(Vector3(lx, 0, 0))
 	# 난파선 잔해: 부목 웅덩이 뒤쪽에 비스듬히 박힌 부러진 선체 판자 · 돛대 토막
 	var wreck := wood_mat(Color(0.33, 0.25, 0.17), Vector3(1, 0, 0), 0.6)
@@ -454,7 +486,7 @@ func _build_cave() -> void:
 	add_mesh(mastp, wood_mat(Color(0.38, 0.27, 0.17), Vector3(0, 1, 0), 0.5), Vector3(47.5, WATER_Y + 1.3, -2.5), Basis(Vector3.BACK, 0.75), world3)
 	# 잡동사니: 낡은 통 · 상자 (뒤쪽)
 	var crate_m := wood_mat(Color(0.45, 0.34, 0.22), Vector3(1, 0, 0), 0.4)
-	for cx: float in [-4.5, 22.0, 54.0, 71.5, 102.5]:
+	for cx: float in [-4.5, 22.0, 54.0, 71.5, 106.5, 133.5, 158.5]:
 		barrel(world3, Vector3(cx, 0.0, -1.85), 0.34, 0.85, Color(0.36, 0.25, 0.15))
 		box(Vector3(0.7, 0.6, 0.7), crate_m, Vector3(cx + 0.8, 0.3, -2.0), Basis(Vector3.UP, 0.3), world3)
 	# 출구: 밝은 바다와 하늘
@@ -475,12 +507,12 @@ func _build_cave() -> void:
 	sky.albedo_color = Color(1, 1, 1)
 	var sq := QuadMesh.new()
 	sq.size = Vector2(14, 14)
-	add_mesh(sq, sky, Vector3(113.6, 3.0, -0.5), Basis(Vector3.UP, -PI / 2), world3)
+	add_mesh(sq, sky, Vector3(168.6, 3.0, -0.5), Basis(Vector3.UP, -PI / 2), world3)
 	var glow := OmniLight3D.new()
 	glow.light_color = Color(1.0, 0.95, 0.82)
 	glow.light_energy = 4.0
 	glow.omni_range = 24.0
-	glow.position = Vector3(113, 4, 2)
+	glow.position = Vector3(168, 4, 2)
 	world3.add_child(glow)
 	# 결승: 나무 기둥 두 개 + 깃발 줄 + 바닥 흰 줄
 	var post := wood_mat(Color(0.42, 0.3, 0.18), Vector3(0, 1, 0), 0.2)
@@ -674,14 +706,9 @@ func _build_hazards() -> void:
 		spray.scale_amount_min = 0.4
 		spray.scale_amount_max = 1.4
 		spray.gravity = Vector3(0, -9.8, 0)
-		var sm := SphereMesh.new()
-		sm.radius = 0.06
-		sm.height = 0.12
-		var smat := std_mat(Color(0.85, 0.95, 1.0), 0.05)
-		smat.albedo_color = Color(0.85, 0.95, 1.0, 0.7)
-		smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		sm.material = smat
+		var sm := _mist_quad(0.26)
 		spray.mesh = sm
+		spray.color_ramp = _fade_ramp()
 		world3.add_child(spray)
 		var bub := CPUParticles3D.new()
 		bub.amount = 14
@@ -693,6 +720,7 @@ func _build_hazards() -> void:
 		bub.initial_velocity_max = 1.4
 		bub.gravity = Vector3(0, -3.0, 0)
 		bub.mesh = sm
+		bub.color_ramp = _fade_ramp()
 		bub.position = Vector3(gx, 0.05, 0)
 		world3.add_child(bub)
 		_geysers.append({"col": ci, "spray": spray, "bub": bub, "x": gx})
@@ -810,11 +838,8 @@ func _build_tide() -> void:
 	_tide_foam.initial_velocity_min = 1.0
 	_tide_foam.initial_velocity_max = 2.0
 	_tide_foam.gravity = Vector3(0, -8, 0)
-	var sm := SphereMesh.new()
-	sm.radius = 0.05
-	sm.height = 0.1
-	sm.material = fm
-	_tide_foam.mesh = sm
+	_tide_foam.mesh = _mist_quad(0.24)
+	_tide_foam.color_ramp = _fade_ramp()
 	_tide.add_child(_tide_foam)
 	_tide.position = Vector3(_tide_x(), 0.3, 0)
 
@@ -920,6 +945,13 @@ func _setup_game() -> void:
 			"wade": false, "tx": -3.5 + i * 1.1, "ty": 0.0, "cp": 0.0, "p": p}
 		_ai[s] = {"wait": 0.0, "react": 0.0, "jumped": 0.0}
 		scores[s] = 0.0
+	if OS.get_environment("CR_WARP") != "":   # 개발용: 특정 구간부터 찍어 보기
+		var wx := float(OS.get_environment("CR_WARP"))
+		var k := 0
+		for s in _P:
+			_P[s]["x"] = wx + k * 0.6
+			_P[s]["tx"] = wx + k * 0.6
+			k += 1
 	_pose_all(0.0)
 	_place_cam(true)
 
@@ -1171,6 +1203,8 @@ func _hazards(s: int, P: Dictionary) -> void:
 		if ph > ROCK_T - 0.18 and absf(float(ROCKS[i][0]) - x) < 0.75 and y < 1.2:
 			_hit(s, P, -3.0, 3.0, 0.9)
 			return
+	if _new_hazards(s, P):
+		return
 	# 게 (땅에서만, 위로 뛰어넘으면 안전)
 	for i in CRABS.size():
 		if absf(_crab_x(i, _el) - x) < 0.55 and y < 0.45:
@@ -1203,10 +1237,19 @@ func _separate() -> void:
 			var dx := float(B["x"]) - float(A["x"])
 			if absf(dx) < 0.55 and absf(float(B["y"]) - float(A["y"])) < 0.9:
 				var push := (0.55 - absf(dx)) * 0.5 * (signf(dx) if dx != 0.0 else 1.0)
+				# 낭떠러지 끝에 서 있는 쪽은 밀려 떨어지지 않음 (반대쪽이 대신 비켜남)
+				var a_ok := not bool(A["ground"]) or _support(float(A["x"]) - push, float(A["y"]), _el)
+				var b_ok := not bool(B["ground"]) or _support(float(B["x"]) + push, float(B["y"]), _el)
+				var pa := push if a_ok else 0.0
+				var pb := push if b_ok else 0.0
+				if not a_ok and b_ok:
+					pb = push * 2.0
+				elif not b_ok and a_ok:
+					pa = push * 2.0
 				if _sim_here(ks[i]):
-					A["x"] = float(A["x"]) - push
+					A["x"] = float(A["x"]) - pa
 				if _sim_here(ks[j]):
-					B["x"] = float(B["x"]) + push
+					B["x"] = float(B["x"]) + pb
 
 
 ## 방장: 누가 부목 위에 서면 1초 뒤 가라앉기 시작 (다 떠오르면 다시 밟힐 수 있음)
@@ -1318,6 +1361,7 @@ func _show_hazards(delta: float) -> void:
 		n.rotation.y = sin(_el * 3.0 + i) * 0.15
 	for k in _pool_lights.size():
 		(_pool_lights[k] as OmniLight3D).light_energy = 0.8 + sin(_el * 2.3 + k) * 0.2 + sin(_el * 5.1 + k * 2.0) * 0.12
+	_show_new_hazards(delta)
 	var tx := _tide_x()
 	_tide.position.x = tx
 	_tide.position.y = 0.28 + sin(_el * 2.0) * 0.04
@@ -1401,9 +1445,30 @@ func _jump_target(P: Dictionary) -> int:
 					busy = true
 			if busy:
 				continue
+		if _eel_between(float(P["x"]), (float(c[0]) + float(c[1])) * 0.5):
+			continue   # 그 사이에서 곧 곰치가 튀어오름 → 기다림
 		if _sim_jump(P, id):
 			return id
 	return -99
+
+
+## 뛰어서 노릴 곳: 좁은 발판은 가운데, 넓은 땅은 뛴 자리보다 조금 앞 (뒤로 돌아가지 않게)
+func _aim(a: Array, xs: float) -> float:
+	var x0 := float(a[0])
+	var x1 := float(a[1])
+	if x1 - x0 < 2.5:
+		return (x0 + x1) * 0.5
+	return clampf(maxf(x0 + 0.9, xs + 1.4), x0 + 0.45, x1 - 0.45)
+
+
+## 공중 조향: 발판 가운데로 가되, 지금 속도로 멈추는 거리 안에 들어오면 손을 놔서 넘어가지 않음
+func _steer(cx: float, x: float, vx: float) -> float:
+	var dx := cx - x
+	if absf(dx) < 0.2:
+		return 0.0
+	if signf(vx) == signf(dx) and absf(dx) <= vx * vx / (2.0 * ACC_A) + 0.05:
+		return 0.0
+	return signf(dx)
 
 
 ## 공중에서 발판 id 가운데로 몸을 틀며 뛰었을 때 거기 안쪽에 내리는지 (그 발판만 따라가며 계산 → 가벼움)
@@ -1419,8 +1484,8 @@ func _sim_jump(P: Dictionary, id: int) -> bool:
 		var a := _solid_one(id, t)
 		if a.is_empty():
 			return false
-		var cx := (float(a[0]) + float(a[1])) * 0.5
-		var d := 0.0 if absf(cx - x) < 0.25 else signf(cx - x)
+		var cx := _aim(a, float(P["x"]))
+		var d := _steer(cx, x, vx)
 		vx = move_toward(vx, d * RUN, ACC_A * dt)
 		vy -= GRAV * dt
 		var nx := x + vx * dt
@@ -1428,7 +1493,7 @@ func _sim_jump(P: Dictionary, id: int) -> bool:
 		if vy <= 0.0 and nx + HW * 0.7 >= float(a[0]) and nx - HW * 0.7 <= float(a[1]):
 			var top := float(a[2])
 			if y >= top - 0.15 and ny <= top + 0.02:
-				return nx > float(a[0]) + 0.25 and nx < float(a[1]) - 0.25
+				return nx > float(a[0]) + 0.25 and nx < float(a[1]) - 0.25 and nx > float(P["x"]) + 0.3
 		if ny < FALL_Y:
 			return false
 		x = nx
@@ -1464,6 +1529,8 @@ func _think(s: int, delta: float) -> Array:
 	var sk := skill(P["p"]) / 2.0
 	if P["done"]:
 		return [1.0, false]
+	if OS.get_environment("CR_FREEZE") != "":   # 개발용: 장애물 연출만 찍어 보기
+		return [0.0, false]
 	if OS.get_environment("MG_DEBUG") != "" and fmod(_t3, 2.0) < delta:
 		print("CRDBG t=%.1f s=%d x=%.1f y=%.2f g=%s c=%d st=%.1f f=%.1f" % [_el, s, float(P["x"]), float(P["y"]), str(P["ground"]), int(P["carrier"]), float(P["stun"]), float(P["fall"])])
 	a["jumped"] = maxf(0.0, float(a["jumped"]) - delta)
@@ -1478,10 +1545,24 @@ func _think(s: int, delta: float) -> Array:
 		if tid != -99:
 			for so: Array in _solids(_el):
 				if int(so[4]) == tid:
-					var cx := (float(so[0]) + float(so[1])) * 0.5
-					return [0.0 if absf(cx - x) < 0.25 else signf(cx - x), false]
+					var cx := _aim(so, float(a.get("jx", x)))
+					return [_steer(cx, x, float(P["vx"])), false]
 		return [1.0, false]
 	a["tgt"] = -99
+	# 파도: 높은 바위 위에서 파도가 지나갈 때까지 기다림 · 낮은 곳에서 피할 수 없으면 제때 뛰어넘음
+	if x > SURGE_X1 - 0.5 and x < SURGE_X0:
+		a["sg_t"] = float(a.get("sg_t", 0.0)) - delta
+		if float(a["sg_t"]) <= 0.0:
+			a["sg_t"] = 0.08
+			a["sg_eta"] = _surge_eta(x, _el)
+		var eta := float(a.get("sg_eta", INF)) - (0.08 - float(a["sg_t"]))
+		if y > 1.0 and eta < lerpf(1.6, 2.6, sk):
+			return [0.0, false]
+		if y < 0.6 and eta < 0.32 and eta > 0.12 and rng.randf() < lerpf(0.5, 0.95, sk):
+			return [1.0, true]
+		# 다음 바위까지 못 갈 것 같으면 지금 바위에서 안 내려감
+		if y > 1.0 and eta < 3.0 and sk > 0.3:
+			return [0.0, false]
 	# 부목 위에 서 있으면 꾸물대지 않음
 	var on_log := int(P["carrier"]) >= 10
 	var vx := maxf(float(P["vx"]), 0.0)
@@ -1496,18 +1577,25 @@ func _think(s: int, delta: float) -> Array:
 		if tid != -99:
 			jump = true
 			a["tgt"] = tid
+			a["jx"] = x
 			if OS.get_environment("MG_DEBUG") != "":
 				print("CRJ t=%.2f s=%d x=%.2f y=%.2f vx=%.2f car=%d tgt=%d" % [_el, s, x, y, float(P["vx"]), int(P["carrier"]), tid])
 		elif on_log and not _support(x + 0.5, y, _el):
 			jump = true   # 부목이 곧 가라앉으니 어쩔 수 없이
-		elif rng.randf() < lerpf(0.02, 0.0, sk):
-			jump = true   # 무모하게
+		elif rng.randf() < lerpf(0.12, 0.0, sk) * delta:
+			jump = true   # 무모하게 (실력 낮으면 가끔)
 		else:
 			dir = 0.0
 	# 턱이 있으면 뜀
 	for g: Array in GROUND:
 		if float(g[2]) > y + 0.3 and float(g[0]) - x > 0.0 and float(g[0]) - x < 0.8:
 			jump = true
+	# 술통: 굴러오면 뛰어넘음
+	if x > BARREL_X1 - 1.0 and x < BARREL_X0:
+		for b: Array in _barrels_at(_el + 0.12):
+			var d := x - float(b[1])
+			if d < -0.25 and d > -lerpf(1.2, 1.7, sk):
+				jump = true
 	# 게: 가까우면 뛰어넘음
 	for i in CRABS.size():
 		var cx := _crab_x(i, _el + 0.15)
@@ -1593,3 +1681,406 @@ func _score_text(p: Dictionary) -> String:
 	if P["done"]:
 		return "%.1fs" % float(P["time"])
 	return "%dm" % maxi(0, int(round(FINISH_X - float(P["x"]))))
+
+
+# ── 새 구간: 굴러오는 술통 · 곰치 징검다리 · 밀려드는 파도 ─────────
+func _hh(k: int) -> float:
+	return fposmod(sin(float(k) * 12.9898 + 4.1) * 43758.5453, 1.0)
+
+
+## 지금 굴러오는 술통들 [번호, x]
+func _barrels_at(t: float) -> Array:
+	var out := []
+	var kn := int(floor(t / BARREL_T))
+	for k in range(kn - 6, kn + 1):
+		if k < 1:
+			continue
+		var ts := float(k) * BARREL_T + _hh(k) * 0.7
+		if t < ts:
+			continue
+		var v := 4.4 + _hh(k + 50) * 1.6
+		var x := BARREL_X0 - v * (t - ts)
+		if x > BARREL_X1:
+			out.append([k, x])
+	return out
+
+
+## 곰치: 위상 (0~EEL_T). EEL_WARN~EEL_LEAP 물보라, EEL_LEAP~ 튀어오름
+func _eel_ph(i: int, t: float) -> float:
+	return fposmod(t + float(EELS[i][1]), EEL_T)
+
+
+## 튀어오른 곰치 몸 위치 (f: 0~1 도약 진행, 꼬리 쪽은 f 를 조금 늦춰서)
+func _eel_at(i: int, f: float) -> Vector2:
+	f = clampf(f, 0.0, 1.0)
+	return Vector2(float(EELS[i][0]) + (f - 0.5) * 0.8, WATER_Y - 0.4 + 3.1 * sin(PI * f))
+
+
+## 파도 앞머리 x (밀려오는 중이 아니면 INF)
+func _surge_x(t: float) -> float:
+	if OS.get_environment("CR_SURGE_AT") != "":   # 개발용: 파도 모습 찍기
+		return float(OS.get_environment("CR_SURGE_AT"))
+	if t < 4.0:
+		return INF
+	var ph := fposmod(t - 4.0, SURGE_T)
+	if ph < SURGE_WARN:
+		return INF
+	var x := SURGE_X0 - SURGE_V * (ph - SURGE_WARN)
+	return x if x > SURGE_X1 - 1.5 else INF
+
+
+func _surge_warning(t: float) -> bool:
+	return t >= 4.0 and fposmod(t - 4.0, SURGE_T) < SURGE_WARN
+
+
+## 파도가 x 에 닿기까지 남은 시간 (3초 안에 안 오면 INF)
+func _surge_eta(x: float, t: float) -> float:
+	var k := 0.0
+	while k < 3.0:
+		var sx := _surge_x(t + k)
+		if sx != INF and sx <= x + 0.3 and sx > x - 1.0:
+			return k
+		k += 0.05
+	return INF
+
+
+func _build_new_hazards() -> void:
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 77
+	# 술통 더미 (구간 끝 바위 턱 위) + 술통이 굴러 나오는 판자 경사로
+	var ledge_m := _cave_mat(Color(0.38, 0.35, 0.31), 0.3, 0.4)
+	var nz := FastNoiseLite.new()
+	nz.seed = 19
+	nz.frequency = 0.45
+	_boulder(Vector3(BARREL_X0 + 0.9, 0.2, -1.2), Vector3(1.4, 1.6, 1.6), nz, ledge_m, 101.0)
+	for k in 6:
+		var b := barrel(world3, Vector3(BARREL_X0 + 0.5 + (k % 3) * 0.7, 1.6 + (k / 3) * 0.85, -1.4 + rr.randf_range(-0.2, 0.2)), 0.38, 0.9, Color(0.36, 0.24, 0.14))
+		b.rotation.y = rr.randf_range(-0.3, 0.3)
+	var plank := wood_mat(Color(0.42, 0.31, 0.2), Vector3(1, 0, 0), 0.4)
+	box(Vector3(2.4, 0.08, 1.2), plank, Vector3(BARREL_X0 - 0.4, 0.55, -0.2), Basis(Vector3.BACK, -0.42), world3)
+	# 굴러오는 술통 (돌려 쓰는 8개)
+	for k in 8:
+		var root := Node3D.new()
+		root.visible = false
+		world3.add_child(root)
+		var holder := Node3D.new()
+		root.add_child(holder)
+		var b := barrel(holder, Vector3(0, -0.45, 0), BARREL_R, 0.9, [Color(0.4, 0.26, 0.14), Color(0.34, 0.22, 0.12), Color(0.45, 0.3, 0.17)][k % 3])
+		holder.rotation.x = PI / 2   # 옆으로 눕힘 (굴러가는 축 = z)
+		b.position = Vector3(0, -0.45, 0)
+		_barrel_nodes.append({"root": root, "holder": holder})
+	# 곰치 (겹쳐 이은 몸통 마디 + 머리: 벌린 입 · 눈) — 얼룩덜룩한 올리브빛, 물에 젖어 번들
+	var skin := std_mat(Color(0.2, 0.22, 0.1), 0.3)
+	skin.metallic_specular = 0.9
+	var mott := FastNoiseLite.new()
+	mott.frequency = 0.09
+	var mt := NoiseTexture2D.new()
+	mt.noise = mott
+	mt.width = 128
+	mt.height = 128
+	mt.seamless = true
+	mt.color_ramp = Gradient.new()
+	mt.color_ramp.set_color(0, Color(0.55, 0.6, 0.35))
+	mt.color_ramp.set_color(1, Color(1.4, 1.35, 0.8))
+	skin.albedo_texture = mt
+	skin.uv1_scale = Vector3(2, 2, 2)
+	var mouth := std_mat(Color(0.35, 0.08, 0.06), 0.6)
+	var eye_m := std_mat(Color(0.85, 0.75, 0.2), 0.2)
+	for i in EELS.size():
+		var segs := []
+		for k in 16:
+			var sm := CapsuleMesh.new()
+			var r := lerpf(0.17, 0.05, pow(float(k) / 15.0, 1.3))
+			sm.radius = r
+			sm.height = maxf(0.3, r * 2.2)
+			sm.radial_segments = 10
+			sm.rings = 2
+			var mi := add_mesh(sm, skin, Vector3(0, -5, 0), Basis(), world3)
+			mi.scale = Vector3(1.0, 1.0, 0.85)   # 옆으로 납작한 몸
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			segs.append(mi)
+		var head := Node3D.new()
+		world3.add_child(head)
+		var hm := SphereMesh.new()
+		hm.radius = 0.22
+		hm.height = 0.36
+		var hi := add_mesh(hm, skin, Vector3.ZERO, Basis(), head)
+		hi.scale = Vector3(1.0, 0.9, 1.4)
+		for sd: float in [-1.0, 1.0]:
+			var jaw := BoxMesh.new()
+			jaw.size = Vector3(0.24, 0.05, 0.32)
+			add_mesh(jaw, mouth, Vector3(0, sd * 0.07, 0.22), Basis(Vector3.RIGHT, sd * 0.35), head)
+			var eye := SphereMesh.new()
+			eye.radius = 0.04
+			eye.height = 0.08
+			add_mesh(eye, eye_m, Vector3(sd * 0.13, 0.08, 0.12), Basis(), head)
+		head.visible = false
+		var bub := CPUParticles3D.new()
+		bub.amount = 24
+		bub.lifetime = 0.5
+		bub.emitting = false
+		bub.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		bub.emission_sphere_radius = 0.35
+		bub.direction = Vector3(0, 1, 0)
+		bub.spread = 30.0
+		bub.initial_velocity_min = 0.6
+		bub.initial_velocity_max = 1.6
+		bub.gravity = Vector3(0, -4, 0)
+		bub.mesh = _mist_quad(0.2)
+		bub.color_ramp = _fade_ramp()
+		bub.position = Vector3(float(EELS[i][0]), WATER_Y + 0.05, 0)
+		world3.add_child(bub)
+		_eels.append({"segs": segs, "head": head, "bub": bub, "was": false})
+	# 밀려드는 파도: 물 덩어리 + 앞머리 거품 + 물보라
+	_surge = Node3D.new()
+	_surge.visible = false
+	world3.add_child(_surge)
+	# 부서지는 파도 단면을 동굴 폭으로 쓸어 만든 물 덩어리 (앞머리는 말려 넘어가며 하얗게 부서짐)
+	var prof := [Vector2(-0.3, 0.0), Vector2(0.05, 0.2), Vector2(0.28, 0.6), Vector2(0.34, 1.0), Vector2(0.2, 1.3), Vector2(-0.05, 1.42),
+		Vector2(0.25, 1.55), Vector2(0.75, 1.42), Vector2(1.5, 1.05), Vector2(2.7, 0.65), Vector2(4.3, 0.38), Vector2(6.0, 0.18), Vector2(7.5, 0.0)]
+	var foamy := [0.85, 0.45, 0.1, 0.25, 0.7, 0.95, 0.9, 0.45, 0.12, 0.04, 0.04, 0.1, 0.2]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var nzs := 16
+	for zi in nzs:
+		var za := lerpf(-2.4, 2.4, float(zi) / nzs)
+		var zb := lerpf(-2.4, 2.4, float(zi + 1) / nzs)
+		for pi in prof.size() - 1:
+			if true:
+				var quad := [[pi, za], [pi + 1, za], [pi + 1, zb], [pi, za], [pi + 1, zb], [pi, zb]]
+				for v: Array in quad:
+					var k := int(v[0])
+					var z := float(v[1])
+					var pp: Vector2 = prof[k]
+					# 앞머리 높이 · 위치가 동굴 폭을 따라 조금씩 다름
+					var wob := sin(z * 1.7 + 0.6) * 0.12 + sin(z * 3.9) * 0.05
+					var hy := pp.y * (1.0 + wob * 0.8)
+					var c := lerpf(0.0, 1.0, float(foamy[k]))
+					st.set_color(Color(0.04, 0.17, 0.19).lerp(Color(0.86, 0.92, 0.93), c * c))
+					st.add_vertex(Vector3(pp.x + wob * 0.6, hy, z))
+	# 앞 · 뒤 단면 (물 덩어리처럼 보이게 바닥까지 채움)
+	for zc: float in [2.4, -2.4]:
+		var wob := sin(zc * 1.7 + 0.6) * 0.12 + sin(zc * 3.9) * 0.05
+		for k in prof.size() - 1:
+			var p0: Vector2 = prof[k]
+			var p1: Vector2 = prof[k + 1]
+			var a0 := Vector3(p0.x + wob * 0.6, p0.y * (1.0 + wob * 0.8), zc)
+			var a1 := Vector3(p1.x + wob * 0.6, p1.y * (1.0 + wob * 0.8), zc)
+			var b0 := Vector3(a0.x, 0.0, zc)
+			var b1 := Vector3(a1.x, 0.0, zc)
+			var c0 := Color(0.04, 0.17, 0.19).lerp(Color(0.86, 0.92, 0.93), float(foamy[k]) * float(foamy[k]))
+			var c1 := Color(0.04, 0.17, 0.19).lerp(Color(0.86, 0.92, 0.93), float(foamy[k + 1]) * float(foamy[k + 1]))
+			var cb := Color(0.03, 0.12, 0.14)
+			for v: Array in [[a0, c0], [a1, c1], [b1, cb], [a0, c0], [b1, cb], [b0, cb]]:
+				st.set_color(v[1])
+				st.add_vertex(v[0])
+	st.generate_normals()
+	var wm := StandardMaterial3D.new()
+	wm.vertex_color_use_as_albedo = true
+	wm.albedo_color = Color(1, 1, 1, 0.82)
+	wm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	wm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	wm.roughness = 0.06
+	wm.metallic_specular = 1.0
+	wm.rim_enabled = true
+	wm.rim = 0.25
+	add_mesh(st.commit(), wm, Vector3.ZERO, Basis(), _surge).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_surge_foam = CPUParticles3D.new()
+	_surge_foam.amount = 120
+	_surge_foam.lifetime = 0.6
+	_surge_foam.local_coords = false
+	_surge_foam.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	_surge_foam.emission_box_extents = Vector3(0.2, 0.25, 2.2)
+	_surge_foam.direction = Vector3(-1, 1.2, 0)
+	_surge_foam.spread = 30.0
+	_surge_foam.initial_velocity_min = 3.0
+	_surge_foam.initial_velocity_max = 6.0
+	_surge_foam.gravity = Vector3(0, -9, 0)
+	_surge_foam.scale_amount_min = 0.6
+	_surge_foam.scale_amount_max = 1.8
+	var fm := _mist_quad(0.32)
+	_surge_foam.mesh = fm
+	_surge_foam.color_ramp = _fade_ramp()
+	_surge_foam.position = Vector3(0.1, 1.05, 0)
+	_surge.add_child(_surge_foam)
+	# 파도가 들이치는 동굴 안쪽 틈 (경고 때 물보라가 튐)
+	_surge_spray = CPUParticles3D.new()
+	_surge_spray.amount = 60
+	_surge_spray.lifetime = 0.9
+	_surge_spray.emitting = false
+	_surge_spray.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	_surge_spray.emission_box_extents = Vector3(0.3, 0.4, 2.0)
+	_surge_spray.direction = Vector3(-0.6, 1, 0)
+	_surge_spray.spread = 35.0
+	_surge_spray.initial_velocity_min = 2.5
+	_surge_spray.initial_velocity_max = 5.0
+	_surge_spray.gravity = Vector3(0, -9, 0)
+	_surge_spray.mesh = fm
+	_surge_spray.color_ramp = _fade_ramp()
+	_surge_spray.position = Vector3(SURGE_X0 + 0.5, 0.4, 0)
+	world3.add_child(_surge_spray)
+
+
+func _show_new_hazards(delta: float) -> void:
+	# 술통
+	var bs := _barrels_at(_el)
+	for k in _barrel_nodes.size():
+		var B: Dictionary = _barrel_nodes[k]
+		var root: Node3D = B["root"]
+		if k < bs.size():
+			var bx := float(bs[k][1])
+			root.visible = true
+			root.position = Vector3(bx, BARREL_R + absf(sin(bx * 2.3)) * 0.04, 0.1)
+			(B["holder"] as Node3D).rotation = Vector3(PI / 2, 0, 0)
+			root.rotation.z = (BARREL_X0 - bx) / BARREL_R
+		else:
+			root.visible = false
+	# 술통이 바위에 부딪혀 박살 (방금 사라진 술통)
+	var kn := int(floor(_el / BARREL_T))
+	for k in range(kn - 6, kn + 1):
+		if k < 1 or _smashed.has(k):
+			continue
+		var ts := float(k) * BARREL_T + _hh(k) * 0.7
+		var v := 4.4 + _hh(k + 50) * 1.6
+		if _el > ts and BARREL_X0 - v * (_el - ts) <= BARREL_X1:
+			_smashed[k] = true
+			debris(Vector3(BARREL_X1, 0.4, 0.1), Color(0.4, 0.27, 0.15), 14)
+			if absf(BARREL_X1 - _cam_x) < 14.0:
+				sfx("thud", 45)
+	# 곰치
+	for i in _eels.size():
+		var E: Dictionary = _eels[i]
+		var ph := _eel_ph(i, _el)
+		(E["bub"] as CPUParticles3D).emitting = ph > EEL_WARN and ph < EEL_LEAP
+		var leaping := ph >= EEL_LEAP
+		var head: Node3D = E["head"]
+		if leaping:
+			var f := (ph - EEL_LEAP) / (EEL_T - EEL_LEAP)
+			var segs: Array = E["segs"]
+			for k in segs.size():
+				var p := _eel_at(i, f - 0.021 * (k + 1))
+				var pn := _eel_at(i, f - 0.021 * k)
+				var sg: MeshInstance3D = segs[k]
+				sg.visible = p.y > WATER_Y - 0.25
+				sg.position = Vector3(p.x, p.y, 0.15)
+				var ang := atan2(pn.y - p.y, pn.x - p.x) - PI / 2.0 + sin(_el * 9.0 + k * 0.7) * 0.06
+				sg.basis = Basis(Vector3.BACK, ang).scaled(Vector3(1.0, 1.0, 0.85))
+			var hp := _eel_at(i, f)
+			var hn := _eel_at(i, f + 0.02)
+			head.visible = hp.y > WATER_Y - 0.25
+			head.position = Vector3(hp.x, hp.y, 0.15)
+			head.rotation = Vector3(-atan2(hn.y - hp.y, absf(hn.x - hp.x) + 0.001), PI / 2, 0)
+			if not bool(E["was"]):
+				splash(Vector3(_eel_at(i, 0.0).x, WATER_Y + 0.1, 0.15), 22, 0.7)
+			if f > 0.93 and not bool(E.get("end", false)):
+				E["end"] = true
+				splash(Vector3(_eel_at(i, 1.0).x, WATER_Y + 0.1, 0.15), 22, 0.7)
+		else:
+			E["end"] = false
+			head.visible = false
+			for sg: MeshInstance3D in E["segs"]:
+				sg.visible = false
+		E["was"] = leaping
+	# 파도
+	var sx := _surge_x(_el)
+	_surge_spray.emitting = _surge_warning(_el)
+	if _surge_warning(_el) and not _surge_warned:
+		_surge_warned = true
+		if absf(SURGE_X0 - _cam_x) < 30.0:
+			sfx("splash", 40)
+			shake(0.15)
+	if sx == INF:
+		_surge.visible = false
+		_surge_foam.emitting = false
+		if not _surge_warning(_el):
+			_surge_warned = false
+	else:
+		_surge.visible = true
+		_surge_foam.emitting = true
+		_surge.position = Vector3(sx, 0.0, 0)
+		# 끝에 다다르면 잦아들며 가라앉음
+		var fade := clampf((sx - SURGE_X1 + 1.5) / 3.0, 0.0, 1.0)
+		_surge.scale = Vector3(1.0, maxf(fade, 0.05), 1.0)
+		if not _surge_roar and absf(sx - _cam_x) < 16.0:
+			_surge_roar = true
+			sfx("whoosh", 120)
+	if sx == INF:
+		_surge_roar = false
+
+
+## 새 구간 장애물 판정 (이 PC 가 움직이는 말)
+func _new_hazards(s: int, P: Dictionary) -> bool:
+	var x := float(P["x"])
+	var y := float(P["y"])
+	# 술통: 땅 높이에서 닿으면 튕겨남 (뛰어넘으면 안전)
+	if x > BARREL_X1 - 0.5 and x < BARREL_X0 + 0.5:
+		for b: Array in _barrels_at(_el):
+			if absf(float(b[1]) - x) < 0.6 and y < 0.7:
+				if OS.get_environment("MG_DEBUG") != "": print("CRH barrel s=%d x=%.1f t=%.1f" % [s, x, _el])
+				_hit(s, P, -4.0, 4.5, 0.6)
+				return true
+	# 곰치: 머리에 물리면 웅덩이로 떨어짐
+	for i in EELS.size():
+		var ph := _eel_ph(i, _el)
+		if ph >= EEL_LEAP:
+			var f := (ph - EEL_LEAP) / (EEL_T - EEL_LEAP)
+			var hp := _eel_at(i, f)
+			if hp.distance_to(Vector2(x, y + 0.55)) < 0.5:
+				if OS.get_environment("MG_DEBUG") != "": print("CRH eel%d s=%d x=%.1f y=%.1f t=%.1f" % [i, s, x, y, _el])
+				_hit(s, P, -2.5, 2.5, 0.5)
+				return true
+	# 파도: 낮은 곳에 있으면 쓸려 밀려남 (높은 바위 위 · 뛰어오르면 안전)
+	var sx := _surge_x(_el)
+	if sx != INF and absf(sx - x) < 0.7 and y < 0.95 and x > SURGE_X1 - 1.0:
+		if OS.get_environment("MG_DEBUG") != "": print("CRH surge s=%d x=%.1f y=%.1f t=%.1f" % [s, x, y, _el])
+		_hit(s, P, -6.0, 3.5, 0.9)
+		return true
+	return false
+
+
+## x ~ x2 사이 곰치가 곧(0.9초 안) 튀어오르거나 튀어오르는 중인지
+func _eel_between(x: float, x2: float) -> bool:
+	for i in EELS.size():
+		var ex := float(EELS[i][0])
+		if ex < x - 0.5 or ex > x2 + 0.5:
+			continue
+		for dt: float in [0.0, 0.3, 0.6, 0.9]:
+			if _eel_ph(i, _el + dt) >= EEL_LEAP - 0.1:
+				return true
+	return false
+
+
+## 흐릿한 물보라 한 조각 (가운데 하얗고 가장자리로 갈수록 투명) — 카메라를 늘 바라봄
+static var _mist_tex: GradientTexture2D
+func _mist_quad(sz: float) -> QuadMesh:
+	if _mist_tex == null:
+		var g := Gradient.new()
+		g.set_color(0, Color(1, 1, 1, 0.95))
+		g.set_color(1, Color(1, 1, 1, 0.0))
+		g.add_point(0.45, Color(1, 1, 1, 0.55))
+		_mist_tex = GradientTexture2D.new()
+		_mist_tex.gradient = g
+		_mist_tex.fill = GradientTexture2D.FILL_RADIAL
+		_mist_tex.fill_from = Vector2(0.5, 0.5)
+		_mist_tex.fill_to = Vector2(0.5, 0.0)
+		_mist_tex.width = 64
+		_mist_tex.height = 64
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = _mist_tex
+	m.albedo_color = Color(0.86, 0.92, 0.95)
+	m.vertex_color_use_as_albedo = true
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.disable_receive_shadows = true
+	var q := QuadMesh.new()
+	q.size = Vector2(sz, sz)
+	q.material = m
+	return q
+
+
+func _fade_ramp() -> Gradient:
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 0.9))
+	g.set_color(1, Color(1, 1, 1, 0.0))
+	return g

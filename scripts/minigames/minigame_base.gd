@@ -288,7 +288,7 @@ func run() -> Array:
 			_net_send_state()
 			Net.broadcast({"k": "mg_end", "r": r.map(func(p: Dictionary) -> int: return int(p["slot"]))})
 	playing = false
-	sfx("start")
+	Audio.play("mg_end")
 	await _big_text("FINISH!", 1.2)
 	finished.emit(r)
 	return r
@@ -441,7 +441,7 @@ func _countdown() -> void:
 	for k in ["3", "2", "1"]:
 		Audio.play("tick")
 		await _big_text(k, 0.45)
-	Audio.play("start")
+	Audio.play("mg_start")
 	_big_text(tr("GAME START!"), 0.45, GOLD)
 	hint("51_mg_%s_play" % name.to_snake_case())
 

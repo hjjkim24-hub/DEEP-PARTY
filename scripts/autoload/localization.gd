@@ -329,7 +329,7 @@ const KO := {
 	# 미니게임
 	"Tutorial bonus! Here are a few extra coins so you can try buying a trophy.": "튜토리얼 보너스! 트로피를 사 볼 수 있게 동전을 조금 더 줄게요.",
 	"READY!": "준비 완료!",
-	"FINISH!": "끝!",
+	"FINISH!": "게임 종료!",
 	"GO!": "시작!",
 	"Controls: Mouse": "조작: 마우스",
 	"Controls: WASD / Arrow keys": "조작: WASD / 방향키",
@@ -459,7 +459,7 @@ const KO := {
 	"Press them one after the other": "두 키를 번갈아 누르기",
 	"Hold to cling on in a gust!": "꾹 = 돌풍 때 꽉 붙잡기!",
 	"CAVE RUN": "동굴 탈출",
-	"Race through the sea cave to the sunlit exit! Ride the moving planks, dodge the swinging anchors, hop across the sinking logs, watch out for water spouts, falling rocks and pinching crabs. Fall into the water and you'll be put back at the start of that section. The tide is coming in behind you - don't dawdle!": "바닷가 동굴을 달려 햇빛 비치는 출구까지! 움직이는 발판을 타고, 흔들리는 닻을 피하고, 가라앉는 부목을 건너고, 솟구치는 물기둥 · 떨어지는 돌 · 집게 든 게를 조심하세요. 물에 빠지면 그 구간 처음으로 돌아가요. 뒤에서 밀물이 따라오니 꾸물대지 마세요!",
+	"Race through the sea cave to the sunlit exit! Ride the moving planks, dodge the swinging anchors, hop across the sinking logs, watch out for water spouts, falling rocks and pinching crabs, jump the rolling barrels, mind the moray eels between the stepping stones and climb the rocks when a big wave surges in. Fall into the water and you'll be put back at the start of that section. The tide is coming in behind you - don't dawdle!": "바닷가 동굴을 달려 햇빛 비치는 출구까지! 움직이는 발판을 타고, 흔들리는 닻을 피하고, 가라앉는 부목을 건너고, 솟구치는 물기둥 · 떨어지는 돌 · 집게 든 게를 조심하세요. 굴러오는 술통은 뛰어넘고, 징검다리 사이에선 곰치가 튀어오르고, 큰 파도가 밀려오면 높은 바위 위로 피하세요! 물에 빠지면 그 구간 처음으로 돌아가요. 뒤에서 밀물이 따라오니 꾸물대지 마세요!",
 	"Get out of the cave first!": "동굴을 먼저 빠져나가라!",
 	"Jump": "점프",
 	"Climb the rope ladder to the flag at the very top of the mast! Press the two keys one after the other to climb - the same key twice makes you slip. Every pull uses arm strength: if it runs out you'll hang there catching your breath, so rest a moment before it empties. Some rungs are old and frayed: pause for a moment before stepping on them or they'll snap! When a GUST is coming, hold SPACE to cling on or you'll be blown down!": "밧줄 사다리를 타고 돛대 맨 꼭대기 깃발까지! 두 키를 번갈아 누르면 올라가요 (같은 키를 두 번 누르면 미끄러져요). 한 번 오를 때마다 팔 힘이 줄어요. 힘이 바닥나면 매달린 채 숨을 골라야 하니, 바닥나기 전에 잠깐씩 쉬세요. 색 바랜 낡은 디딤줄은 밟기 전에 잠깐 멈췄다 밟아야지, 그냥 밟으면 툭 끊어져요! 돌풍이 오면 스페이스를 꾹 눌러 붙잡아야 날려 내려가지 않아요!",
