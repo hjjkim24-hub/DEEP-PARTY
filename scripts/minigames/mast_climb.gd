@@ -559,7 +559,6 @@ func _snap_fx(s: int, wi: int) -> void:
 	var pawn: Node3D = L["pawn"]
 	sfx("thud", 90)
 	debris(pawn.global_position + Vector3(0, 0.4, 0.2), Color(0.66, 0.6, 0.5), 10)
-	float_at(pawn.global_position + Vector3(0, 1.5, 0.4), tr("SNAP!"), Color(1.0, 0.55, 0.3), 42)
 	if is_local(player_by_slot(s)):
 		shake(0.25)
 
@@ -570,7 +569,6 @@ func _creak_fx(s: int, _wi: int) -> void:
 	var pawn: Node3D = _lanes[s]["pawn"]
 	if is_local(player_by_slot(s)):
 		sfx("thud", 30)
-	float_at(pawn.global_position + Vector3(0, 1.4, 0.4), tr("Creak..."), Color(0.85, 0.8, 0.7), 28)
 
 
 func _slip_fx(s: int) -> void:
@@ -584,7 +582,6 @@ func _tired_fx(s: int) -> void:
 	var L: Dictionary = _lanes[s]
 	L["tired"] = TIRED_T
 	var pawn: Node3D = L["pawn"]
-	float_at(pawn.global_position + Vector3(0, 1.6, 0.4), tr("Out of breath!"), Color(1.0, 0.75, 0.4), 34)
 
 
 # ── 매 프레임 ───────────────────────────────────────────────
@@ -668,7 +665,6 @@ func _gust_hit(s: int, drop: float) -> void:
 	L["blown"] = 1.0
 	var pawn: Node3D = L["pawn"]
 	sfx("thud", 70)
-	float_at(pawn.global_position + Vector3(0, 1.4, 0.4), "-%.1fm" % drop, Color(1.0, 0.5, 0.4), 40)
 	if is_local(player_by_slot(s)):
 		shake(0.35)
 
@@ -727,16 +723,14 @@ func _update_gust(delta: float) -> void:
 			if not _gust["warned"]:
 				_gust["warned"] = true
 				sfx("whoosh", 40)
-			var arrows := "◀◀◀ " if dir < 0.0 else " ▶▶▶"
-			_gust_label.text = (arrows + tr("GUST! Hold SPACE!")) if dir < 0.0 else (tr("GUST! Hold SPACE!") + arrows)
+			_gust_label.text = tr("Gust warning!")
 			_gust_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3).lerp(Color(1.0, 0.4, 0.25), 0.5 + 0.5 * sin(_elapsed * 18.0)))
 		elif t < GUST_DUR:
 			if not _gust["blew"]:
 				_gust["blew"] = true
 				sfx("whoosh", 120)
 				sfx("spray", 60)
-			_gust_label.text = tr("HOLD ON!")
-			_gust_label.add_theme_color_override("font_color", Color(0.75, 0.92, 1.0))
+			_gust_label.visible = false
 			target_flutter = 16.0
 			_wind.emitting = true
 			_wind.direction = Vector3(dir, -0.03, 0)
@@ -858,7 +852,6 @@ func _finish(s: int, t: float) -> void:
 	sfx("start")
 	var fl: Node3D = mast["flag"]
 	splash(fl.global_position, 30, 0.6)
-	float_at(fl.global_position + Vector3(0, 0.8, 0.6), tr("No.%d") % _done_n, (p["color"] as Color).lightened(0.3), 54)
 
 
 # ── CPU ─────────────────────────────────────────────────────
