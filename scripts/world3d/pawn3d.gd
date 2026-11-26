@@ -23,6 +23,7 @@ var look: Dictionary = {}
 var _body: MeshInstance3D
 
 static var _profile_cache: PackedVector2Array
+static var _body_mesh_cache: ArrayMesh   ## 몸통 메시는 모든 말이 같음 → 한 번만 깎아 둠
 
 
 func _ready() -> void:
@@ -171,7 +172,9 @@ static func pattern_color(tint: Color) -> Color:
 
 func _build() -> void:
 	_body = MeshInstance3D.new()
-	_body.mesh = lathe(profile(), SEGMENTS)
+	if _body_mesh_cache == null:
+		_body_mesh_cache = lathe(profile(), SEGMENTS)
+	_body.mesh = _body_mesh_cache
 	var m := ShaderMaterial.new()
 	m.shader = PawnShader
 	m.set_shader_parameter("base_color", color)

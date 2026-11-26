@@ -241,7 +241,8 @@ func _build() -> void:
 	_demo_vp.scaling_3d_scale = 0.75
 	_demo_vp.msaa_3d = Viewport.MSAA_DISABLED
 	_demo_vp.positional_shadow_atlas_size = 1024
-	_start_demo_later()
+	# 미리보기 게임은 화면이 아직 까만 동안(들어오는 순간) 바로 만듦 → 밝아지는 도중에 멈칫하지 않음
+	_restart_demo()
 
 	# 오른쪽: 하는 방법 + 조작법
 	var side := VBoxContainer.new()

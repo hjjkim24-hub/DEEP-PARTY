@@ -108,6 +108,10 @@ func _mg_shot(id: String, intro_only: bool) -> void:
 		await get_tree().create_timer(float(OS.get_environment("MGSTART"))).timeout
 	while is_instance_valid(mg) and Time.get_ticks_msec() - t0 < limit:
 		await get_tree().create_timer(every).timeout
+		if OS.get_environment("NOHUD") != "":   # 썸네일용: 점수 · 시간 · 큰 글씨 숨김
+			for c in mg.get_children():
+				if c is CanvasItem and c != mg.vpc:
+					(c as CanvasItem).visible = false
 		await _shot("mg_%s_%02d" % [id, k])
 		k += 1
 		if not mg.playing and k > 3:
@@ -137,7 +141,7 @@ func _shot(shot_name: String) -> void:
 	var img := get_viewport().get_texture().get_image()
 	var path := _dir.path_join(shot_name + ".png")
 	img.save_png(path)
-	print("SHOT: ", path, " ", img.get_size())
+	print("SHOT: ", path, " ", img.get_size(), " fps=", Engine.get_frames_per_second())
 
 
 ## 화면 없이 돌릴 때: 장면 대신 지금 상태를 글로 (온라인 점검에서 방장 · 손님 비교용)
@@ -405,6 +409,12 @@ func _run() -> void:
 		var h: Node = get_tree().current_scene
 		await get_tree().create_timer(2.0).timeout
 		await _shot("hall_02_grid")
+		if OS.get_environment("HALL_PAGE2") != "":
+			h._show_page(1)
+			await get_tree().create_timer(1.5).timeout
+			await _shot("hall_02_grid_p2")
+			get_tree().quit(0)
+			return
 		h._play("powder_keg")
 		await get_tree().create_timer(3.5).timeout
 		await _shot("hall_03_intro")

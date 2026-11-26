@@ -16,18 +16,26 @@ const PH := 1.15                ## 말 키 (충돌)
 const WATER_Y := -1.3           ## 웅덩이 물높이
 const FALL_Y := -0.9            ## 이보다 내려가면 빠짐
 const FINISH_X := 104.0
-const TIDE_START := 8.0        ## 밀물이 들어오기 시작하는 시각
-const TIDE_SPEED := 2.0
+const TIDE_START := 5.0         ## 밀물이 들어오기 시작하는 시각
+const TIDE_SPEED := 2.5
 ## 땅 (x0, x1, 윗면 y): 사이사이가 물웅덩이
 const GROUND := [[-8.0, 8.0, 0.0], [20.0, 37.0, 0.0], [28.6, 29.5, 0.75], [51.0, 70.0, 0.0], [70.0, 86.0, 0.0], [86.0, 101.0, 0.0], [101.0, 118.0, 0.0]]
 ## 웅덩이 (x0, x1, 빠지면 돌아갈 자리 x)
 const PITS := [[8.0, 20.0, 6.6], [37.0, 51.0, 35.6]]
 const ANCHORS := [[25.6, 0.0], [32.4, 1.6]]          ## x, 위상
 const LOGS := [39.3, 42.6, 45.9, 49.2]
-const GEYSERS := [[55.0, 0.0], [60.0, 1.05], [65.0, 2.1]]
-const ROCKS := [[73.5, 0.0], [77.5, 0.9], [81.5, 1.7]]
-const CRABS := [[87.8, 91.8, 1.9, 0.0], [92.6, 96.4, 2.3, 1.3], [97.0, 100.2, 2.0, 2.6]]
-const LOG_HALF := 1.1          ## 부목 반 길이
+const GEYSERS := [[54.0, 0.0], [57.8, 0.85], [61.6, 1.7], [65.4, 0.4]]
+const GEY_T := 2.5              ## 물기둥 주기 (쉼 → 1.0 부글 → 1.7 솟구침)
+const GEY_WARN := 1.0
+const GEY_ON := 1.7
+const ROCKS := [[72.6, 0.0], [75.9, 0.7], [79.2, 1.4], [82.5, 0.35]]
+const ROCK_T := 2.0             ## 낙석 주기 (1.15 그림자 → 1.65 떨어짐 → 2.0 쾅)
+const ROCK_WARN := 1.15
+const ROCK_FALL := 1.65
+const CRABS := [[87.6, 90.8, 3.0, 0.0], [90.8, 94.0, 3.4, 1.3], [94.2, 97.4, 3.1, 2.6], [97.4, 100.4, 3.6, 0.7]]
+const LOG_HALF := 0.95         ## 부목 반 길이
+const LOG_SINK := 0.8           ## 이만큼 올라서 있으면 가라앉음
+const PLAT_HALF := 0.85         ## 움직이는 발판 반 길이
 const ANCHOR_PIVOT_Y := 7.6
 const ANCHOR_L := 6.0
 
@@ -48,6 +56,8 @@ var _tide_foam: CPUParticles3D
 var _cam_x := 0.0
 var _cam_y := 1.0
 var _pool_lights: Array = []
+var _batches := {}
+static var _mesh_cache := {}    ## 동굴 지형 메시는 매번 같음 → 한 번 만들어 두고 다시 씀 (설명창 데모 · 본게임)
 
 
 func _init() -> void:
@@ -71,10 +81,6 @@ func _build_stage() -> void:
 	env.fog_light_color = Color(0.06, 0.1, 0.13)
 	env.fog_density = 0.012
 	env.fog_sky_affect = 0.0
-	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.018
-	env.volumetric_fog_albedo = Color(0.7, 0.78, 0.82)
-	env.volumetric_fog_length = 40.0
 	sun.light_color = Color(0.85, 0.92, 1.0)
 	sun.light_energy = 0.35
 	sun.shadow_enabled = false
@@ -90,6 +96,7 @@ func _build_stage() -> void:
 	_place_cam(true)
 	_build_cave()
 	_build_hazards()
+	_flush_batches()
 	_build_tide()
 
 
@@ -113,6 +120,15 @@ func _cave_mat(base: Color, moss: float = 0.4, drip_: float = 0.5, glow_: float 
 ## 단면(profile: (z, y) 점들)을 x 방향으로 쭉 이어 만든 울퉁불퉁한 바위 면.
 ## amp(j): 그 점을 노이즈로 얼마나 들쑥날쑥하게 할지. hint_sign: 바깥(보이는 쪽) 방향
 func _sweep(x0: float, x1: float, step: float, prof: Array, amps: Array, nz: FastNoiseLite, hint_up: bool) -> ArrayMesh:
+	var key := "sw|%s|%s|%s|%s|%s|%d|%s" % [x0, x1, step, prof, amps, nz.seed, hint_up]
+	if _mesh_cache.has(key):
+		return _mesh_cache[key]
+	var made := _sweep_make(x0, x1, step, prof, amps, nz, hint_up)
+	_mesh_cache[key] = made
+	return made
+
+
+func _sweep_make(x0: float, x1: float, step: float, prof: Array, amps: Array, nz: FastNoiseLite, hint_up: bool) -> ArrayMesh:
 	var nx := maxi(2, int(ceil((x1 - x0) / step)) + 1)
 	var np := prof.size()
 	var P := []
@@ -176,6 +192,13 @@ func _ground_mesh(x0: float, x1: float, top: float, nz: FastNoiseLite, mat: Mate
 	for side: int in [0, 1]:
 		var ex := x0 if side == 0 else x1
 		var out := -1.0 if side == 0 else 1.0
+		var ekey := "end|%s|%s|%d" % [ex, top, nz.seed]
+		if _mesh_cache.has(ekey):
+			var cm := MeshInstance3D.new()
+			cm.mesh = _mesh_cache[ekey]
+			cm.material_override = mat
+			world3.add_child(cm)
+			continue
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
 		var zs := 12
@@ -213,12 +236,21 @@ func _ground_mesh(x0: float, x1: float, top: float, nz: FastNoiseLite, mat: Mate
 		st.generate_normals()
 		var em := MeshInstance3D.new()
 		em.mesh = st.commit()
+		_mesh_cache[ekey] = em.mesh
 		em.material_override = mat
 		world3.add_child(em)
 
 
 ## 울퉁불퉁한 바위 덩어리 (구를 노이즈로 찌그러뜨림)
 func _boulder(c: Vector3, size: Vector3, nz: FastNoiseLite, mat: Material, seed_: float) -> MeshInstance3D:
+	var key := "bo|%s|%s|%d" % [size, seed_, nz.seed]
+	if _mesh_cache.has(key):
+		var mc := MeshInstance3D.new()
+		mc.mesh = _mesh_cache[key]
+		mc.material_override = mat
+		mc.position = c
+		world3.add_child(mc)
+		return mc
 	var sm := SphereMesh.new()
 	sm.radius = 1.0
 	sm.height = 2.0
@@ -242,6 +274,7 @@ func _boulder(c: Vector3, size: Vector3, nz: FastNoiseLite, mat: Material, seed_
 	st.generate_normals()
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
+	_mesh_cache[key] = mi.mesh
 	mi.material_override = mat
 	mi.position = c
 	world3.add_child(mi)
@@ -249,21 +282,55 @@ func _boulder(c: Vector3, size: Vector3, nz: FastNoiseLite, mat: Material, seed_
 
 
 ## 종유석 하나 (끝에 물방울이 맺힘)
+## 종유석 · 석순 · 물방울: 하나씩 노드로 만들지 않고 모아 뒀다가 재질별로 한 번에 그림 (MultiMesh)
 func _stalactite(p: Vector3, len: float, r: float, mat: Material, drop_mat: Material, up: bool = false) -> void:
-	var cm := CylinderMesh.new()
-	cm.top_radius = r if not up else 0.0
-	cm.bottom_radius = 0.0 if not up else r
-	cm.height = len
-	cm.radial_segments = 9
-	cm.rings = 4
 	var sgn := -1.0 if not up else 1.0
-	var mi := add_mesh(cm, mat, p + Vector3(0, sgn * len * 0.5, 0), Basis(Vector3.FORWARD, randf_range(-0.08, 0.08)), world3)
-	mi.scale = Vector3(1.0, 1.0, randf_range(0.7, 1.0))
+	var b := Basis(Vector3.FORWARD, randf_range(-0.08, 0.08)).scaled(Vector3(r, len, r * randf_range(0.7, 1.0)))
+	_batch(mat, "up" if up else "down", Transform3D(b, p + Vector3(0, sgn * len * 0.5, 0)))
 	if not up and randf() < 0.6:
-		var d := SphereMesh.new()
-		d.radius = 0.035
-		d.height = 0.08
-		add_mesh(d, drop_mat, p + Vector3(0, -len - 0.02, 0), Basis(), world3)
+		_batch(drop_mat, "drop", Transform3D(Basis(), p + Vector3(0, -len - 0.02, 0)))
+
+
+func _batch(mat: Material, kind: String, xf: Transform3D) -> void:
+	var key := "%d|%s" % [mat.get_instance_id(), kind]
+	if not _batches.has(key):
+		_batches[key] = {"mat": mat, "kind": kind, "xf": []}
+	(_batches[key]["xf"] as Array).append(xf)
+
+
+func _flush_batches() -> void:
+	for key in _batches:
+		var B: Dictionary = _batches[key]
+		var mesh: Mesh
+		match String(B["kind"]):
+			"down", "up":
+				var cm := CylinderMesh.new()
+				cm.top_radius = 1.0 if B["kind"] == "down" else 0.0
+				cm.bottom_radius = 0.0 if B["kind"] == "down" else 1.0
+				cm.height = 1.0
+				cm.radial_segments = 9
+				cm.rings = 3
+				mesh = cm
+			_:
+				var d := SphereMesh.new()
+				d.radius = 0.035
+				d.height = 0.08
+				d.radial_segments = 8
+				d.rings = 4
+				mesh = d
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = mesh
+		var xs: Array = B["xf"]
+		mm.instance_count = xs.size()
+		for i in xs.size():
+			mm.set_instance_transform(i, xs[i])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.material_override = B["mat"]
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		world3.add_child(mmi)
+	_batches.clear()
 
 
 func _build_cave() -> void:
@@ -445,7 +512,6 @@ func _light_shaft(p: Vector3) -> void:
 	sp.light_energy = 5.0
 	sp.spot_range = 12.0
 	sp.spot_angle = 16.0
-	sp.light_volumetric_fog_energy = 4.0
 	sp.position = p + Vector3(0, 9.0, 0)
 	sp.rotation_degrees = Vector3(-90, 0, 0)
 	world3.add_child(sp)
@@ -499,9 +565,9 @@ func _build_hazards() -> void:
 		world3.add_child(n)
 		var wm := wood_mat(Color(0.5, 0.38, 0.25), Vector3(1, 0, 0), 0.3)
 		for k in 4:
-			box(Vector3(2.2, 0.16, 0.95), wm, Vector3(0, -0.08, -1.4 + k * 0.95), Basis(Vector3.UP, rr.randf_range(-0.03, 0.03)), n)
-		box(Vector3(0.2, 0.2, 3.9), wood_mat(Color(0.32, 0.23, 0.15), Vector3(0, 0, 1), 0.3), Vector3(-0.85, -0.22, 0), Basis(), n)
-		box(Vector3(0.2, 0.2, 3.9), wood_mat(Color(0.32, 0.23, 0.15), Vector3(0, 0, 1), 0.3), Vector3(0.85, -0.22, 0), Basis(), n)
+			box(Vector3(PLAT_HALF * 2.0, 0.16, 0.95), wm, Vector3(0, -0.08, -1.4 + k * 0.95), Basis(Vector3.UP, rr.randf_range(-0.03, 0.03)), n)
+		box(Vector3(0.2, 0.2, 3.9), wood_mat(Color(0.32, 0.23, 0.15), Vector3(0, 0, 1), 0.3), Vector3(-PLAT_HALF + 0.25, -0.22, 0), Basis(), n)
+		box(Vector3(0.2, 0.2, 3.9), wood_mat(Color(0.32, 0.23, 0.15), Vector3(0, 0, 1), 0.3), Vector3(PLAT_HALF - 0.25, -0.22, 0), Basis(), n)
 		_plats.append(n)
 	# 흔들리는 닻: 천장 쇠고리 + 쇠사슬 + 닻
 	var iron := std_mat(Color(0.2, 0.19, 0.18), 0.45, 0.8)
@@ -761,11 +827,11 @@ func _tide_x() -> float:
 func _plat_pos(i: int, t: float) -> Vector2:
 	match i:
 		0:
-			return Vector2(10.6 + sin(t * 1.2) * 1.2, -0.05)
+			return Vector2(10.6 + sin(t * 1.75) * 1.3, -0.05)
 		1:
-			return Vector2(14.0, 0.25 + sin(t * 1.4 + 1.0) * 0.95)
+			return Vector2(14.0, 0.25 + sin(t * 2.0 + 1.0) * 1.0)
 		_:
-			return Vector2(17.6 + sin(t * 1.1 + 2.0) * 1.1, -0.05)
+			return Vector2(17.6 + sin(t * 1.6 + 2.0) * 1.2, -0.05)
 
 
 func _log_y(i: int, t: float) -> float:
@@ -784,7 +850,7 @@ func _log_y(i: int, t: float) -> float:
 
 
 func _anchor_a(i: int, t: float) -> float:
-	return 1.05 * sin(t * 1.55 + float(ANCHORS[i][1]))
+	return 1.15 * sin(t * 2.1 + float(ANCHORS[i][1]))
 
 
 func _anchor_head(i: int, t: float) -> Vector2:
@@ -794,22 +860,36 @@ func _anchor_head(i: int, t: float) -> Vector2:
 
 ## 물기둥: 0 쉼, 1 부글부글(경고), 2 솟구침
 func _geyser_state(i: int, t: float) -> int:
-	var ph := fmod(t + float(GEYSERS[i][1]), 3.2)
-	if ph > 2.2:
+	var ph := fmod(t + float(GEYSERS[i][1]), GEY_T)
+	if ph > GEY_ON:
 		return 2
-	if ph > 1.4:
+	if ph > GEY_WARN:
 		return 1
 	return 0
 
 
-## 낙석: 위상 (0~2.6). 1.5~2.25 그림자, 2.25~2.6 떨어짐
+## 낙석: 위상 (0~ROCK_T). ROCK_WARN~ROCK_FALL 그림자, ROCK_FALL~ 떨어짐
 func _rock_ph(i: int, t: float) -> float:
-	return fmod(t + float(ROCKS[i][1]), 2.6)
+	return fmod(t + float(ROCKS[i][1]), ROCK_T)
 
 
 func _crab_x(i: int, t: float) -> float:
 	var c: Array = CRABS[i]
 	return lerpf(float(c[0]), float(c[1]), 0.5 + 0.5 * sin(t * float(c[2]) * 0.9 + float(c[3])))
+
+
+## 발판 하나만 (id), 지금 없으면 []
+func _solid_one(id: int, t: float) -> Array:
+	if id <= -10:
+		var g: Array = GROUND[-10 - id]
+		return [float(g[0]), float(g[1]), float(g[2]), -6.0, id]
+	if id < 10:
+		var p := _plat_pos(id, t)
+		return [p.x - PLAT_HALF, p.x + PLAT_HALF, p.y, p.y - 0.3, id]
+	var y := _log_y(id - 10, t)
+	if y <= FALL_Y + 0.05:
+		return []
+	return [float(LOGS[id - 10]) - LOG_HALF, float(LOGS[id - 10]) + LOG_HALF, y, y - 0.5, id]
 
 
 ## 지금 밟을 수 있는 것들 [x0, x1, 윗면 y, 바닥 y, id]  (id: -10 이하 땅 조각, 0~2 발판, 10~ 부목)
@@ -820,7 +900,7 @@ func _solids(t: float) -> Array:
 		out.append([float(g[0]), float(g[1]), float(g[2]), -6.0 if float(g[2]) <= 0.01 else 0.0, -10 - gi])
 	for i in 3:
 		var p := _plat_pos(i, t)
-		out.append([p.x - 1.1, p.x + 1.1, p.y, p.y - 0.3, i])
+		out.append([p.x - PLAT_HALF, p.x + PLAT_HALF, p.y, p.y - 0.3, i])
 	for i in _logs.size():
 		var y := _log_y(i, t)
 		if y > FALL_Y + 0.05:
@@ -1088,7 +1168,7 @@ func _hazards(s: int, P: Dictionary) -> void:
 	# 낙석 (돌이 바닥에 닿는 순간 근처)
 	for i in ROCKS.size():
 		var ph := _rock_ph(i, _el)
-		if ph > 2.42 and absf(float(ROCKS[i][0]) - x) < 0.75 and y < 1.2:
+		if ph > ROCK_T - 0.18 and absf(float(ROCKS[i][0]) - x) < 0.75 and y < 1.2:
 			_hit(s, P, -3.0, 3.0, 0.9)
 			return
 	# 게 (땅에서만, 위로 뛰어넘으면 안전)
@@ -1147,7 +1227,7 @@ func _update_logs(dl: float) -> void:
 			if absf(float(P["x"]) - float(LOGS[i])) < LOG_HALF + 0.1 and absf(float(P["y"]) - _log_y(i, _el)) < 0.15 and float(P["fall"]) <= 0.0:
 				on = true
 				break
-		L["load"] = clampf(float(L.get("load", 0.0)) + (dl / 1.2 if on else -dl * 0.8), 0.0, 1.0)
+		L["load"] = clampf(float(L.get("load", 0.0)) + (dl / LOG_SINK if on else -dl * 0.8), 0.0, 1.0)
 		if float(L["load"]) >= 1.0:
 			L["trig"] = _el
 
@@ -1186,7 +1266,7 @@ func _show_hazards(delta: float) -> void:
 		var on := st == 2
 		ci.visible = on
 		if on:
-			var ph := fmod(_el + float(GEYSERS[i][1]), 3.2) - 2.2
+			var ph := fmod(_el + float(GEYSERS[i][1]), GEY_T) - GEY_ON
 			var hgt := 4.2 * clampf(ph / 0.15, 0.0, 1.0) * (1.0 - clampf((ph - 0.7) / 0.2, 0.0, 1.0)) + 0.1
 			ci.scale = Vector3(1.0 + sin(_el * 30.0) * 0.06, hgt, 1.0 + cos(_el * 27.0) * 0.06)
 			ci.position = Vector3(float(G["x"]), hgt * 0.5, 0)
@@ -1201,24 +1281,25 @@ func _show_hazards(delta: float) -> void:
 		var rk: MeshInstance3D = R["rock"]
 		var shm: StandardMaterial3D = R["smat"]
 		var sh: MeshInstance3D = R["shadow"]
-		if ph < 1.5:
+		var wl := ROCK_FALL - ROCK_WARN
+		if ph < ROCK_WARN:
 			rk.visible = false
 			shm.albedo_color.a = 0.0
-		elif ph < 2.25:
+		elif ph < ROCK_FALL:
 			rk.visible = true
-			rk.position = Vector3(float(R["x"]) + sin(_el * 40.0) * 0.03 * (ph - 1.5), 8.1, 0)
-			shm.albedo_color.a = lerpf(0.0, 0.55, (ph - 1.5) / 0.75)
-			sh.scale = Vector3.ONE * lerpf(1.4, 0.8, (ph - 1.5) / 0.75)
+			rk.position = Vector3(float(R["x"]) + sin(_el * 40.0) * 0.03 * (ph - ROCK_WARN), 8.1, 0)
+			shm.albedo_color.a = lerpf(0.0, 0.55, (ph - ROCK_WARN) / wl)
+			sh.scale = Vector3.ONE * lerpf(1.4, 0.8, (ph - ROCK_WARN) / wl)
 		else:
-			var f := clampf((ph - 2.25) / 0.35, 0.0, 1.0)
+			var f := clampf((ph - ROCK_FALL) / (ROCK_T - ROCK_FALL), 0.0, 1.0)
 			rk.visible = true
 			rk.position = Vector3(float(R["x"]), lerpf(8.1, 0.4, f * f), 0)
 			rk.rotation = Vector3(f * 3.0, 0, f * 2.0)
 			shm.albedo_color.a = 0.65
 			sh.scale = Vector3.ONE * 0.8
 		# 바닥에 부딪치는 순간: 먼지 · 파편
-		var cycle := int((_el + float(ROCKS[i][1])) / 2.6)
-		if ph > 2.5 and int(R["landed"]) != cycle:
+		var cycle := int((_el + float(ROCKS[i][1])) / ROCK_T)
+		if ph > ROCK_T - 0.08 and int(R["landed"]) != cycle:
 			R["landed"] = cycle
 			debris(Vector3(float(R["x"]), 0.3, 0), Color(0.35, 0.33, 0.3), 12)
 			if absf(float(R["x"]) - _cam_x) < 14.0:
@@ -1325,35 +1406,29 @@ func _jump_target(P: Dictionary) -> int:
 	return -99
 
 
-## 공중에서 발판 id 가운데로 몸을 틀며 뛰었을 때 거기 안쪽에 내리는지
+## 공중에서 발판 id 가운데로 몸을 틀며 뛰었을 때 거기 안쪽에 내리는지 (그 발판만 따라가며 계산 → 가벼움)
 func _sim_jump(P: Dictionary, id: int) -> bool:
 	var x := float(P["x"])
 	var y := float(P["y"])
 	var vx := float(P["vx"])
 	var vy := JUMP
 	var t := _el
-	var dt := 0.04
-	for k in 45:
+	var dt := 0.05
+	for k in 36:
 		t += dt
-		var sol := _solids(t)
-		var cx := INF
-		for a: Array in sol:
-			if int(a[4]) == id:
-				cx = (float(a[0]) + float(a[1])) * 0.5
-		if cx == INF:
+		var a := _solid_one(id, t)
+		if a.is_empty():
 			return false
+		var cx := (float(a[0]) + float(a[1])) * 0.5
 		var d := 0.0 if absf(cx - x) < 0.25 else signf(cx - x)
 		vx = move_toward(vx, d * RUN, ACC_A * dt)
 		vy -= GRAV * dt
 		var nx := x + vx * dt
 		var ny := y + vy * dt
-		if vy <= 0.0:
-			for a: Array in sol:
-				if nx + HW * 0.7 < float(a[0]) or nx - HW * 0.7 > float(a[1]):
-					continue
-				var top := float(a[2])
-				if y >= top - 0.12 and ny <= top + 0.02:
-					return int(a[4]) == id and nx > float(a[0]) + 0.3 and nx < float(a[1]) - 0.3
+		if vy <= 0.0 and nx + HW * 0.7 >= float(a[0]) and nx - HW * 0.7 <= float(a[1]):
+			var top := float(a[2])
+			if y >= top - 0.15 and ny <= top + 0.02:
+				return nx > float(a[0]) + 0.25 and nx < float(a[1]) - 0.25
 		if ny < FALL_Y:
 			return false
 		x = nx
@@ -1376,7 +1451,7 @@ func _danger_ahead(x: float, y: float) -> bool:
 		var rx := float(ROCKS[i][0])
 		if rx - x > -0.3 and rx - x < 1.8:
 			var ph := _rock_ph(i, _el)
-			if ph > 1.4 or _rock_ph(i, _el + 0.45) > 1.4:
+			if ph > ROCK_WARN - 0.1 or _rock_ph(i, _el + 0.45) > ROCK_WARN - 0.1:
 				return true
 	return false
 
@@ -1413,7 +1488,11 @@ func _think(s: int, delta: float) -> Array:
 	var look := 0.45 + vx * vx / (2.0 * ACC_G) + 0.1   # 멈추는 데 필요한 거리만큼 미리 봄
 	var edge := not _support(x + look, y, _el)
 	if edge or (on_log and not _support(x + 0.5, y, _el)):
-		var tid := _jump_target(P)
+		var tid := -99
+		a["jt_t"] = float(a.get("jt_t", 0.0)) - delta
+		if float(a["jt_t"]) <= 0.0:
+			a["jt_t"] = 0.07
+			tid = _jump_target(P)
 		if tid != -99:
 			jump = true
 			a["tgt"] = tid

@@ -65,9 +65,9 @@ func _make_clam(p: Vector3) -> Dictionary:
 	root.rotation.y = rng.randf_range(-0.2, 0.2)
 	world3.add_child(root)
 	var base: Color = SHELL_PAL[rng.randi() % SHELL_PAL.size()]
-	base = base.lerp(Color(rng.randf(), rng.randf(), rng.randf()), 0.06)
 	var shell := StandardMaterial3D.new()
-	shell.albedo_color = Color.WHITE
+	# 조개마다 살짝 다른 색 (메시는 같은 색끼리 공유 → 재질로 물들임)
+	shell.albedo_color = Color.WHITE.lerp(Color(rng.randf(), rng.randf(), rng.randf()).lightened(0.4), 0.08)
 	shell.vertex_color_use_as_albedo = true
 	shell.roughness = 0.55
 	shell.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -132,7 +132,18 @@ static func _shell_pt(u: float, v: float, top: bool, inset: float = 0.0) -> Vect
 	return Vector3(sin(a) * r, y, cos(a) * r)
 
 
+static var _shell_cache := {}
+static var _mantle_cache: ArrayMesh
+
+
 func _shell_mesh(top: bool, base: Color) -> ArrayMesh:
+	var key := "%s|%s" % [top, base.to_html()]
+	if not _shell_cache.has(key):
+		_shell_cache[key] = _shell_make(top, base)
+	return _shell_cache[key]
+
+
+func _shell_make(top: bool, base: Color) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var nu := 52
@@ -181,6 +192,12 @@ func _shell_mesh(top: bool, base: Color) -> ArrayMesh:
 
 ## 아래 껍데기 가장자리를 따라 너울거리는 외투막 띠 (주황 · 갈색, 끝은 술 모양)
 func _mantle_mesh() -> ArrayMesh:
+	if _mantle_cache == null:
+		_mantle_cache = _mantle_make()
+	return _mantle_cache
+
+
+func _mantle_make() -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var nu := 60
