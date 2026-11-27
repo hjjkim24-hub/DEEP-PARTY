@@ -14,6 +14,7 @@ var _ai := {}
 
 
 func _init() -> void:
+	auto_bake = true
 	title = "CLAM SNATCH"
 	how_to = "Giant clams snap open with pearls inside - click one first to grab it! Golden pearls are worth 3. But if a crab is hiding inside, you lose 2 points!"
 	goal = "Most pearls wins!"

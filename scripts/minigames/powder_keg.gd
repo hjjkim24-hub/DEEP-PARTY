@@ -41,6 +41,7 @@ func _build_stage() -> void:
 	world3.add_child(_raft)
 	build_raft(_raft, RAFT_R, 31)
 	deck_clutter(_raft, [Vector3(-3.9, 0, -3.4), Vector3(4.3, 0, 2.6), Vector3(-4.6, 0, 1.9), Vector3(2.6, 0, -4.6)], 9)
+	bake_static.call_deferred(_raft)   # 뗏목 조각 합치기 (뗏목은 통째로 출렁)
 	sea_debris(7, RAFT_R + 3.0, RAFT_R + 9.0, -0.45, 8)
 	gulls(4, Vector3(0, 0, -16), 12.0, 5.0, 4)
 	# 가장자리 화약통 더미 · 횃불 기둥

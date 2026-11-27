@@ -64,6 +64,7 @@ func _build_stage() -> void:
 	world3.add_child(_world)
 	_build_raft()
 	_build_structures()
+	bake_static(_world)
 	sea_debris(14, 18.0, 34.0, -0.5, 14)
 	gulls(5, Vector3(0, 0, -8), 30.0, 3.5, 9)   # 뗏목 바깥 바다 위 (카메라 앞을 가리지 않게)
 	island(Vector3(90, -1.5, -170), 22.0, 13.0, 7)

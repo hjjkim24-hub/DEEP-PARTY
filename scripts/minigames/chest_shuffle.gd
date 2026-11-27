@@ -27,6 +27,7 @@ var _hover := -1
 
 
 func _init() -> void:
+	auto_bake = true
 	title = "CHEST SHUFFLE"
 	how_to = "Watch the golden pearl! The kraken's tentacles shuffle the chests - then you have 3 seconds to click the chest with the pearl. You can change your pick until time runs out. 4 rounds, each one faster!"
 	goal = "Most correct picks wins!"
@@ -116,6 +117,9 @@ func _layout(n: int) -> void:
 		var c := _make_chest(i)
 		(c["node"] as Node3D).position = _slots[i]
 		_chests.append(c)
+		# 상자 부품(판자 · 쇠테 · 금장식 수십 개)을 몸통 · 뚜껑 각각 한 덩어리로 (뚜껑은 따로 열리니 따로)
+		bake_static(c["lid"])
+		bake_static(c["node"])
 
 
 func _setup_game() -> void:

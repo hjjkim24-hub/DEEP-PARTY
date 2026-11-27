@@ -25,6 +25,7 @@ var _fin_id := 0
 
 
 func _init() -> void:
+	auto_bake = true
 	title = "INK SPLAT"
 	how_to = "Walk to paint the deck in your color! You can paint over other colors too. Grab boosters for a burst of speed. Watch out - the kraken spits black ink that wipes the deck clean. Biggest area wins!"
 	goal = "Paint the most deck!"

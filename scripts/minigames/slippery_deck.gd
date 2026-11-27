@@ -53,6 +53,7 @@ func _build_stage() -> void:
 	_track = Node3D.new()
 	world3.add_child(_track)
 	_build_pier()
+	bake_static.call_deferred(_track)   # 잔교 조각 합치기
 	gulls(6, Vector3(0, 0, FINISH_Z * 0.5), 20.0, 9.0, 11)
 	sea_debris(14, 8.0, 30.0, -1.8, 21, Vector3(0, 0, FINISH_Z * 0.5))
 	island(Vector3(-90, -2.4, -170), 22.0, 14.0, 6)

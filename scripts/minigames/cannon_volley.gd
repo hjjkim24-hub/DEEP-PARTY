@@ -18,6 +18,7 @@ var _cursor: MeshInstance3D
 
 
 func _init() -> void:
+	auto_bake = true
 	title = "CANNON VOLLEY"
 	how_to = "Tentacles burst out of the sea! Click one to fire your cannon at it. Golden tentacles are worth 3 points. Hit the most in 30 seconds!"
 	goal = "Most hits wins!"

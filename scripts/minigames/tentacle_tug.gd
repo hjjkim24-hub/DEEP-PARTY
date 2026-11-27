@@ -15,6 +15,7 @@ var _rope_mat: StandardMaterial3D
 
 
 func _init() -> void:
+	auto_bake = true
 	title = "TENTACLE TUG"
 	how_to = "Each of you has a rope tied to a kraken tentacle! Click as fast as you can to pull. Haul it all the way in to win - get dragged over the rail and you're out!"
 	goal = "Pull your tentacle in first!"

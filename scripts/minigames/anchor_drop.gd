@@ -20,6 +20,7 @@ var _ai := {}
 
 
 func _init() -> void:
+	auto_bake = true
 	title = "ANCHOR DROP"
 	how_to = "Your boat sails over the sunken treasure! Click to drop your anchor - the closer it lands to the center of the glowing mark, the more points. Watch out for the current!"
 	goal = "Most points after 5 drops wins!"

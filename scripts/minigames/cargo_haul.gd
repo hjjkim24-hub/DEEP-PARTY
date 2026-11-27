@@ -64,6 +64,7 @@ func _build_stage() -> void:
 	_deck = Node3D.new()
 	world3.add_child(_deck)
 	_build_wharf()
+	bake_static.call_deferred(_deck)   # 부두 조각 합치기 (화물 · 크레인 갈고리처럼 움직이는 건 그대로)
 
 
 # ── 부두 ────────────────────────────────────────────────────

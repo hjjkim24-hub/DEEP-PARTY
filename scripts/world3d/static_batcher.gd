@@ -175,8 +175,12 @@ static func _sig(m: Material) -> String:
 	var parts := PackedStringArray([m.get_class()])
 	if m is ShaderMaterial:
 		parts.append(str((m as ShaderMaterial).shader.get_instance_id()))
+		var pvb := _per_vertex_base(m)
 		for u in RenderingServer.get_shader_parameter_list((m as ShaderMaterial).shader.get_rid()):
 			var v = (m as ShaderMaterial).get_shader_parameter(u["name"])
+			# 바탕색 · 축 방향 나뭇결은 꼭짓점 색으로 구우니 모양 비교에서 뺌
+			if pvb and (u["name"] == "base" or (u["name"] == "grain" and _grain_code(v) >= 0.0)):
+				continue
 			parts.append("%s=%s" % [u["name"], str(v.get_instance_id()) if v is Object else str(v)])
 	else:
 		for p in m.get_property_list():
@@ -195,10 +199,32 @@ static func _batchable_shader(m: Material) -> bool:
 	return m is ShaderMaterial and (m as ShaderMaterial).shader != null and (m as ShaderMaterial).shader.code.find("uniform bool batched") >= 0
 
 
+## 바탕색 · 나뭇결을 꼭짓점 색으로 받을 수 있는 셰이더인지 (structure.gdshader)
+static func _per_vertex_base(m: Material) -> bool:
+	return _batchable_shader(m) and (m as ShaderMaterial).shader.code.find("uniform bool per_vertex_base") >= 0
+
+
+## 축 방향 나뭇결이면 0.1 x / 0.5 y / 0.9 z, 아니면 -1
+static func _grain_code(v: Variant) -> float:
+	if v == null:
+		return 0.9
+	var g: Vector3 = (v as Vector3).normalized().abs()
+	if g.x > 0.999:
+		return 0.1
+	if g.y > 0.999:
+		return 0.5
+	if g.z > 0.999:
+		return 0.9
+	return -1.0
+
+
 static func _shared_mat(m: Material) -> Material:
 	if _batchable_shader(m):
 		var b := (m as ShaderMaterial).duplicate() as ShaderMaterial
 		b.set_shader_parameter("batched", true)
+		if _per_vertex_base(m):
+			b.set_shader_parameter("per_vertex_base", true)
+			b.set_shader_parameter("base_srgb", RenderingServer.get_rendering_device() == null)   # 호환 방식은 RenderingDevice 가 없음
 		return b
 	if not (m is StandardMaterial3D):
 		return m
@@ -235,6 +261,8 @@ static func _merge(items: Array) -> ArrayMesh:
 	var parts := []
 	var std: bool = items[0][2] is StandardMaterial3D
 	var bat: bool = _batchable_shader(items[0][2])
+	var pvb: bool = _per_vertex_base(items[0][2])
+	var U2 := PackedVector2Array()
 	var C0 := PackedFloat32Array()
 	var C1 := PackedFloat32Array()
 	var C2 := PackedFloat32Array()
@@ -271,6 +299,16 @@ static func _merge(items: Array) -> ArrayMesh:
 					T.append_array([tv.x, tv.y, tv.z, t[k * 4 + 3]])
 				else:
 					T.append_array([1.0, 0.0, 0.0, 1.0])
+		if pvb:
+			# 물체마다의 바탕색(sRGB 정수) + 나뭇결 축 → UV2
+			var sm0 := pt[2] as ShaderMaterial
+			var bv = sm0.get_shader_parameter("base")
+			var bc0: Color = bv if bv is Color else Color(0.7, 0.68, 0.6)
+			var gc := _grain_code(sm0.get_shader_parameter("grain"))
+			var ax := 0 if gc < 0.3 and gc >= 0.0 else (1 if gc < 0.7 and gc >= 0.0 else 2)
+			var u2 := Vector2(float(bc0.r8 * 256 + bc0.g8), float(bc0.b8 * 4 + ax))
+			for k in v.size():
+				U2.append(u2)
 		if any_col:
 			var col = a[Mesh.ARRAY_COLOR]
 			if std:
@@ -328,6 +366,8 @@ static func _merge(items: Array) -> ArrayMesh:
 		arr[Mesh.ARRAY_COLOR] = C
 	if any_uv:
 		arr[Mesh.ARRAY_TEX_UV] = U
+	if pvb:
+		arr[Mesh.ARRAY_TEX_UV2] = U2
 	arr[Mesh.ARRAY_INDEX] = I
 	var flags := 0
 	if bat:
@@ -353,6 +393,8 @@ static func _collect_refs(owner: Object, out: Dictionary) -> void:
 static func _walk(v: Variant, out: Dictionary, depth: int) -> void:
 	if depth > 4:
 		return
+	if typeof(v) == TYPE_OBJECT and not is_instance_valid(v):
+		return   # 이미 지워진 노드를 가리키던 변수
 	if v is Node:
 		out[v] = true
 	elif v is Array:

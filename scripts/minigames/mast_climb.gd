@@ -63,6 +63,7 @@ func _build_stage() -> void:
 	_ship = Node3D.new()
 	world3.add_child(_ship)
 	_build_ship()
+	bake_static.call_deferred(_ship)   # 배 조각 합치기 (배는 통째로 출렁)
 	gulls(6, Vector3(0, 18, -20), 22.0, 26.0, 8)
 	island(Vector3(-120, -3.5, -240), 26.0, 18.0, 5)
 	var sb := sailboat(Color(0.9, 0.88, 0.8), world3)
@@ -351,6 +352,7 @@ func _setup_game() -> void:
 		var x := (float(i) - (n - 1) * 0.5) * LANE_GAP
 		xs.append(x)
 		var mast := _mast(x)
+		bake_static.call_deferred(mast["root"])   # 돛대 · 줄사다리 조각 합치기 (깃발은 따로)
 		var pawn := make_pawn(p)
 		pawn.reparent(_ship, false)
 		pawn.rotation.y = PI

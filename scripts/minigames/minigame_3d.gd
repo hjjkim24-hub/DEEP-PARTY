@@ -36,6 +36,7 @@ var _shake_t := 0.0
 var _floaters: Array = []      ## 물 위에 둥둥 떠다니는 것 {node, base, ph}
 var _gulls: Array = []         ## 하늘을 도는 갈매기 {node, wl, wr, c, r, h, sp, ph}
 var _flickers: Array = []      ## 일렁이는 불빛 {light, base, ph}
+var auto_bake := false             ## true: 준비가 끝나면 움직이지 않는 무대 조각을 재질별로 합쳐 그림
 
 
 func _make_stage() -> void:
@@ -86,7 +87,41 @@ func _make_stage() -> void:
 	kit = BoardWorld.new()
 	_build_stage()
 	cam_base = cam.transform
+	if auto_bake:
+		bake_static.call_deferred(world3)   # 무대 + 게임 준비(_setup_game)가 다 끝난 뒤
 	_prewarm.call_deferred()
+
+
+## 움직이지 않는 무대 조각(상자 · 널판 · 기둥 …)을 재질별로 한 덩어리로 합쳐 그리기 호출을 줄임.
+## 스크립트 변수가 붙잡고 있는 노드(나중에 움직이는 것)는 건드리지 않음
+func bake_static(root: Node3D) -> void:
+	if OS.get_environment("NO_BATCH") != "":
+		return
+	var t0 := Time.get_ticks_msec()
+	var r: Dictionary = preload("res://scripts/world3d/static_batcher.gd").batch(root, [self], 30.0)
+	if OS.get_environment("MG_DEBUG") != "":
+		print("BAKE %s %s %dms" % [name, str(r), Time.get_ticks_msec() - t0])
+	if OS.get_environment("BAKE_DUMP") != "":
+		var cnt := {}
+		for n in root.find_children("*", "GeometryInstance3D", true, false):
+			var g := n as GeometryInstance3D
+			if not g.is_visible_in_tree():
+				continue
+			var key := g.get_class()
+			var m: Material = g.material_override
+			if g is MeshInstance3D and m == null and (g as MeshInstance3D).mesh and (g as MeshInstance3D).mesh.get_surface_count() > 0:
+				m = (g as MeshInstance3D).mesh.surface_get_material(0)
+			if m is ShaderMaterial and (m as ShaderMaterial).shader:
+				key += ":" + (m as ShaderMaterial).shader.resource_path.get_file()
+			elif m:
+				key += ":" + m.get_class()
+			var par := g.get_parent()
+			key += " <" + (par.get_script().resource_path.get_file() if par.get_script() else par.get_class()) + ">"
+			cnt[key] = int(cnt.get(key, 0)) + 1
+		var ks := cnt.keys()
+		ks.sort_custom(func(a, b): return cnt[a] > cnt[b])
+		for k in ks.slice(0, 14):
+			print("  LEFT %4d %s" % [cnt[k], k])
 
 
 ## 처음 화면에 나올 때 살짝 멈추는 것 막기: 숨겨져 있거나 멀리 있는 물체 · 물보라를

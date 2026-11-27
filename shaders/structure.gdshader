@@ -23,6 +23,12 @@ uniform bool batched = false;
 varying vec3 bx;
 varying vec3 by;
 varying vec3 bz;      // 물체마다 다른 값 (널마다 색이 조금씩 다르게)
+// 합쳐 그릴 때 물체마다의 바탕색(sRGB 0~255) · 나뭇결 축은 UV2 에 정수로 담아 옴 (그래픽 방식마다 꼭짓점 색 변환이 달라서 색 대신 숫자로)
+//   UV2.x = R * 256 + G, UV2.y = B * 4 + 결 축 (0 x, 1 y, 2 z)
+uniform bool per_vertex_base = false;
+uniform bool base_srgb = false;      // 지금 그래픽 방식이 호환(gl_compatibility)이면 true (스크립트가 정해 줌)
+varying vec3 vbase;
+varying vec3 vgrain;
 
 float hash1(float n) { return fract(sin(n * 91.3458) * 47453.5453); }
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -57,7 +63,21 @@ void vertex() {
 		by = CUSTOM2.xyz;
 		bz = CUSTOM3.xyz;
 		ln = vec3(CUSTOM1.w, CUSTOM2.w, CUSTOM3.w);
+		if (per_vertex_base) {
+			float rg = floor(UV2.x + 0.5);
+			float bg = floor(UV2.y + 0.5);
+			vec3 srgb = vec3(floor(rg / 256.0), mod(rg, 256.0), floor(bg / 4.0)) / 255.0;
+			// 호환 방식은 색을 sRGB 그대로 다루고 (uniform base 도 그렇게 들어옴), Forward+ 는 선형으로 바꿔 다룸
+			vbase = base_srgb ? srgb : mix(srgb / 12.92, pow((srgb + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), srgb));
+			float ax = mod(bg, 4.0);
+			vgrain = ax < 0.5 ? vec3(1.0, 0.0, 0.0) : (ax < 1.5 ? vec3(0.0, 1.0, 0.0) : vec3(0.0, 0.0, 1.0));
+		} else {
+			vbase = base;
+			vgrain = grain;
+		}
 	} else {
+		vbase = base;
+		vgrain = grain;
 		lp = VERTEX;
 		ln = NORMAL;
 		bx = MODEL_MATRIX[0].xyz;
@@ -97,7 +117,7 @@ void fragment() {
 		fc = vec2(an.x > an.z ? lp.z : lp.x, lp.y);
 	}
 
-	vec3 c = base;
+	vec3 c = vbase;
 	float groove = 0.0;     // 줄눈 · 틈 (어둡고 이끼가 잘 낌)
 	float tint = 0.0;       // 조각마다 다른 밝기
 	float shade = 1.0;
@@ -122,7 +142,7 @@ void fragment() {
 		shade = 0.94 + 0.1 * smoothstep(0.0, 0.14, d);
 	} else if (kind == 2) {
 		// 나무: 결 방향(grain)으로 길게 흐르는 나뭇결 + 옹이. plank_w > 0 이면 결과 나란한 널 틈도 그림
-		vec3 gax = normalize(grain);
+		vec3 gax = normalize(vgrain);
 		float pg = dot(lp, gax);
 		vec3 sdir = cross(nl, gax);
 		float sl = length(sdir);

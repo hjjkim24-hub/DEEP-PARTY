@@ -37,6 +37,7 @@ func _build_stage() -> void:
 	_raft = Node3D.new()
 	world3.add_child(_raft)
 	_build_raft()
+	bake_static.call_deferred(_raft)   # 뗏목 조각들을 뗏목 안에서 합침 (뗏목은 통째로 출렁)
 
 
 func _build_raft() -> void:
