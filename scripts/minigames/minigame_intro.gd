@@ -344,7 +344,7 @@ func _build() -> void:
 		cv.add_child(j2)
 		j2.add_child(_key_row(["SPACE"]))
 		j2.add_child(_ink_wrap("Jump", 28, 200))
-	elif _info.controls == "KEYS_DASH" or _info.controls == "KEYS_MOUSE":
+	elif _info.controls == "KEYS_DASH" or _info.controls == "KEYS_MOUSE" or _info.controls == "KEYS_ACT":
 		# 이동 + 스페이스 (+ 마우스): 줄마다 한 가지씩, 작게
 		cv.remove_child(ch)
 		ch.queue_free()
@@ -374,7 +374,8 @@ func _build() -> void:
 		r3.add_theme_constant_override("separation", 16)
 		cv.add_child(r3)
 		r3.add_child(_key_row(["SPACE"]))
-		r3.add_child(_ink_wrap("Dash and bump!" if _info.controls == "KEYS_DASH" else "Pump water (every 0.4 s)", 28, 360))
+		var r3_txt := "Dash and bump!" if _info.controls == "KEYS_DASH" else ("Pick up · put down · shove" if _info.controls == "KEYS_ACT" else "Pump water (every 0.4 s)")
+		r3.add_child(_ink_wrap(r3_txt, 28, 380))
 	else:
 		ch.add_child(_keys_icon(["W", "A", "S", "D"]))
 		var or_l := _ink("or", 26, Color(INK, 0.9))
