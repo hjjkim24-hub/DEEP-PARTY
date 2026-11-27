@@ -1,48 +1,52 @@
 extends "res://scripts/minigames/minigame_3d.gd"
-## 물대포 싸움 (WASD 이동 · 마우스 조준 · 왼쪽 버튼 꾹 = 발사 · 스페이스 연타 = 펌프):
+## 물총 싸움 (WASD 이동 · 마우스 조준 · 왼쪽 클릭 = 한 발 · 스페이스 = 물 채우기):
 ## 바다 위에 뜬 커다란 뗏목 하나. 그 위에 선실 오두막 · 상자 벽 · 통 줄 · 천막 같은 구조물이 놓여 있어
-## 위에서 내려다보는 슈팅 게임 맵처럼 통로와 엄폐물이 생김. 구조물은 물줄기를 막아 줌 (숨거나 돌아가서 쏘기).
-## 각자 네 귀퉁이 상자 진지에서 시작. 스페이스를 연타해 물통을 채우고 마우스로 겨눠 쏘면, 맞는 동안 체력이 깎임
-## (가까이서 맞을수록 많이). 체력이 0이 되면 흠뻑 젖어 쓰러짐 = 탈락. 마지막까지 남은 사람이 승리 (시간이 다 되면 체력 순).
-## 바다에 빠지지는 않음 (가장자리는 막힘). 화면은 각자 내 말을 따라감.
+## 위에서 내려다보는 슈팅 게임 맵처럼 통로와 엄폐물이 생김. 구조물은 물총알을 막아 줌 (숨거나 돌아가서 쏘기).
+## 클릭할 때마다 물총알이 한 발씩 날아감 (느려서 보고 피할 수 있음). 스페이스를 누를 때마다 물통에 한 발씩 참 (0.4초에 한 번).
+## 체력 3: 맞으면 1 깎이고 잠깐 깜빡이며 무적. 0이 되면 흠뻑 젖어 쓰러짐 = 탈락.
+## 마지막까지 남은 사람이 승리 (시간이 다 되면 체력 순). 바다에 빠지지는 않음 (가장자리는 막힘). 화면은 각자 내 말을 따라감.
 
 const HX := 13.0                ## 뗏목 반 너비 (좌우)
 const HZ := 10.0                ## 뗏목 반 길이 (앞뒤)
-const RANGE := 6.2              ## 물줄기 길이
-const DRAIN := 0.32             ## 쏘는 동안 초당 줄어드는 물
-const PUMP := 0.085             ## 펌프 한 번에 차는 물
-const KNOCK := 0.9              ## 맞으면 살짝 밀림 (느낌만)
-const HP_MAX := 100.0
-const DPS_NEAR := 12.0          ## 가까이서 맞을 때 초당 깎이는 체력
-const DPS_FAR := 5.0           ## 물줄기 끝에서 맞을 때
+const AMMO_MAX := 6              ## 물통에 담기는 물총알 수
+const AMMO_START := 3
+const PUMP_CD := 0.4             ## 물 한 번 채우고 다음 채우기까지
+const FIRE_CD := 0.32            ## 한 발 쏘고 다음 발까지
+const SHOT_V := 8.5              ## 물총알 빠르기 (보고 피할 수 있게 느리게)
+const SHOT_RANGE := 9.0          ## 날아가는 거리
+const SHOT_R := 0.5              ## 맞는 거리 (물총알 + 말 몸통)
+const HP_MAX := 3
+const INVULN := 1.3              ## 맞은 뒤 무적 (깜빡임)
+const KNOCK := 2.2               ## 맞으면 살짝 밀림
 const BODY := 0.32              ## 말 반지름 (구조물과 부딪힘)
 
 var _world: Node3D
 var _covers: Array = []         ## ["c", 중심 Vector2, 반지름] 또는 ["b", 중심 Vector2, 반크기 Vector2]
-var _tank := {}
+var _ammo := {}                 ## slot → 남은 물총알
 var _aim := {}
-var _spray := {}
 var _guns := {}
-var _hit_cd := {}
-var _fx_cd := {}
-var _stagger := {}
+var _pump_cd := {}              ## slot → 다음 채우기까지
+var _fire_cd := {}              ## slot → 다음 발까지
+var _inv := {}                  ## slot → 무적 남은 시간
+var _shots: Array = []          ## {id, s, from Vector3, dir Vector3, age, node, dead}
+var _shot_id := 0
+var _my_pump_cd := 0.0
+var _my_fire_cd := 0.0
 var _out_at := {}
 var _order := 0
 var _wait := 0.0
 var _ai := {}
 var _aim_send := 0.0
-var _was_spray := false
 var _jet_mat: StandardMaterial3D
 var _cam_f := Vector3.ZERO
 var _prev := {}
 var _hp := {}
-var _bars := {}               ## slot → {root, hp, hp_m, water}
-var _flash := {}              ## slot → 맞은 직후 번쩍
+var _bars := {}               ## slot → {root, pips[], water}
 
 
 func _init() -> void:
-	title = "WATER CANNON"
-	how_to = "A water fight on a big raft full of crates, barrels and a cabin! Mash SPACE to pump water into your tank, aim with the mouse and hold the left button to spray. Getting hit drains your health - the closer the shot, the more it hurts. At zero you are soaked and out. The structures block the water - use them as cover. Last one standing wins!"
+	title = "WATER FIGHT"
+	how_to = "A water fight on a big raft! Click to fire a slow shot of water. Press SPACE to pump water and hide behind the structures. 3 health: when hit you blink, safe for a moment. Last one standing wins!"
 	goal = "Soak everyone out!"
 	controls = "KEYS_MOUSE"
 	duration = 60.0
@@ -61,17 +65,19 @@ func _build_stage() -> void:
 	_build_raft()
 	_build_structures()
 	sea_debris(14, 18.0, 34.0, -0.5, 14)
-	gulls(5, Vector3(0, 0, -8), 18.0, 7.0, 9)
+	gulls(5, Vector3(0, 0, -8), 30.0, 3.5, 9)   # 뗏목 바깥 바다 위 (카메라 앞을 가리지 않게)
 	island(Vector3(90, -1.5, -170), 22.0, 13.0, 7)
 	island(Vector3(-130, -1.5, -120), 15.0, 9.0, 3)
 	_jet_mat = StandardMaterial3D.new()
-	_jet_mat.albedo_color = Color(0.62, 0.86, 1.0, 0.55)
+	_jet_mat.albedo_color = Color(0.7, 0.9, 1.0, 0.82)
 	_jet_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_jet_mat.roughness = 0.05
 	_jet_mat.metallic_specular = 1.0
 	_jet_mat.emission_enabled = true
-	_jet_mat.emission = Color(0.35, 0.6, 0.75)
-	_jet_mat.emission_energy_multiplier = 0.3
+	_jet_mat.emission = Color(0.4, 0.7, 0.9)
+	_jet_mat.emission_energy_multiplier = 0.55
+	_jet_mat.rim_enabled = true
+	_jet_mat.rim = 0.6
 
 
 ## 화면: 내 말 (자동이면 살아남은 사람들 가운데) 을 위에서 비스듬히 따라감
@@ -401,12 +407,14 @@ func _setup_game() -> void:
 		var spot: Vector3 = spots[i % 4]
 		var w := add_walker(p, spot, 4.6)
 		w["face"] = atan2(-spot.x, -spot.z)
-		_tank[s] = 0.3
+		_ammo[s] = AMMO_START
 		_hp[s] = HP_MAX
 		_bars[s] = _make_bars()
 		_aim[s] = float(w["face"])
-		_spray[s] = false
-		_ai[s] = {"t": 0.0, "goal": w["pos"], "target": -1, "pump": 0.0, "detour": Vector3.ZERO, "detour_t": 0.0, "stuck": 0.0}
+		_pump_cd[s] = 0.0
+		_fire_cd[s] = 0.0
+		_inv[s] = 0.0
+		_ai[s] = {"t": 0.0, "goal": w["pos"], "target": -1, "pump": 0.0, "fire": 0.0, "dodge": Vector3.ZERO, "dodge_t": 0.0, "detour": Vector3.ZERO, "detour_t": 0.0, "stuck": 0.0}
 		_guns[s] = _make_gun(w["node"])
 		scores[s] = HP_MAX
 	_place_cam(_focus(), true)
@@ -483,22 +491,7 @@ func _make_gun(pawn: Node3D) -> Dictionary:
 		hc.radial_segments = 6
 		add_mesh(hc, rubber, (q + prev) * 0.5, Basis(Quaternion(Vector3.UP, d.normalized())), pawn)
 		prev = q
-	# 물줄기: 물방울 덩어리들이 총구에서 맞는 자리까지 이어져 흐름 (매 프레임 _show 에서 자리 잡음)
-	var blobs := []
-	var bm := SphereMesh.new()
-	bm.radius = 0.1
-	bm.height = 0.2
-	bm.radial_segments = 10
-	bm.rings = 5
-	for k in 18:
-		var mi := MeshInstance3D.new()
-		mi.mesh = bm
-		mi.material_override = _jet_mat_or_new()
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mi.visible = false
-		world3.add_child(mi)
-		blobs.append(mi)
-	return {"gun": gun, "blobs": blobs, "fill": fill}
+	return {"gun": gun, "fill": fill}
 
 
 func _jet_mat_or_new() -> StandardMaterial3D:
@@ -507,7 +500,7 @@ func _jet_mat_or_new() -> StandardMaterial3D:
 	return _jet_mat
 
 
-## 머리 위 막대: 체력 (굵게) + 물 (가늘게). 늘 카메라를 봄
+## 머리 위: 체력 칸 셋 + 물통 (가늘게). 늘 카메라를 봄
 func _make_bars() -> Dictionary:
 	var root := Node3D.new()
 	world3.add_child(root)
@@ -528,13 +521,16 @@ func _make_bars() -> Dictionary:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mi)
 		return mi
-	var bg: MeshInstance3D = mk.call(Color(0.05, 0.06, 0.08, 0.8), Vector2(1.0, 0.24), 2)
+	var bg: MeshInstance3D = mk.call(Color(0.05, 0.06, 0.08, 0.8), Vector2(0.86, 0.27), 2)
 	bg.position = Vector3(0, 0.05, 0)
-	var hp: MeshInstance3D = mk.call(Color(0.35, 0.9, 0.4), Vector2(0.92, 0.11), 3)
-	hp.position = Vector3(0, 0.095, 0)
-	var water: MeshInstance3D = mk.call(Color(0.35, 0.75, 1.0), Vector2(0.92, 0.05), 3)
-	water.position = Vector3(0, -0.02, 0)
-	return {"root": root, "hp": hp, "water": water}
+	var pips := []
+	for i in HP_MAX:
+		var pip: MeshInstance3D = mk.call(Color(0.35, 0.9, 0.4), Vector2(0.24, 0.13), 3)
+		pip.position = Vector3((i - 1) * 0.27, 0.1, 0)
+		pips.append(pip)
+	var water: MeshInstance3D = mk.call(Color(0.35, 0.75, 1.0), Vector2(0.78, 0.05), 3)
+	water.position = Vector3(0, -0.03, 0)
+	return {"root": root, "pips": pips, "water": water}
 
 
 func _start_game() -> void:
@@ -551,31 +547,75 @@ func _input(e: InputEvent) -> void:
 		return
 	var k := e as InputEventKey
 	if k and k.pressed and not k.echo and k.physical_keycode == KEY_SPACE:
-		net_input("pump")
-		sfx("pump", 60)
+		var s := local_slot()
+		if _my_pump_cd <= 0.0 and walkers.has(s) and not walkers[s]["out"] and int(_ammo.get(s, 0)) < AMMO_MAX:
+			_my_pump_cd = PUMP_CD
+			net_input("pump")
+			sfx("pump", 60)
+		return
+	var mb := e as InputEventMouseButton
+	if mb and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+		var s := local_slot()
+		if not walkers.has(s) or walkers[s]["out"] or _my_fire_cd > 0.0:
+			return
+		if int(_ammo.get(s, 0)) <= 0:
+			sfx("click", 50)   # 딸깍 — 물이 없음
+			return
+		_my_fire_cd = FIRE_CD
+		net_input("fire", [float(_aim.get(s, 0.0))])
 
 
 func _net_input(slot: int, action: String, args: Array) -> void:
-	if not playing:
+	if not playing or not walkers.has(slot) or walkers[slot]["out"]:
 		return
 	match action:
 		"pump":
-			_tank[slot] = minf(1.0, float(_tank.get(slot, 0.0)) + PUMP)
-		"aim":
-			if args.size() >= 2:
+			_pump(slot)
+		"fire":
+			if args.size() >= 1:
 				_aim[slot] = float(args[0])
-				_spray[slot] = bool(args[1])
+				_fire(slot)
+		"aim":
+			if args.size() >= 1:
+				_aim[slot] = float(args[0])
+
+
+## 방장: 물 한 번 채우기 (0.4초에 한 번)
+func _pump(s: int) -> void:
+	if float(_pump_cd.get(s, 0.0)) > 0.0 or int(_ammo[s]) >= AMMO_MAX:
+		return
+	_pump_cd[s] = PUMP_CD - 0.05   # 손님 쪽 지연 여유
+	_ammo[s] = int(_ammo[s]) + 1
+
+
+## 방장: 한 발 쏘기
+func _fire(s: int) -> void:
+	if float(_fire_cd.get(s, 0.0)) > 0.0 or int(_ammo[s]) <= 0:
+		return
+	_fire_cd[s] = FIRE_CD - 0.05
+	_ammo[s] = int(_ammo[s]) - 1
+	var w: Dictionary = walkers[s]
+	var yaw := float(_aim[s])
+	var dir := Vector3(sin(yaw), 0, cos(yaw))
+	var from: Vector3 = (w["pos"] as Vector3) + dir * 0.55
+	_shot_id += 1
+	net_call("_shot_go", [_shot_id, s, from.x, from.z, yaw])
 
 
 # ── 매 프레임 ───────────────────────────────────────────────
 func _tick(delta: float) -> void:
 	_t3 += delta
-	var pr := pressure()
+	_my_pump_cd = maxf(0.0, _my_pump_cd - delta)
+	_my_fire_cd = maxf(0.0, _my_fire_cd - delta)
 	_local_aim(delta)
 	if not is_client():
+		for s in walkers:
+			_pump_cd[s] = maxf(0.0, float(_pump_cd.get(s, 0.0)) - delta)
+			_fire_cd[s] = maxf(0.0, float(_fire_cd.get(s, 0.0)) - delta)
 		_think(delta)
 	for s in walkers:
-		walkers[s]["speed"] = 2.8 if bool(_spray.get(s, false)) and float(_tank.get(s, 0.0)) > 0.0 else 4.6
+		_inv[s] = maxf(0.0, float(_inv.get(s, 0.0)) - delta)
+		walkers[s]["speed"] = 4.6
 		_prev[s] = walkers[s]["pos"]
 	step_walkers(delta)
 	_keep_on_raft()
@@ -583,11 +623,9 @@ func _tick(delta: float) -> void:
 		var w: Dictionary = walkers[s]
 		if w["out"]:
 			continue
-		if bool(_spray.get(s, false)) or is_local(w["p"]):
-			w["face"] = lerp_angle(float(w["face"]), float(_aim.get(s, w["face"])), clampf(delta * 14.0, 0.0, 1.0))
-			(w["node"] as Node3D).rotation.y = float(w["face"])
-	if not is_client():
-		_sprays(delta, pr)
+		w["face"] = lerp_angle(float(w["face"]), float(_aim.get(s, w["face"])), clampf(delta * 14.0, 0.0, 1.0))
+		(w["node"] as Node3D).rotation.y = float(w["face"])
+	_move_shots(delta)
 	_show(delta)
 	if _wait > 0.0:
 		_wait -= delta
@@ -622,7 +660,7 @@ func _keep_on_raft() -> void:
 		(w["node"] as Node3D).position.z = pos.z
 
 
-## 내 물대포: 마우스 쪽으로 겨눔, 왼쪽 버튼 누르는 동안 발사 (방장에게 알림)
+## 내 물총: 마우스 쪽으로 겨눔 (방장에게 가끔 알림 — 다른 사람 화면에서 몸 방향)
 func _local_aim(delta: float) -> void:
 	var s := local_slot()
 	if not walkers.has(s) or walkers[s]["out"] or demo:
@@ -635,72 +673,119 @@ func _local_aim(delta: float) -> void:
 	var yaw := float(_aim.get(s, 0.0))
 	if Vector2(d.x, d.z).length() > 0.2:
 		yaw = atan2(d.x, d.z)
-	var on := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	_aim[s] = yaw
-	_spray[s] = on
 	_aim_send -= delta
-	if on != _was_spray or _aim_send <= 0.0:
-		_aim_send = 0.08
-		_was_spray = on
-		net_input("aim", [yaw, on])
+	if _aim_send <= 0.0:
+		_aim_send = 0.1
+		net_input("aim", [yaw])
 
 
-## 겨눈 쪽으로 물줄기가 처음 닿는 사람 (구조물에 먼저 막히면 -1). [slot, 거리, 막힌 거리]
-func _ray_hit(s: int) -> Array:
-	var w: Dictionary = walkers[s]
-	var yaw := float(_aim.get(s, 0.0))
+## 모두: 물총알 하나 띄움 (물방울 덩어리 + 뒤따르는 작은 방울들)
+func _shot_go(id: int, s: int, fx: float, fz: float, yaw: float) -> void:
 	var dir := Vector3(sin(yaw), 0, cos(yaw))
-	var from: Vector3 = (w["pos"] as Vector3) + dir * 0.5
-	var block := minf(_cover_block(from, dir), RANGE)
-	var best := -1
-	var best_along := block
-	for o in _alive():
-		if o == s:
-			continue
-		var rel: Vector3 = (walkers[o]["pos"] as Vector3) - from
-		rel.y = 0.0
-		var along := rel.dot(dir)
-		if along < 0.0 or along > best_along:
-			continue
-		var lat := (rel - dir * along).length()
-		if lat < 0.7 + along * 0.08:   # 물줄기는 멀수록 퍼짐
-			best_along = along
-			best = o
-	return [best, best_along, block]
+	var node := Node3D.new()
+	world3.add_child(node)
+	var bm := SphereMesh.new()
+	bm.radius = 0.2
+	bm.height = 0.4
+	bm.radial_segments = 12
+	bm.rings = 6
+	var main := add_mesh(bm, _jet_mat, Vector3.ZERO, Basis(), node)
+	main.scale = Vector3(1.0, 0.9, 1.5)
+	for k in 3:
+		var tm := SphereMesh.new()
+		tm.radius = 0.12 - k * 0.028
+		tm.height = tm.radius * 2.0
+		tm.radial_segments = 8
+		tm.rings = 4
+		add_mesh(tm, _jet_mat, Vector3(sin(k * 2.1) * 0.04, cos(k * 1.7) * 0.04, -0.32 - k * 0.22), Basis(), node)
+	for mi in node.find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var from := Vector3(fx, 0.62, fz)
+	node.position = from
+	node.look_at(from + dir, Vector3.UP)
+	node.rotate_object_local(Vector3.UP, PI)   # 꼬리가 뒤로
+	_shots.append({"id": id, "s": s, "from": from, "dir": dir, "age": 0.0, "node": node, "dead": false})
+	if walkers.has(s):
+		var n: Node3D = walkers[s]["node"]
+		n.scale = Vector3.ONE   # 쏠 때 살짝 움찔
+		var tw := create_tween()
+		tw.tween_property(n, "scale", Vector3(1.0, 0.94, 1.0), 0.05)
+		tw.tween_property(n, "scale", Vector3.ONE, 0.1)
+	if is_local(player_by_slot(s)) or (demo and fmod(float(id), 3.0) < 1.0):
+		sfx("spray", 140)
+	elif walkers.has(s) and (walkers[s]["pos"] as Vector3).distance_to(_cam_f) < 12.0:
+		sfx("spray", 70)
 
 
-## 방장: 물줄기 판정. 처음 닿는 사람을 밀어냄 (가까울수록 세게). 구조물 뒤는 안전
-func _sprays(delta: float, pr: float) -> void:
-	for k in _hit_cd.keys():
-		_hit_cd[k] = float(_hit_cd[k]) - delta
-	for k in _stagger.keys():
-		_stagger[k] = float(_stagger[k]) - delta
-	for s in _alive():
-		var on := bool(_spray.get(s, false)) and float(_tank[s]) > 0.0 and float(_stagger.get(s, 0.0)) <= 0.0
-		if not on:
+## 모두: 물총알 날기. 방장은 구조물 · 사람에 맞았는지 판정
+func _move_shots(delta: float) -> void:
+	for i in range(_shots.size() - 1, -1, -1):
+		var sh: Dictionary = _shots[i]
+		var node: Node3D = sh["node"]
+		if sh["dead"]:
+			node.queue_free()
+			_shots.remove_at(i)
 			continue
-		_tank[s] = maxf(0.0, float(_tank[s]) - DRAIN * delta)
-		var hr := _ray_hit(s)
-		var best := int(hr[0])
-		if best < 0:
-			continue
-		var key := "%d_%d" % [s, best]
-		if float(_hit_cd.get(key, 0.0)) > 0.0:
-			continue
-		_hit_cd[key] = 0.09
-		var yaw := float(_aim[s])
-		var dir := Vector3(sin(yaw), 0, cos(yaw))
-		var dmg := lerpf(DPS_NEAR, DPS_FAR, float(hr[1]) / RANGE) * lerpf(1.0, 1.2, pr) * 0.09
-		_hp[best] = maxf(0.0, float(_hp[best]) - dmg)
-		scores[best] = float(_hp[best])
-		net_push(best, dir * KNOCK, 0.15)
-		if float(_hp[best]) <= 0.0:
-			net_call("_ko", [best])
-		var facing := Vector3(sin(float(_aim.get(best, 0.0))), 0, cos(float(_aim.get(best, 0.0))))
-		if facing.dot(-dir) > 0.3:
-			_stagger[best] = 0.2
+		var a0 := float(sh["age"]) * SHOT_V
+		sh["age"] = float(sh["age"]) + delta
+		var a1 := float(sh["age"]) * SHOT_V
+		var dir: Vector3 = sh["dir"]
+		var from: Vector3 = sh["from"]
+		var f := a1 / SHOT_RANGE
+		# 끝으로 갈수록 살짝 처지며 떨어짐
+		node.position = from + dir * a1 + Vector3(0, -f * f * 0.45, 0)
+		node.scale = Vector3.ONE * (1.0 + sin(sh["age"] * 30.0) * 0.06)
+		if not is_client():
+			var blocked := _cover_block(from + dir * a0, dir)
+			if blocked < a1 - a0:
+				net_call("_shot_end", [int(sh["id"]), -1])
+				continue
+			var hit := -1
+			for o in _alive():
+				if o == int(sh["s"]) or float(_inv.get(o, 0.0)) > 0.0:
+					continue
+				var rel: Vector3 = (walkers[o]["pos"] as Vector3) - from
+				rel.y = 0.0
+				var along := clampf(rel.dot(dir), a0, a1)
+				if (from + dir * along - (walkers[o]["pos"] as Vector3) * Vector3(1, 0, 1) - Vector3(0, from.y, 0)).length() < SHOT_R:
+					hit = o
+					break
+			if hit >= 0:
+				_hp[hit] = maxi(0, int(_hp[hit]) - 1)
+				scores[hit] = int(_hp[hit])
+				_inv[hit] = INVULN
+				net_push(hit, dir * KNOCK, 0.2)
+				net_call("_shot_end", [int(sh["id"]), hit])
+				if int(_hp[hit]) <= 0:
+					net_call("_ko", [hit])
+				continue
+			if a1 >= SHOT_RANGE:
+				net_call("_shot_end", [int(sh["id"]), -2])
 
 
+## 모두: 물총알이 끝남 (-1 구조물에 막힘 · -2 끝까지 날아 바닥에 떨어짐 · 0 이상 그 사람이 맞음)
+func _shot_end(id: int, who: int) -> void:
+	for sh: Dictionary in _shots:
+		if int(sh["id"]) != id or sh["dead"]:
+			continue
+		sh["dead"] = true
+		var node: Node3D = sh["node"]
+		var at := node.position
+		if who >= 0 and walkers.has(who):
+			_inv[who] = INVULN
+			at = (walkers[who]["pos"] as Vector3) + Vector3(0, 0.8, 0)
+			splash(at, 16, 0.55)
+			sfx("splash", 90 if is_local(player_by_slot(who)) else 50)
+			if is_local(player_by_slot(who)):
+				shake(0.25)
+		elif who == -2:
+			at.y = 0.04
+			splash(at, 8, 0.35)
+		else:
+			splash(at, 10, 0.45)
+		node.visible = false
+		return
 
 
 ## 체력 0: 흠뻑 젖어 옆으로 쓰러짐 (탈락). 물보라 + 물웅덩이
@@ -713,9 +798,9 @@ func _ko(s: int) -> void:
 		print("MGKO slot %d t=%.1f" % [s, duration - time_left])
 	_out_at[s] = _order
 	_order += 1
-	_hp[s] = 0.0
+	_hp[s] = 0
 	scores[s] = 0
-	_spray[s] = false
+	_inv[s] = 0.0
 	_wait = 1.6
 	var n: Node3D = w["node"]
 	var side := 1.0 if rng.randf() < 0.5 else -1.0
@@ -747,75 +832,32 @@ func _ko(s: int) -> void:
 	create_tween().tween_property(pd, "scale", Vector3.ONE, 0.6)
 
 
-## 보여주기 (모든 PC): 물줄기 · 맞은 자리 물보라 · 등 물통 눈금 · 쏘는 소리. 엄폐물에 막히면 거기서 튐
-func _show(delta: float) -> void:
+## 보여주기 (모든 PC): 머리 위 체력 칸 · 물통 · 등 물통 눈금 · 무적 깜빡임
+func _show(_delta: float) -> void:
 	for s in _bars:
 		var bd: Dictionary = _bars[s]
 		var w0: Dictionary = walkers[s]
 		var root: Node3D = bd["root"]
 		root.visible = not w0["out"]
 		root.position = (w0["node"] as Node3D).position + Vector3(0, 1.75, 0)
-		var hp := clampf(float(_hp.get(s, HP_MAX)) / HP_MAX, 0.0, 1.0)
-		var tk := clampf(float(_tank.get(s, 0.0)), 0.0, 1.0)
-		var hb: MeshInstance3D = bd["hp"]
-		hb.scale = Vector3(maxf(hp, 0.001), 1, 1)
-		hb.position.x = -0.46 * (1.0 - hp)
+		var hp := int(_hp.get(s, HP_MAX))
+		var pips: Array = bd["pips"]
+		for i in pips.size():
+			var col := Color(0.35, 0.9, 0.4) if hp >= 3 else (Color(1.0, 0.78, 0.2) if hp == 2 else Color(0.95, 0.28, 0.22))
+			(((pips[i] as MeshInstance3D).material_override) as StandardMaterial3D).albedo_color = col if i < hp else Color(0.22, 0.24, 0.27, 0.9)
+		var tk := clampf(float(_ammo.get(s, 0)) / AMMO_MAX, 0.0, 1.0)
 		var wb: MeshInstance3D = bd["water"]
 		wb.scale = Vector3(maxf(tk, 0.001), 1, 1)
-		wb.position.x = -0.46 * (1.0 - tk)
-		# 체력이 줄었으면 잠깐 하얗게 번쩍
-		var last := float(bd.get("last", hp))
-		if hp < last - 0.001:
-			_flash[s] = 0.12
-		bd["last"] = hp
-		_flash[s] = maxf(0.0, float(_flash.get(s, 0.0)) - delta)
-		var col := Color(0.95, 0.25, 0.2).lerp(Color(1.0, 0.8, 0.2), clampf(hp * 2.0, 0.0, 1.0)).lerp(Color(0.35, 0.9, 0.4), clampf(hp * 2.0 - 1.0, 0.0, 1.0))
-		if float(_flash[s]) > 0.0:
-			col = Color(1, 1, 1)
-		(hb.material_override as StandardMaterial3D).albedo_color = col
+		wb.position.x = -0.39 * (1.0 - tk)
+		# 무적: 깜빡깜빡
+		var n: Node3D = w0["node"]
+		if not w0["out"]:
+			n.visible = float(_inv.get(s, 0.0)) <= 0.0 or fmod(float(_inv[s]), 0.16) < 0.09
+		else:
+			n.visible = true
 	for s in _guns:
 		var g: Dictionary = _guns[s]
-		var w: Dictionary = walkers[s]
-		var on: bool = bool(_spray.get(s, false)) and float(_tank.get(s, 0.0)) > 0.0 and not w["out"]
-		(g["fill"] as Node3D).scale = Vector3(1, maxf(0.02, float(_tank.get(s, 0.0))), 1)
-		var blobs: Array = g["blobs"]
-		if not on:
-			for b in blobs:
-				(b as Node3D).visible = false
-			continue
-		if is_local(w["p"]) or demo:
-			sfx("spray", 520)
-		var yaw := float(_aim.get(s, 0.0))
-		var dir := Vector3(sin(yaw), 0, cos(yaw))
-		var nozzle: Vector3 = (g["gun"] as Node3D).global_transform * Vector3(0, 0, 0.58)
-		var hr := _ray_hit(s)
-		var hit_at: Vector3
-		var short := true
-		if int(hr[0]) >= 0:
-			hit_at = (walkers[int(hr[0])]["pos"] as Vector3) + Vector3(0, 0.75, 0) - dir * 0.3
-		elif float(hr[2]) < RANGE:
-			hit_at = (w["pos"] as Vector3) + dir * (0.5 + float(hr[2])) + Vector3(0, 0.6, 0)
-		else:
-			hit_at = (w["pos"] as Vector3) + dir * (RANGE + 0.5)
-			hit_at.y = 0.05
-			short = false
-		var n := blobs.size()
-		var sag := 0.35 if short else 0.0
-		for k in n:
-			var t := fmod(float(k) / n + _t3 * 2.6, 1.0)
-			var p := nozzle.lerp(hit_at, t)
-			p.y -= sin(t * PI) * sag + (t * t * 0.4 if not short else 0.0)
-			p += Vector3(sin(_t3 * 31.0 + k * 1.7), cos(_t3 * 27.0 + k * 2.3), 0) * 0.04 * t
-			var b: MeshInstance3D = blobs[k]
-			b.visible = true
-			b.global_position = p
-			var sc := lerpf(0.55, 1.5, t)
-			b.scale = Vector3(sc, sc, sc * 1.8)
-			b.look_at(p + dir + Vector3(0, 0.001, 0), Vector3.UP)
-		_fx_cd[s] = float(_fx_cd.get(s, 0.0)) - delta
-		if float(_fx_cd[s]) <= 0.0:
-			_fx_cd[s] = 0.1
-			splash(hit_at, 7, 0.4)
+		(g["fill"] as Node3D).scale = Vector3(1, maxf(0.02, float(_ammo.get(s, 0)) / AMMO_MAX), 1)
 
 
 # ── CPU ─────────────────────────────────────────────────────
@@ -860,15 +902,33 @@ func _think(delta: float) -> void:
 		var a: Dictionary = _ai[s]
 		var sk := skill(p)
 		var pos: Vector3 = w["pos"]
-		var tank := float(_tank[s])
-		var want_pump := tank < lerpf(0.3, 0.45, sk / 2.0) or (tank < 0.9 and not bool(_spray[s]))
+		var ammo := int(_ammo[s])
+		# 물: 적으면 (또는 한가하면) 0.4초마다 채움
+		var want_pump: bool = ammo < (3 if sk > 1.0 else 2) or (ammo < AMMO_MAX and float(a.get("idle", 0.0)) > 0.6)
 		if want_pump:
 			a["pump"] = float(a["pump"]) - delta
-			var guard := 0
-			while float(a["pump"]) <= 0.0 and guard < 6:
-				guard += 1
-				a["pump"] = float(a["pump"]) + 1.0 / (lerpf(4.5, 8.0, sk / 2.0) * rng.randf_range(0.85, 1.15))
-				_tank[s] = minf(1.0, float(_tank[s]) + PUMP)
+			if float(a["pump"]) <= 0.0:
+				a["pump"] = PUMP_CD + rng.randf_range(0.0, lerpf(0.35, 0.05, sk / 2.0))
+				_pump(s)
+		# 날아오는 물총알 피하기 (실력만큼 알아채고 옆으로 비킴)
+		a["dodge_t"] = maxf(0.0, float(a["dodge_t"]) - delta)
+		if float(a["dodge_t"]) <= 0.0 and float(_inv[s]) <= 0.0:
+			for sh: Dictionary in _shots:
+				if int(sh["s"]) == s or sh["dead"]:
+					continue
+				var sp: Vector3 = (sh["from"] as Vector3) + (sh["dir"] as Vector3) * float(sh["age"]) * SHOT_V
+				var rel := pos - sp
+				rel.y = 0.0
+				var along := rel.dot(sh["dir"])
+				var lat := (rel - (sh["dir"] as Vector3) * along).length()
+				if along > 0.0 and along < 3.6 and lat < 0.75 and not a.has("seen_%d" % int(sh["id"])):
+					a["seen_%d" % int(sh["id"])] = true
+					if rng.randf() < lerpf(0.25, 0.8, sk / 2.0):
+						var side := Vector3(-(sh["dir"] as Vector3).z, 0, (sh["dir"] as Vector3).x)
+						if (rel - (sh["dir"] as Vector3) * along).dot(side) < 0.0:
+							side = -side
+						a["dodge"] = _nearest_walkable(pos + side * 1.6)
+						a["dodge_t"] = 0.45
 		a["t"] = float(a["t"]) - delta
 		if float(a["t"]) <= 0.0:
 			a["t"] = lerpf(0.45, 0.18, sk / 2.0) + rng.randf_range(0.0, 0.12)
@@ -878,7 +938,7 @@ func _think(delta: float) -> void:
 				if o == s:
 					continue
 				var op: Vector3 = walkers[o]["pos"]
-				var v := op.distance_to(pos) * 0.6 + float(_hp.get(o, HP_MAX)) * 0.03
+				var v := op.distance_to(pos) * 0.6 + float(_hp.get(o, HP_MAX)) * 1.0
 				if v < bv:
 					bv = v
 					best = o
@@ -892,23 +952,34 @@ func _think(delta: float) -> void:
 				var cen := -tp
 				cen.y = 0.0
 				cen = cen.normalized() if cen.length() > 0.1 else Vector3.ZERO
-				goal = _attack_spot(pos, tp, lerpf(4.0, 3.2, sk / 2.0))
-			if tank < 0.2 or (float(_hp[s]) < lerpf(25.0, 45.0, sk / 2.0) and tank < 0.6):
+				goal = _attack_spot(pos, tp, lerpf(6.0, 5.0, sk / 2.0))
+			if ammo <= 0 or (int(_hp[s]) <= 1 and ammo < 3):
 				# 물이 없거나 다쳤으면 가까운 구조물 뒤(상대 반대쪽)로 숨어 펌프질
 				goal = _hide_spot(pos, best)
 			a["goal"] = _nearest_walkable(goal)
 			a["err"] = rng.randf_range(-1.0, 1.0) * lerpf(0.2, 0.04, sk / 2.0)
 		var tg := int(a["target"])
 		if tg >= 0 and walkers.has(tg) and not walkers[tg]["out"]:
-			var tp2: Vector3 = (walkers[tg]["pos"] as Vector3) + (walkers[tg]["vel"] as Vector3) * 0.15
+			var d0: Vector3 = (walkers[tg]["pos"] as Vector3) - pos
+			# 물총알이 날아가는 동안 움직일 만큼 앞을 보고 겨눔 (실력이 좋을수록 정확히)
+			var lead := d0.length() / SHOT_V * lerpf(0.3, 1.0, sk / 2.0)
+			var tp2: Vector3 = (walkers[tg]["pos"] as Vector3) + (walkers[tg]["vel"] as Vector3) * lead
 			var d := tp2 - pos
 			d.y = 0.0
 			var want := atan2(d.x, d.z) + float(a.get("err", 0.0))
 			_aim[s] = lerp_angle(float(_aim[s]), want, clampf(delta * lerpf(6.0, 14.0, sk / 2.0), 0.0, 1.0))
 			var clear := d.length() < 0.1 or _cover_block(pos + d.normalized() * 0.5, d.normalized()) > d.length() - 0.6
-			_spray[s] = d.length() < RANGE - 0.4 and clear and float(_tank[s]) > 0.05 and not (float(_tank[s]) < 0.3 and want_pump)
+			a["fire"] = float(a["fire"]) - delta
+			var aimed := absf(angle_difference(float(_aim[s]), want)) < 0.15
+			if d.length() < SHOT_RANGE - 1.5 and clear and aimed and ammo > 0 and float(a["fire"]) <= 0.0 and float(_inv.get(tg, 0.0)) < 0.3:
+				a["fire"] = FIRE_CD + rng.randf_range(0.1, lerpf(0.7, 0.2, sk / 2.0))
+				_fire(s)
+			a["idle"] = 0.0 if clear and d.length() < SHOT_RANGE else float(a.get("idle", 0.0)) + delta
 		else:
-			_spray[s] = false
+			a["idle"] = float(a.get("idle", 0.0)) + delta
+		if float(a["dodge_t"]) > 0.0:
+			w["target"] = a["dodge"]
+			continue
 		w["target"] = _steer(s, pos, a["goal"], delta)
 		if OS.get_environment("MG_DEBUG") != "" and fmod(_t3, 1.0) < delta:
 			print("WCDBG t=%.1f s=%d pos=(%.1f,%.1f) goal=(%.1f,%.1f) tgt=(%.1f,%.1f) det=%.2f stuck=%.2f" % [_t3, s, pos.x, pos.z, (a["goal"] as Vector3).x, (a["goal"] as Vector3).z, (w["target"] as Vector3).x, (w["target"] as Vector3).z, float(a["detour_t"]), float(a["stuck"])])
@@ -971,11 +1042,11 @@ func _ranking() -> Array:
 	return order
 
 
-## 온라인: 물통 · 겨눈 방향 · 쏘는 중 (방장 → 손님)
+## 온라인: 물총알 수 · 겨눈 방향 · 체력 · 무적 (방장 → 손님)
 func _net_state() -> Dictionary:
 	var g := {}
-	for s in _tank:
-		g[s] = [float(_tank[s]), float(_aim[s]), bool(_spray[s]), float(_hp.get(s, HP_MAX))]
+	for s in _ammo:
+		g[s] = [int(_ammo[s]), float(_aim[s]), int(_hp.get(s, HP_MAX)), float(_inv.get(s, 0.0))]
 	return {"g": g}
 
 
@@ -984,17 +1055,17 @@ func _net_apply(st: Dictionary) -> void:
 	for s in g:
 		var v: Array = g[s]
 		var si := int(s)
-		_tank[si] = float(v[0])
+		_ammo[si] = int(v[0])
 		if v.size() >= 4:
-			_hp[si] = float(v[3])
-			scores[si] = float(v[3])
+			_hp[si] = int(v[2])
+			scores[si] = int(v[2])
+			_inv[si] = float(v[3])
 		if si != net_me:
 			_aim[si] = float(v[1])
-			_spray[si] = bool(v[2])
 
 
 func _score_text(p: Dictionary) -> String:
 	var s := int(p["slot"])
 	if walkers.has(s) and walkers[s]["out"]:
 		return "✕"
-	return tr("HP %d") % int(ceil(float(_hp.get(s, HP_MAX))))
+	return tr("HP %d") % int(_hp.get(s, HP_MAX))

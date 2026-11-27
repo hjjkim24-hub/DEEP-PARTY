@@ -8,7 +8,7 @@ extends "res://scripts/minigames/minigame_3d.gd"
 const HALF_W := 4.8             ## 다리 반 너비 (9.6m)
 const START_Z := 6.0            ## 출발선
 const FINISH_Z := -86.0         ## 결승선 (길게 — 화면은 각자 내 말을 따라감)
-const ACC := 10.5
+const ACC := 8.6                ## 얼음이라 힘을 줘도 천천히 붙음
 const MAXV := 6.6
 const DASH := 8.6
 const DASH_CD := 1.4
@@ -35,7 +35,7 @@ var _skid_mat: StandardMaterial3D
 
 func _init() -> void:
 	title = "SLIPPERY DECK"
-	how_to = "Race up the long frozen pier to the finish line! It's a sheet of ice - once you slide, it's hard to stop. Barrels keep rolling down from the top: dodge them! SPACE dashes forward and bumps others aside. Slip off the edge and you'll climb back on a little behind."
+	how_to = "Race up the long frozen pier to the finish line! It's a sheet of ice - once you slide, it's hard to stop. Barrels keep rolling down the whole pier: dodge them! SPACE dashes forward and bumps others aside. Slip off the edge and you'll climb back on a little behind."
 	goal = "Reach the finish line first!"
 	controls = "KEYS_DASH"
 	duration = 60.0
@@ -228,6 +228,17 @@ func _setup_game() -> void:
 func _start_game() -> void:
 	_elapsed = 0.0
 	_barrel_t = 0.6
+	if is_client():
+		return
+	# 시작부터 잔교 전체에 술통이 이미 굴러 내려오는 중 (앞쪽이 텅 비어 그냥 달려 올라가지 않게)
+	var t := -0.4
+	while true:
+		var sp := rng.randf_range(BARREL_V_MIN, BARREL_V_MAX)
+		var z := FINISH_Z - 5.5 + sp * (0.0 - t)
+		if z > START_Z - 7.0:
+			break
+		_spawn_barrel(t, sp)
+		t -= rng.randf_range(BARREL_GAP_MIN, BARREL_GAP_MAX)
 
 
 func _racing() -> Array:
@@ -358,7 +369,7 @@ func _slide(delta: float) -> void:
 			inp = _ai[s]["inp"]
 		if float(w["stun"]) > 0.0:
 			inp = Vector3.ZERO
-		var fric := 1.05
+		var fric := 0.55   # 얼음 위: 한번 미끄러지면 잘 안 멈춤 (관성)
 		if _done.has(s):
 			fric = 3.0
 		var vel: Vector3 = w["vel"]
@@ -473,6 +484,9 @@ func _check_edges() -> void:
 		var w: Dictionary = walkers[s]
 		if float(w["fallen"]) > 0.0:
 			continue
+		if float(w.get("grace", 0.0)) > 0.0:
+			w["grace"] = float(w["grace"]) - get_process_delta_time()
+			continue
 		var pos: Vector3 = w["pos"]
 		if absf(pos.x) > HALF_W + 0.25:
 			net_call("_fall", [s, pos])
@@ -481,6 +495,7 @@ func _check_edges() -> void:
 
 
 func _fall(s: int, at: Vector3) -> void:
+	if OS.get_environment("MG_DEBUG") != "": print("SD fall s=%d z=%.1f t=%.1f" % [s, at.z, _elapsed])
 	var w: Dictionary = walkers[s]
 	if float(w["fallen"]) > 0.0:
 		return
@@ -508,8 +523,11 @@ func _fallen_step(s: int, w: Dictionary, delta: float) -> void:
 	if float(w["fallen"]) <= 0.0:
 		w["fallen"] = 0.0
 		var back := Vector3(clampf(at.x * 0.2, -1.0, 1.0), walk_y, minf(at.z + 2.5, START_Z + 1.0))
-		if not w.has("net_pos"):
-			w["pos"] = back
+		# 다시 올라오는 자리는 모든 PC 가 똑같이 계산함 → 방장도 손님 말을 바로 그 자리로 (옛 위치를 보고 또 빠뜨리지 않게)
+		w["pos"] = back
+		if w.has("net_pos"):
+			w["net_pos"] = back
+		w["grace"] = 0.6
 		w["vel"] = Vector3.ZERO
 		w["stun"] = 0.3
 		n.position = back + Vector3(0, 2.0, 0)
@@ -519,6 +537,7 @@ func _fallen_step(s: int, w: Dictionary, delta: float) -> void:
 
 
 func _finish(s: int, t: float) -> void:
+	if OS.get_environment("MG_DEBUG") != "": print("SD finish s=%d t=%.1f" % [s, t])
 	if _done.has(s):
 		return
 	_done[s] = t
@@ -531,7 +550,11 @@ func _finish(s: int, t: float) -> void:
 
 
 # ── 굴러오는 술통 ────────────────────────────────────────────
-func _spawn_barrel() -> void:
+func _spawn_barrel(t0: float = NAN, speed: float = NAN) -> void:
+	if is_nan(t0):
+		t0 = _elapsed
+	if is_nan(speed):
+		speed = rng.randf_range(BARREL_V_MIN, BARREL_V_MAX)
 	# 가끔은 달리는 사람을 노림
 	var x := rng.randf_range(-HALF_W + 0.5, HALF_W - 0.5)
 	if rng.randf() < 0.3:
@@ -542,13 +565,13 @@ func _spawn_barrel() -> void:
 	for k in 6:
 		var ok := true
 		for br in _barrels:
-			if _elapsed - float(br["t0"]) < 0.9 and absf(float(br["x"]) - x) < 1.7:
+			if absf(float(br["t0"]) - t0) < 0.9 and absf(float(br["x"]) - x) < 1.7:
 				ok = false
 		if ok:
 			break
 		x = rng.randf_range(-HALF_W + 0.5, HALF_W - 0.5)
 	_next_barrel += 1
-	net_call("_barrel_go", [_next_barrel, x, rng.randf_range(BARREL_V_MIN, BARREL_V_MAX), _elapsed, rng.randf() < 0.25])
+	net_call("_barrel_go", [_next_barrel, x, speed, t0, rng.randf() < 0.25])
 
 
 func _barrel_go(id: int, x: float, speed: float, t0: float, hop: bool) -> void:
@@ -559,7 +582,7 @@ func _barrel_go(id: int, x: float, speed: float, t0: float, hop: bool) -> void:
 	holder.basis = Basis.looking_at(Vector3.RIGHT, Vector3.UP)   # 굴러가는 축 = 좌우
 	var b := barrel(holder, Vector3(0, 0, -0.55), BARREL_R, 1.1, [Color(0.4, 0.25, 0.13), Color(0.34, 0.22, 0.12), Color(0.45, 0.3, 0.16)][id % 3])
 	b.rotation = Vector3(PI / 2, 0, 0)
-	root.position = Vector3(x, BARREL_R, FINISH_Z - 5.5)
+	root.position = Vector3(x, BARREL_R, FINISH_Z - 5.5 + speed * maxf(0.0, _elapsed - t0))
 	_barrels.append({"id": id, "x": x, "speed": speed, "t0": t0, "node": root, "holder": holder, "hit": {}, "hop": hop})
 
 
@@ -594,6 +617,7 @@ func _update_barrels(delta: float) -> void:
 			var pos: Vector3 = w["pos"]
 			if absf(pos.z - z) < 0.8 and absf(pos.x - node.position.x) < 0.9 and y < 1.2:
 				hit[s] = true
+				if OS.get_environment("MG_DEBUG") != "": print("SD hit s=%d z=%.1f t=%.1f" % [s, pos.z, _elapsed])
 				var away := signf(pos.x - node.position.x)
 				if away == 0.0:
 					away = 1.0 if rng.randf() < 0.5 else -1.0
