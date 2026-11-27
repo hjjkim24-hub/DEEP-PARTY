@@ -17,12 +17,13 @@ const LIST := {
 	"cave_run": preload("res://scripts/minigames/cave_run.gd"),
 	"tilting_raft": preload("res://scripts/minigames/tilting_raft.gd"),
 	"cargo_haul": preload("res://scripts/minigames/cargo_haul.gd"),
+	"beach_dig": preload("res://scripts/minigames/beach_dig.gd"),
 }
 const NAMES := {
 	"tentacle_dodge": "TentacleDodge", "cannon_volley": "CannonVolley",
 	"treasure_dive": "TreasureDive", "chest_shuffle": "ChestShuffle",
 	"tentacle_tug": "TentacleTug", "powder_keg": "PowderKeg", "anchor_drop": "AnchorDrop", "ink_paint": "InkPaint", "clam_snatch": "ClamSnatch",
-	"slippery_deck": "SlipperyDeck", "mast_climb": "MastClimb", "water_cannon": "WaterCannon", "cave_run": "CaveRun", "tilting_raft": "TiltingRaft", "cargo_haul": "CargoHaul",
+	"slippery_deck": "SlipperyDeck", "mast_climb": "MastClimb", "water_cannon": "WaterCannon", "cave_run": "CaveRun", "tilting_raft": "TiltingRaft", "cargo_haul": "CargoHaul", "beach_dig": "BeachDig",
 }
 
 
