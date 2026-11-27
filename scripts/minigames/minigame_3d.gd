@@ -711,7 +711,63 @@ static func in_rect(p: Vector3, a: Vector3, b: Vector3, width: float, margin: fl
 
 
 ## 물보라 (흰 물방울이 튀었다 떨어짐)
+## 물보라: 튀어 오르는 물방울 + 흩날리며 퍼지는 물안개 (메시 · 재질은 한 번만 만들어 같이 씀)
+static var _drop_mesh: SphereMesh
+static var _mist_mesh: QuadMesh
+static var _mist_curve: Curve
+static var _mist_ramp: Gradient
+static var _drop_ramp: Gradient
+
+
+func _splash_res() -> void:
+	if _drop_mesh != null:
+		return
+	_drop_mesh = SphereMesh.new()
+	_drop_mesh.radius = 0.045
+	_drop_mesh.height = 0.1
+	_drop_mesh.radial_segments = 6
+	_drop_mesh.rings = 3
+	var dm := StandardMaterial3D.new()
+	dm.albedo_color = Color(0.85, 0.94, 1.0, 0.8)
+	dm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	dm.vertex_color_use_as_albedo = true
+	dm.roughness = 0.05
+	dm.metallic_specular = 1.0
+	_drop_mesh.material = dm
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 0.95))
+	g.set_color(1, Color(1, 1, 1, 0.0))
+	g.add_point(0.45, Color(1, 1, 1, 0.5))
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(0.5, 0.0)
+	tex.width = 64
+	tex.height = 64
+	var mm := StandardMaterial3D.new()
+	mm.albedo_texture = tex
+	mm.albedo_color = Color(0.9, 0.95, 0.98)
+	mm.vertex_color_use_as_albedo = true
+	mm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_mist_mesh = QuadMesh.new()
+	_mist_mesh.size = Vector2(0.55, 0.55)
+	_mist_mesh.material = mm
+	_mist_curve = Curve.new()
+	_mist_curve.add_point(Vector2(0.0, 0.45))
+	_mist_curve.add_point(Vector2(1.0, 1.0))
+	_mist_ramp = Gradient.new()
+	_mist_ramp.set_color(0, Color(1, 1, 1, 0.6))
+	_mist_ramp.set_color(1, Color(1, 1, 1, 0.0))
+	_drop_ramp = Gradient.new()
+	_drop_ramp.set_color(0, Color(1, 1, 1, 1.0))
+	_drop_ramp.set_color(1, Color(1, 1, 1, 0.2))
+
+
 func splash(pos: Vector3, amount: int = 40, power: float = 1.0) -> void:
+	_splash_res()
 	var p := CPUParticles3D.new()
 	p.one_shot = true
 	p.amount = amount
@@ -722,23 +778,34 @@ func splash(pos: Vector3, amount: int = 40, power: float = 1.0) -> void:
 	p.initial_velocity_min = 2.5 * power
 	p.initial_velocity_max = 5.0 * power
 	p.gravity = Vector3(0, -14, 0)
-	p.scale_amount_min = 0.6
-	p.scale_amount_max = 1.4
-	var s := SphereMesh.new()
-	s.radius = 0.07
-	s.height = 0.14
-	s.radial_segments = 8
-	s.rings = 4
-	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.85, 0.95, 1.0, 0.85)
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.roughness = 0.1
-	s.material = m
-	p.mesh = s
+	p.scale_amount_min = 0.5
+	p.scale_amount_max = 1.3
+	p.color_ramp = _drop_ramp
+	p.mesh = _drop_mesh
 	p.position = pos
 	world3.add_child(p)
 	p.emitting = true
 	p.finished.connect(p.queue_free)
+	# 물안개: 물방울보다 느리게 퍼지며 사라짐
+	var m := CPUParticles3D.new()
+	m.one_shot = true
+	m.amount = maxi(3, amount / 4)
+	m.lifetime = 0.95
+	m.explosiveness = 0.85
+	m.direction = Vector3.UP
+	m.spread = 50.0
+	m.initial_velocity_min = 0.8 * power
+	m.initial_velocity_max = 2.2 * power
+	m.gravity = Vector3(0, -2.5, 0)
+	m.damping_min = 1.5
+	m.damping_max = 2.5
+	m.scale_amount_min = 0.7 * clampf(power, 0.4, 1.5)
+	m.scale_amount_max = 1.4 * clampf(power, 0.4, 1.5)
+	m.scale_amount_curve = _mist_curve
+	m.color_ramp = _mist_ramp
+	m.mesh = _mist_mesh
+	p.add_child(m)
+	m.emitting = true
 
 
 ## 먼지 · 나무 부스러기 튐

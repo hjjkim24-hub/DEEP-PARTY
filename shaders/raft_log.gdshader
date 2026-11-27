@@ -111,19 +111,25 @@ void fragment() {
 		float crack = smoothstep(0.016, 0.0, abs(fbm(vec2(u * 6.0 + sd, v * 0.2)) - 0.5)) * worn;   // 길게 갈라진 금
 		wood *= 1.0 - crack * 0.45;
 		// 옹이
-		vec2 kv = voro(vec2(u * 1.4, v * 0.55) + sd);
-		float knot = smoothstep(0.16, 0.05, kv.x) * step(0.86, kv.y);
-		vec3 knot_c = mix(wood_col * 0.45, wood_col * 0.75, smoothstep(0.02, 0.12, kv.x));
+		float knot = 0.0;
+		vec3 knot_c = wood_col;
+		if (worn > 0.05) {   // 옹이는 윗면에서만 (계산 아낌)
+			vec2 kv = voro(vec2(u * 1.4, v * 0.55) + sd);
+			knot = smoothstep(0.16, 0.05, kv.x) * step(0.86, kv.y);
+			knot_c = mix(wood_col * 0.45, wood_col * 0.75, smoothstep(0.02, 0.12, kv.x));
+		}
 		c = mix(bark, wood, worn);
 		c = mix(c, knot_c, knot * mix(0.6, 1.0, worn));
 		h0 = mix(bark_h * 0.9, grain * 0.15 - crack * 0.4, worn) - knot * 0.2;
 		rough = mix(0.97, 0.88, worn);
 		// 물가 따개비 (물 높이 근처 · 아랫면)
 		float above0 = wp.y - water_y;
-		vec2 bv = voro(vec2(u * 14.0, v * 14.0) + sd);
-		float barn = smoothstep(0.32, 0.18, bv.x) * step(0.55, bv.y) * smoothstep(0.25, 0.0, above0) * smoothstep(-0.45, -0.05, above0) * (1.0 - worn);
-		c = mix(c, vec3(0.62, 0.6, 0.55) * mix(0.8, 1.1, bv.y), barn);
-		h0 += barn * 0.6;
+		if (above0 < 0.25 && above0 > -0.45 && worn < 0.95) {   // 물가에서만 (계산 아낌)
+			vec2 bv = voro(vec2(u * 14.0, v * 14.0) + sd);
+			float barn = smoothstep(0.32, 0.18, bv.x) * step(0.55, bv.y) * smoothstep(0.25, 0.0, above0) * smoothstep(-0.45, -0.05, above0) * (1.0 - worn);
+			c = mix(c, vec3(0.62, 0.6, 0.55) * mix(0.8, 1.1, bv.y), barn);
+			h0 += barn * 0.6;
+		}
 	}
 	// 범프 (화면 미분)
 	vec3 dpx = dFdx(wp);

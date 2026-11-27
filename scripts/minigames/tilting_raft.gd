@@ -48,6 +48,12 @@ var _log_mats: Array = []
 var _rope_mat: ShaderMaterial
 var _wait := 0.0
 var _beam_len := 8.0
+var _sea_mat: ShaderMaterial
+var _foam_mat: ShaderMaterial
+var _creak_t := 0.0
+var _sun0 := 1.0
+var _amb0 := 0.55
+var _prev_tilt := Vector2.ZERO
 
 
 func _init() -> void:
@@ -64,7 +70,23 @@ func _build_stage() -> void:
 	env.fog_light_color = Color(0.62, 0.72, 0.8)
 	env.fog_density = 0.004
 	var sea := ocean(0.0, 260.0, 7.5)   # 뗏목 둘레는 물결이 낮게 (물결이 통나무를 뚫고 올라오지 않게)
-	(sea.material_override as ShaderMaterial).set_shader_parameter("crest_foam", 0.7)
+	_sea_mat = sea.material_override as ShaderMaterial
+	_sea_mat.set_shader_parameter("crest_foam", 0.7)
+	_sun0 = sun.light_energy
+	_amb0 = env.ambient_light_energy
+	# 뗏목 둘레 물가 거품 (수면에 눕힌 판)
+	_foam_mat = ShaderMaterial.new()
+	_foam_mat.shader = load("res://shaders/foam_skirt.gdshader")
+	_foam_mat.set_shader_parameter("foam_tex", load("res://textures/ocean/foam.png"))
+	_foam_mat.render_priority = 1
+	var fp := PlaneMesh.new()
+	fp.size = Vector2(14, 14)
+	var fm := MeshInstance3D.new()
+	fm.mesh = fp
+	fm.material_override = _foam_mat
+	fm.position = Vector3(0, 0.035, 0)
+	fm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	world3.add_child(fm)
 	sky_clouds(16, 200.0, 32.0)
 	gulls(3, Vector3(0, 0, -30), 26.0, 9.0, 4)
 	island(Vector3(-140, -1.5, -200), 20.0, 12.0, 9)
@@ -426,6 +448,7 @@ func _tick(delta: float) -> void:
 	_show_logs(delta)
 	_show_swim(delta)
 	_show_wash(delta)
+	_weather(delta)
 	if _wait > 0.0:
 		_wait -= delta
 	_place_cam()
@@ -830,3 +853,27 @@ func _score_text(p: Dictionary) -> String:
 	if walkers.has(s) and walkers[s]["out"]:
 		return "✕"
 	return tr("Aboard")
+
+
+
+## 모두: 폭풍이 다가옴 — 먼 바다 물결이 커지고 하늘 · 햇빛이 어두워짐. 거품 띠는 남은 뗏목을 따라감. 크게 흔들리면 삐걱
+func _weather(delta: float) -> void:
+	var g := clampf(_elapsed / 55.0, 0.0, 1.0)
+	if _sea_mat:
+		_sea_mat.set_shader_parameter("amp", lerpf(0.35, 0.8, g))
+		_sea_mat.set_shader_parameter("crest_foam", lerpf(0.7, 1.6, g))
+	sun.light_energy = lerpf(_sun0, _sun0 * 0.55, g)
+	env.fog_density = lerpf(0.004, 0.011, g)
+	env.fog_light_color = Color(0.62, 0.72, 0.8).lerp(Color(0.42, 0.48, 0.54), g)
+	env.ambient_light_energy = lerpf(_amb0, _amb0 * 0.78, g)
+	var e := _edges()
+	_foam_mat.set_shader_parameter("center", Vector2((float(e[0]) + float(e[1])) * 0.5, 0.0))
+	_foam_mat.set_shader_parameter("half_size", Vector2((float(e[1]) - float(e[0])) * 0.5, float(e[2])))
+	_foam_mat.set_shader_parameter("strength", lerpf(0.75, 1.0, g))
+	var tv := Vector2(_roll, _pitch)
+	var rate := (tv - _prev_tilt).length() / maxf(delta, 0.001)
+	_prev_tilt = tv
+	_creak_t -= delta
+	if _creak_t <= 0.0 and rate > 0.08:
+		_creak_t = randf_range(0.8, 1.6)
+		sfx("creak", 30 + int(minf(rate, 0.3) * 120.0))
