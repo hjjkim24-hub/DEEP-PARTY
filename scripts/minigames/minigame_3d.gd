@@ -86,6 +86,84 @@ func _make_stage() -> void:
 	kit = BoardWorld.new()
 	_build_stage()
 	cam_base = cam.transform
+	_prewarm.call_deferred()
+
+
+## 처음 화면에 나올 때 살짝 멈추는 것 막기: 숨겨져 있거나 멀리 있는 물체 · 물보라를
+## 시작 직후 몇 프레임 동안 카메라 정면 아주 먼 곳에 아주 작게(안 보이게) 한 번씩 그려서 그래픽 준비를 미리 끝내 둠
+func _prewarm() -> void:
+	if DisplayServer.get_name() == "headless" or not is_inside_tree():
+		return
+	await get_tree().process_frame
+	if not is_instance_valid(world3) or not is_instance_valid(cam):
+		return
+	var hold := Node3D.new()
+	world3.add_child(hold)
+	var seen := {}
+	for n: Node in world3.find_children("*", "GeometryInstance3D", true, false):
+		if n.get_parent() == hold:
+			continue
+		var g := n as GeometryInstance3D
+		var key := ""
+		var dup: GeometryInstance3D = null
+		if g is MeshInstance3D and (g as MeshInstance3D).mesh != null:
+			var mi := g as MeshInstance3D
+			key = "m%d" % (mi.material_override.get_rid().get_id() if mi.material_override else 0)
+			for i in mi.mesh.get_surface_count():
+				var sm := mi.get_surface_override_material(i)
+				if sm == null:
+					sm = mi.mesh.surface_get_material(i)
+				key += ",%d" % (sm.get_rid().get_id() if sm else 0)
+			if seen.has(key):
+				continue
+			var d := MeshInstance3D.new()
+			d.mesh = mi.mesh
+			d.material_override = mi.material_override
+			for i in mi.mesh.get_surface_count():
+				d.set_surface_override_material(i, mi.get_surface_override_material(i))
+			dup = d
+		elif g is MultiMeshInstance3D and (g as MultiMeshInstance3D).multimesh != null:
+			var mm := (g as MultiMeshInstance3D).multimesh
+			key = "mm%d" % (mm.mesh.get_rid().get_id() if mm.mesh else 0)
+			if seen.has(key):
+				continue
+			var d := MultiMeshInstance3D.new()
+			d.multimesh = mm
+			d.material_override = g.material_override
+			dup = d
+		elif g is CPUParticles3D and (g as CPUParticles3D).mesh != null:
+			var cp := g as CPUParticles3D
+			key = "p%d" % cp.mesh.get_rid().get_id()
+			if seen.has(key):
+				continue
+			var d := cp.duplicate(0) as CPUParticles3D
+			for c in d.get_children():
+				c.free()
+			d.one_shot = false
+			d.local_coords = true
+			d.emitting = true
+			dup = d
+		else:
+			continue
+		seen[key] = true
+		dup.visible = true
+		hold.add_child(dup)
+	if OS.get_environment("MG_DEBUG") != "":
+		print("PREWARM %d" % hold.get_child_count())
+	# 공용 물보라 · 부스러기
+	var before := world3.get_child_count()
+	splash(Vector3.ZERO, 4)
+	debris(Vector3.ZERO, Color(0.5, 0.4, 0.3), 4)
+	for i in range(before, world3.get_child_count()):
+		var c := world3.get_child(before)
+		c.reparent(hold, false)
+	for f in 8:
+		if not is_instance_valid(hold) or not is_instance_valid(cam):
+			return
+		hold.global_transform = cam.global_transform * Transform3D(Basis().scaled(Vector3.ONE * 0.002), Vector3(0, 0, -minf(cam.far * 0.5, 500.0)))   # 아주 멀리 · 아주 작게 → 안 보임
+		await get_tree().process_frame
+	if is_instance_valid(hold):
+		hold.queue_free()
 
 
 func _process(delta: float) -> void:

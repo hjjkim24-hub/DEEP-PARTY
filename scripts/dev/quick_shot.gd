@@ -1759,3 +1759,35 @@ func _illust() -> void:
 
 func w_h(wb: Node) -> float:
 	return float(wb.half_d) * 2.6 + 30.0
+
+
+## 개발용 성능 기록 (PERFLOG=1): 1초마다 최대·평균 처리 시간, 실제 프레임 간격, 그리기 호출 수
+var _pf := {"n": 0, "pmax": 0.0, "psum": 0.0, "fmax": 0.0, "fsum": 0.0, "dc": 0, "obj": 0, "t": 0.0, "last": 0}
+func _process(_d: float) -> void:
+	if OS.get_environment("PERFLOG") == "":
+		return
+	var now := Time.get_ticks_usec()
+	var fr := (now - int(_pf["last"])) / 1000.0 if int(_pf["last"]) > 0 else 0.0
+	_pf["last"] = now
+	var pt := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+	_pf["n"] = int(_pf["n"]) + 1
+	_pf["pmax"] = maxf(float(_pf["pmax"]), pt)
+	_pf["psum"] = float(_pf["psum"]) + pt
+	_pf["fmax"] = maxf(float(_pf["fmax"]), fr)
+	_pf["fsum"] = float(_pf["fsum"]) + fr
+	_pf["dc"] = maxi(int(_pf["dc"]), RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME))
+	_pf["obj"] = maxi(int(_pf["obj"]), RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME))
+	_pf["t"] = float(_pf["t"]) + fr / 1000.0
+	if float(_pf["t"]) >= 1.0:
+		var cx = null
+		for n in get_tree().get_nodes_in_group("mg_perf"):
+			cx = n.get("_cam_x")
+		if cx == null:
+			var mgs := get_tree().root.find_children("*", "Control", true, false)
+			for m in mgs:
+				if m.get("_cam_x") != null:
+					cx = m.get("_cam_x")
+					break
+		var n := maxi(int(_pf["n"]), 1)
+		print("PERF x=%s proc avg=%.2f max=%.2f | frame avg=%.1f max=%.1f | dc=%d obj=%d" % [str(snappedf(float(cx), 1.0)) if cx != null else "-", float(_pf["psum"]) / n, float(_pf["pmax"]), float(_pf["fsum"]) / n, float(_pf["fmax"]), int(_pf["dc"]), int(_pf["obj"])])
+		_pf = {"n": 0, "pmax": 0.0, "psum": 0.0, "fmax": 0.0, "fsum": 0.0, "dc": 0, "obj": 0, "t": 0.0, "last": now}
