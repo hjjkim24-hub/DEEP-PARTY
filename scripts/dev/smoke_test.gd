@@ -196,7 +196,7 @@ func _play_board_game(mode: int, showcase: bool, rounds: int, others: Array) -> 
 		waited += get_process_delta_time()
 	var last_hint := ""
 	waited = 0.0
-	while (get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu") and waited < 900.0:
+	while (get_tree().current_scene == null or get_tree().current_scene.name != "MainMenu") and waited < 1800.0:   # 미니게임이 늘어 넉넉히
 		await _sec(0.5)
 		waited += 0.5
 		var sc := get_tree().current_scene
